@@ -15,3 +15,6 @@ node_modules/
 
 # 微信小程序工作区配置
 project.private.config.json
+
+# VS Code 工作区配置
+*.code-workspace
