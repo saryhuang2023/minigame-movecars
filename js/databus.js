@@ -1,64 +1,104 @@
-import Pool from './base/pool';
+// 全局数据中心（单例）
 
-let instance;
+const { COLOR_LIST } = require('./utils/colors.js');
 
-/**
- * 全局状态管理器
- * 负责管理游戏的状态，包括帧数、分数、子弹、敌人和动画等
- */
-export default class DataBus {
-  // 直接在类中定义实例属性
-  enemys = []; // 存储敌人
-  bullets = []; // 存储子弹
-  animations = []; // 存储动画
-  frame = 0; // 当前帧数
-  score = 0; // 当前分数
-  isGameOver = false; // 游戏是否结束
-  pool = new Pool(); // 初始化对象池
-
+class DataBus {
   constructor() {
-    // 确保单例模式
-    if (instance) return instance;
-
-    instance = this;
+    this.reset();
   }
 
-  // 重置游戏状态
   reset() {
-    this.frame = 0; // 当前帧数
-    this.score = 0; // 当前分数
-    this.bullets = []; // 存储子弹
-    this.enemys = []; // 存储敌人
-    this.animations = []; // 存储动画
-    this.isGameOver = false; // 游戏是否结束
+    // 游戏状态: menu / playing / victory / defeat
+    this.gameState = 'menu';
+
+    // 当前关卡配置
+    this.levelConfig = null;
+    this.currentLevel = 0;
+
+    // 实体列表
+    this.cars = [];
+    this.slots = [];
+    this.passengers = [];
+    this.grid = null;
+
+    // 提示结果
+    this.hintCarId = null;
+
+    // 帧计数器
+    this.frame = 0;
+
+    // 动画锁定（动画播放期间不允许操作）
+    this.animLock = false;
+
+    // 注意：this.levels 不在 reset 中清空，由 main.js 设置后保持引用
   }
 
-  // 游戏结束
-  gameOver() {
-    this.isGameOver = true;
+  /** 加载指定关卡 */
+  loadLevel(levelIndex) {
+    const savedLevels = this.levels;
+    this.reset();
+    this.levels = savedLevels;
+    const LevelClass = this.levels[levelIndex];
+    if (!LevelClass) return false;
+
+    this.levelConfig = new LevelClass();
+    this.currentLevel = levelIndex;
+
+    // 创建网格
+    const Grid = require('./entities/Grid.js');
+    this.grid = new Grid(this.levelConfig);
+
+    // 创建停车位
+    const PickupSlot = require('./entities/PickupSlot.js');
+    this.slots = this.levelConfig.pickupSlots.map(s => new PickupSlot(s));
+
+    // 创建乘客
+    const Passenger = require('./entities/Passenger.js');
+    this.passengers = [];
+    this.slots.forEach(slot => {
+      for (let i = 0; i < slot.maxWait; i++) {
+        this.passengers.push(new Passenger(slot.color, slot));
+      }
+    });
+
+    // 创建汽车
+    const Car = require('./entities/Car.js');
+    this.cars = this.levelConfig.cars.map(c => new Car(c));
+
+    // 更新网格占用
+    this.grid.updateOccupancy(this.cars);
+
+    this.gameState = 'playing';
+    return true;
   }
 
-  /**
-   * 回收敌人，进入对象池
-   * 此后不进入帧循环
-   * @param {Object} enemy - 要回收的敌人对象
-   */
-  removeEnemy(enemy) {
-    const temp = this.enemys.splice(this.enemys.indexOf(enemy), 1);
-    if (temp) {
-      this.pool.recover('enemy', enemy); // 回收敌人到对象池
-    }
+  /** 获取指定颜色的所有车 */
+  getCarsByColor(color) {
+    return this.cars.filter(c => c.color === color && c.status !== 'departed');
   }
 
-  /**
-   * 回收子弹，进入对象池
-   * 此后不进入帧循环
-   * @param {Object} bullet - 要回收的子弹对象
-   */
-  removeBullets(bullet) {
-    const temp = this.bullets.splice(this.bullets.indexOf(bullet), 1);
-    if (temp) {
-      this.pool.recover('bullet', bullet); // 回收子弹到对象池
-    }
+  /** 获取指定颜色的空闲停车位 */
+  getAvailableSlot(color) {
+    return this.slots.find(s => s.color === color && !s.occupied);
+  }
+
+  /** 获取所有等待中的乘客 */
+  getWaitingPassengers() {
+    return this.passengers.filter(p => !p.boarded);
+  }
+
+  /** 检查是否所有乘客已接走 */
+  allPassengersBoarded() {
+    return this.passengers.every(p => p.boarded);
+  }
+
+  /** 是否有车正在移动或弹回中 */
+  isAnyCarMoving() {
+    return this.cars.some(c => c.status === 'moving_forward' || c.status === 'bouncing_back');
   }
 }
+
+// 单例
+const databus = new DataBus();
+
+module.exports = databus;

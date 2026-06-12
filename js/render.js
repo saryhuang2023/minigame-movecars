@@ -1,9 +1,9 @@
-GameGlobal.canvas = wx.createCanvas();
+// Canvas 初始化 + 屏幕尺寸常量
 
-const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+const canvas = wx.createCanvas();
+const ctx = canvas.getContext('2d');
 
-canvas.width = windowInfo.screenWidth;
-canvas.height = windowInfo.screenHeight;
+const SCREEN_WIDTH = canvas.width;
+const SCREEN_HEIGHT = canvas.height;
 
-export const SCREEN_WIDTH = windowInfo.screenWidth;
-export const SCREEN_HEIGHT = windowInfo.screenHeight;
+module.exports = { canvas, ctx, SCREEN_WIDTH, SCREEN_HEIGHT };

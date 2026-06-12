@@ -1,134 +1,124 @@
-import './render'; // 初始化Canvas
-import Player from './player/index'; // 导入玩家类
-import Enemy from './npc/enemy'; // 导入敌机类
-import BackGround from './runtime/background'; // 导入背景类
-import GameInfo from './runtime/gameinfo'; // 导入游戏UI类
-import Music from './runtime/music'; // 导入音乐类
-import DataBus from './databus'; // 导入数据类，用于管理游戏状态和数据
+// 主入口：初始化 → 启动主循环
 
-const ENEMY_GENERATE_INTERVAL = 10;
-const ctx = canvas.getContext('2d'); // 获取canvas的2D绘图上下文;
+const databus = require('./databus.js');
+const GameEngine = require('./core/GameEngine.js');
+const InputManager = require('./core/InputManager.js');
+const StateMachine = require('./core/StateMachine.js');
+const Button = require('./ui/Button.js');
+const { SCREEN_WIDTH, SCREEN_HEIGHT } = require('./render.js');
+const { setupGameButtons } = require('./systems/WinLoseSystem.js');
 
-GameGlobal.databus = new DataBus(); // 全局数据管理，用于管理游戏状态和数据
-GameGlobal.musicManager = new Music(); // 全局音乐管理实例
+// 加载关卡
+const Level1 = require('./levels/level-1.js');
+const Level2 = require('./levels/level-2.js');
+const Level3 = require('./levels/level-3.js');
 
-/**
- * 游戏主函数
- */
-export default class Main {
-  aniId = 0; // 用于存储动画帧的ID
-  bg = new BackGround(); // 创建背景
-  player = new Player(); // 创建玩家
-  gameInfo = new GameInfo(); // 创建游戏UI显示
+databus.levels = [Level1, Level2, Level3];
 
+class Main {
   constructor() {
-    // 当开始游戏被点击时，重新开始游戏
-    this.gameInfo.on('restart', this.start.bind(this));
+    this.engine = new GameEngine();
+    this.input = new InputManager();
+    this.sm = new StateMachine();
 
-    // 开始游戏
-    this.start();
+    // 将 InputManager 和 StateMachine 注入 GameEngine
+    GameEngine.setInputManager(this.input);
+    GameEngine.setStateMachine(this.sm);
+
+    // 初始状态：menu
+    databus.gameState = 'menu';
+
+    // 注册状态机处理器
+    this.setupStateMachine();
+
+    // 设置菜单按钮
+    this.setupMenuButtons();
+
+    // 启动主循环
+    this.engine.start();
   }
 
-  /**
-   * 开始或重启游戏
-   */
-  start() {
-    GameGlobal.databus.reset(); // 重置数据
-    this.player.init(); // 重置玩家状态
-    cancelAnimationFrame(this.aniId); // 清除上一局的动画
-    this.aniId = requestAnimationFrame(this.loop.bind(this)); // 开始新的动画循环
-  }
-
-  /**
-   * 随着帧数变化的敌机生成逻辑
-   * 帧数取模定义成生成的频率
-   */
-  enemyGenerate() {
-    // 每30帧生成一个敌机
-    if (GameGlobal.databus.frame % ENEMY_GENERATE_INTERVAL === 0) {
-      const enemy = GameGlobal.databus.pool.getItemByClass('enemy', Enemy); // 从对象池获取敌机实例
-      enemy.init(); // 初始化敌机
-      GameGlobal.databus.enemys.push(enemy); // 将敌机添加到敌机数组中
-    }
-  }
-
-  /**
-   * 全局碰撞检测
-   */
-  collisionDetection() {
-    // 检测子弹与敌机的碰撞
-    GameGlobal.databus.bullets.forEach((bullet) => {
-      for (let i = 0, il = GameGlobal.databus.enemys.length; i < il; i++) {
-        const enemy = GameGlobal.databus.enemys[i];
-
-        // 如果敌机存活并且发生了发生碰撞
-        if (enemy.isCollideWith(bullet)) {
-          enemy.destroy(); // 销毁敌机
-          bullet.destroy(); // 销毁子弹
-          GameGlobal.databus.score += 1; // 增加分数
-          break; // 退出循环
-        }
-      }
+  setupStateMachine() {
+    this.sm.on('enter', 'playing', () => {
+      setupGameButtons();
     });
 
-    // 检测玩家与敌机的碰撞
-    for (let i = 0, il = GameGlobal.databus.enemys.length; i < il; i++) {
-      const enemy = GameGlobal.databus.enemys[i];
+    this.sm.on('exit', 'playing', () => {
+      Button.clearAll();
+    });
 
-      // 如果玩家与敌机发生碰撞
-      if (this.player.isCollideWith(enemy)) {
-        this.player.destroy(); // 销毁玩家飞机
-        GameGlobal.databus.gameOver(); // 游戏结束
+    this.sm.on('enter', 'victory', () => {
+      const { SCREEN_WIDTH: sw, SCREEN_HEIGHT: sh } = require('./render.js');
+      Button.clearAll();
+      Button.add({
+        id: 'next',
+        text: '下一关',
+        x: (sw - 200) / 2,
+        y: sh / 2 + 110,
+        w: 200,
+        h: 44,
+        onClick: () => {
+          const nextLevel = databus.currentLevel + 1;
+          if (nextLevel < databus.levels.length) {
+            databus.loadLevel(nextLevel);
+            this.sm.transition('playing');
+          } else {
+            // 通关所有关卡
+            databus.gameState = 'victory_all';
+          }
+        },
+      });
+    });
 
-        break; // 退出循环
-      }
-    }
+    this.sm.on('enter', 'defeat', () => {
+      const { SCREEN_WIDTH: sw, SCREEN_HEIGHT: sh } = require('./render.js');
+      Button.clearAll();
+      Button.add({
+        id: 'retry',
+        text: '重新挑战',
+        x: (sw - 200) / 2,
+        y: sh / 2 + 110,
+        w: 200,
+        h: 44,
+        onClick: () => {
+          databus.loadLevel(databus.currentLevel);
+          this.sm.transition('playing');
+        },
+      });
+    });
+
+    this.sm.on('enter', 'victory_all', () => {
+      const { SCREEN_WIDTH: sw, SCREEN_HEIGHT: sh } = require('./render.js');
+      Button.clearAll();
+      Button.add({
+        id: 'replay',
+        text: '重新开始',
+        x: (sw - 200) / 2,
+        y: sh / 2 + 80,
+        w: 200,
+        h: 52,
+        onClick: () => {
+          databus.loadLevel(0);
+          this.sm.transition('playing');
+        },
+      });
+    });
   }
 
-  /**
-   * canvas重绘函数
-   * 每一帧重新绘制所有的需要展示的元素
-   */
-  render() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // 清空画布
-
-    this.bg.render(ctx); // 绘制背景
-    this.player.render(ctx); // 绘制玩家飞机
-    GameGlobal.databus.bullets.forEach((item) => item.render(ctx)); // 绘制所有子弹
-    GameGlobal.databus.enemys.forEach((item) => item.render(ctx)); // 绘制所有敌机
-    this.gameInfo.render(ctx); // 绘制游戏UI
-    GameGlobal.databus.animations.forEach((ani) => {
-      if (ani.isPlaying) {
-        ani.aniRender(ctx); // 渲染动画
-      }
-    }); // 绘制所有动画
-  }
-
-  // 游戏逻辑更新主函数
-  update() {
-    GameGlobal.databus.frame++; // 增加帧数
-
-    if (GameGlobal.databus.isGameOver) {
-      return;
-    }
-
-    this.bg.update(); // 更新背景
-    this.player.update(); // 更新玩家
-    // 更新所有子弹
-    GameGlobal.databus.bullets.forEach((item) => item.update());
-    // 更新所有敌机
-    GameGlobal.databus.enemys.forEach((item) => item.update());
-
-    this.enemyGenerate(); // 生成敌机
-    this.collisionDetection(); // 检测碰撞
-  }
-
-  // 实现游戏帧循环
-  loop() {
-    this.update(); // 更新游戏逻辑
-    this.render(); // 渲染游戏画面
-
-    // 请求下一帧动画
-    this.aniId = requestAnimationFrame(this.loop.bind(this));
+  setupMenuButtons() {
+    Button.add({
+      id: 'start',
+      text: '开始游戏',
+      x: (SCREEN_WIDTH - 200) / 2,
+      y: SCREEN_HEIGHT / 2 + 40,
+      w: 200,
+      h: 52,
+      onClick: () => {
+        databus.loadLevel(0);
+        this.sm.transition('playing');
+      },
+    });
   }
 }
+
+new Main();
