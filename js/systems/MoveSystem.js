@@ -58,12 +58,19 @@ const MoveSystem = {
         const furtherX = checkX + dx * step;
         const furtherY = checkY + dy * step;
         if (!grid.isInsideParkingArea(furtherX, furtherY, car.width, car.height)) {
-          return distance + step;
+          // 只有从上方开出（接待区方向）才允许继续
+          if (checkY < grid.offsetY) {
+            return distance + step;
+          }
+          // 其他方向视为碰撞，停在边界内
+          return distance - step;
         }
         // 检查是否能进入接待区（顶部区域）
         if (checkY < grid.offsetY) {
           return distance;
         }
+        // 非上方边界视为碰撞
+        return distance - step;
       }
 
       // 检查是否超出屏幕

@@ -133,6 +133,14 @@ class Car {
       // 到达目标位置
       this.x = this.targetX;
       this.y = this.targetY;
+
+      // 检查是否已开出停车区域 → 触发进入接待区
+      if (!grid.isInsideParkingArea(this.x, this.y, this.width, this.height)) {
+        const PickupSystem = require('../systems/PickupSystem.js');
+        PickupSystem.onCarExitGrid(this);
+        return;
+      }
+
       this.status = 'idle';
       grid.updateOccupancy(require('../databus.js').cars);
       return;
