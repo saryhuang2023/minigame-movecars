@@ -1,7 +1,5 @@
 // 全局数据中心（单例）
 
-const { COLOR_LIST } = require('./utils/colors.js');
-
 class DataBus {
   constructor() {
     this.reset();
