@@ -45,13 +45,18 @@ class Car {
     this.seats = config.seats || 2;
     this.passengers = 0;
 
-    // 移动状态机: idle / moving_forward / bouncing_back / arrived / departed
+    // 移动状态机: idle / moving_forward / bouncing_back / path_moving / arrived / departed
     this.status = 'idle';
 
     // 移动相关
     this.moveSpeed = MOVE_SPEED;
     this.targetX = this.x;
     this.targetY = this.y;
+
+    // 路径点系统（多段路径）
+    this.waypoints = [];         // [{x, y}, ...] 路径点队列
+    this.waypointIndex = 0;     // 当前路径点索引
+    this.waypointTarget = null; // 路径完成后的目标类型: 'slot' | 'depart'
 
     // 弹回相关
     this.originX = this.x;
@@ -107,12 +112,22 @@ class Car {
     this.status = 'bouncing_back';
   }
 
+  /** 设置多段路径点 */
+  setWaypoints(points, target) {
+    this.waypoints = points;
+    this.waypointIndex = 0;
+    this.waypointTarget = target;
+    this.status = 'path_moving';
+  }
+
   /** 更新移动状态 */
   update(dt, grid) {
     if (this.status === 'moving_forward') {
       this.updateMoving(dt, grid);
     } else if (this.status === 'bouncing_back') {
       this.updateBounce(dt);
+    } else if (this.status === 'path_moving') {
+      this.updatePathMoving(dt);
     }
   }
 
@@ -198,6 +213,67 @@ class Car {
     const t = this.easeInOutQuad(this.bounceProgress);
     this.x = this.bounceStartX + (this.originX - this.bounceStartX) * t;
     this.y = this.bounceStartY + (this.originY - this.bounceStartY) * t;
+  }
+
+  /** 路径点移动 - 依次跟随多段路径 */
+  updatePathMoving(dt) {
+    if (this.waypoints.length === 0 || this.waypointIndex >= this.waypoints.length) {
+      this.handleWaypointComplete();
+      return;
+    }
+
+    const wp = this.waypoints[this.waypointIndex];
+    const dx = wp.x - this.x;
+    const dy = wp.y - this.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < 0.5) {
+      // 到达当前路径点
+      this.x = wp.x;
+      this.y = wp.y;
+      this.waypointIndex++;
+      if (this.waypointIndex >= this.waypoints.length) {
+        this.handleWaypointComplete();
+      }
+      return;
+    }
+
+    // 向路径点平滑移动
+    const step = this.moveSpeed * dt;
+    if (step >= dist) {
+      this.x = wp.x;
+      this.y = wp.y;
+      this.waypointIndex++;
+      if (this.waypointIndex >= this.waypoints.length) {
+        this.handleWaypointComplete();
+      }
+    } else {
+      this.x += (dx / dist) * step;
+      this.y += (dy / dist) * step;
+    }
+  }
+
+  /** 路径点全部走完后的处理 */
+  handleWaypointComplete() {
+    const databus = require('../databus.js');
+
+    if (this.waypointTarget === 'slot') {
+      // 到达停车位，开始接客
+      this.status = 'arrived';
+      const PickupSystem = require('../systems/PickupSystem.js');
+      const slot = databus.getSlotByCar(this);
+      if (slot) {
+        PickupSystem.boardPassengers(slot);
+      }
+    } else if (this.waypointTarget === 'depart') {
+      // 驶离屏幕
+      this.status = 'departed';
+      const slot = databus.getSlotByCar(this);
+      if (slot) {
+        slot.release();
+      }
+      databus.grid.updateOccupancy(databus.cars);
+    }
   }
 
   easeInOutQuad(t) {

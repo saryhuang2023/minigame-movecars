@@ -18,11 +18,11 @@ class PickupSlot {
     this.height = config.height || 40;
   }
 
-  /** 汽车停入 */
+  /** 汽车停入（预约） */
   occupy(car) {
     this.occupied = true;
     this.carRef = car;
-    car.status = 'arrived';
+    // 不设置 car.status，由路径系统管理状态
   }
 
   /** 汽车驶离 */

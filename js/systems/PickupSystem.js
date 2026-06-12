@@ -1,10 +1,12 @@
 // 接待区停车 + 乘客上车逻辑
 
 const databus = require('../databus.js');
+const { SCREEN_WIDTH } = require('../render.js');
 
 const PickupSystem = {
   /**
    * 汽车开出网格后调用
+   * 设置路径点：沿边缘滑行 → 进入停车位
    */
   onCarExitGrid(car) {
     // 查找同色空闲停车位
@@ -15,16 +17,22 @@ const PickupSystem = {
       return;
     }
 
-    // 占用停车位
+    // 预约停车位
     slot.occupy(car);
 
-    // 汽车定位到停车位
-    car.x = slot.x + (slot.width - car.width) / 2;
-    car.y = slot.y + (slot.height - car.height) / 2;
-    car.status = 'arrived';
+    // 计算停车位中心 X（汽车左上角对齐）
+    const slotCarX = slot.x + (slot.width - car.width) / 2;
+    const slotCarY = slot.y + (slot.height - car.height) / 2;
 
-    // 乘客上车
-    this.boardPassengers(slot);
+    // 路径点设计：
+    // wp1: 沿停车区顶部边缘水平滑行，对齐到车位正下方
+    // wp2: 直线驶入停车位
+    const waypoints = [
+      { x: slotCarX, y: car.y },
+      { x: slotCarX, y: slotCarY },
+    ];
+
+    car.setWaypoints(waypoints, 'slot');
   },
 
   /**
@@ -63,6 +71,9 @@ const PickupSystem = {
       if (!slot.occupied || !slot.carRef) continue;
       const car = slot.carRef;
 
+      // 等待汽车到达停车位（path_moving 状态尚未到达）
+      if (car.status === 'path_moving') continue;
+
       // 如果还有空位且还有等待乘客
       if (car.passengers < car.seats && slot.currentWait > 0) {
         const waiting = databus.passengers.filter(
@@ -83,11 +94,15 @@ const PickupSystem = {
         }
       }
 
-      // 坐满驶离
-      if (car.passengers >= car.seats) {
-        car.status = 'departed';
-        slot.release();
-        databus.grid.updateOccupancy(databus.cars);
+      // 坐满驶离：设置离开路径
+      if (car.passengers >= car.seats && car.status === 'arrived') {
+        // 路径点：向上驶出 → 水平离开屏幕右边
+        const exitY = slot.y - car.height - 10;
+        const waypoints = [
+          { x: car.x, y: Math.max(exitY, 10) },
+          { x: SCREEN_WIDTH + car.width, y: Math.max(exitY, 10) },
+        ];
+        car.setWaypoints(waypoints, 'depart');
       }
     }
   },

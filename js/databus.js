@@ -80,6 +80,11 @@ class DataBus {
     return this.slots.find(s => s.color === color && !s.occupied);
   }
 
+  /** 根据汽车引用查找其停靠的停车位 */
+  getSlotByCar(car) {
+    return this.slots.find(s => s.carRef === car);
+  }
+
   /** 获取所有等待中的乘客 */
   getWaitingPassengers() {
     return this.passengers.filter(p => !p.boarded);
@@ -92,7 +97,11 @@ class DataBus {
 
   /** 是否有车正在移动或弹回中 */
   isAnyCarMoving() {
-    return this.cars.some(c => c.status === 'moving_forward' || c.status === 'bouncing_back');
+    return this.cars.some(c =>
+      c.status === 'moving_forward' ||
+      c.status === 'bouncing_back' ||
+      c.status === 'path_moving'
+    );
   }
 }
 
