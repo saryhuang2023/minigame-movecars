@@ -48,14 +48,14 @@ class Button {
     const bgColor = this.pressed ? '#333' : '#555';
     ctx.fillStyle = bgColor;
     ctx.beginPath();
-    ctx.roundRect(this.x, this.y, this.w, this.h, 8);
+    ctx.roundRect(this.x, this.y, this.w, this.h, [8]);
     ctx.fill();
 
     // hover 效果
     if (this.hoverAlpha > 0) {
       ctx.fillStyle = `rgba(255,255,255,${this.hoverAlpha * 0.15})`;
       ctx.beginPath();
-      ctx.roundRect(this.x, this.y, this.w, this.h, 8);
+      ctx.roundRect(this.x, this.y, this.w, this.h, [8]);
       ctx.fill();
     }
 

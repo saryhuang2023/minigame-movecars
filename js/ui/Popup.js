@@ -20,7 +20,7 @@ const Popup = {
 
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.roundRect(popX, popY, popW, popH, 12);
+    ctx.roundRect(popX, popY, popW, popH, [12]);
     ctx.fill();
 
     // 阴影
@@ -28,7 +28,7 @@ const Popup = {
     ctx.shadowBlur = 20;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.roundRect(popX, popY, popW, popH, 12);
+    ctx.roundRect(popX, popY, popW, popH, [12]);
     ctx.fill();
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;

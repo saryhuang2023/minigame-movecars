@@ -296,7 +296,7 @@ class Car {
       ctx.strokeStyle = `rgba(255, 215, 0, ${alpha})`;
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.roundRect(this.x - 3, this.y - 3, this.width + 6, this.height + 6, 6);
+      ctx.roundRect(this.x - 3, this.y - 3, this.width + 6, this.height + 6, [6]);
       ctx.stroke();
     }
 
@@ -304,14 +304,14 @@ class Car {
     const hex = getColorHex(this.color);
     ctx.fillStyle = hex;
     ctx.beginPath();
-    ctx.roundRect(this.x, this.y, this.width, this.height, 4);
+    ctx.roundRect(this.x, this.y, this.width, this.height, [4]);
     ctx.fill();
 
     // 车身边框
     ctx.strokeStyle = 'rgba(0,0,0,0.2)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.roundRect(this.x, this.y, this.width, this.height, 4);
+    ctx.roundRect(this.x, this.y, this.width, this.height, [4]);
     ctx.stroke();
 
     // 方向箭头

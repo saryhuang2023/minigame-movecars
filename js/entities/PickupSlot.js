@@ -57,7 +57,7 @@ class PickupSlot {
       ? 'rgba(0,0,0,0.1)'
       : hex + '30';
     ctx.beginPath();
-    ctx.roundRect(this.x, this.y, this.width, this.height, 6);
+    ctx.roundRect(this.x, this.y, this.width, this.height, [6]);
     ctx.fill();
 
     // 边框
@@ -65,7 +65,7 @@ class PickupSlot {
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.roundRect(this.x, this.y, this.width, this.height, 6);
+    ctx.roundRect(this.x, this.y, this.width, this.height, [6]);
     ctx.stroke();
     ctx.setLineDash([]);
 
