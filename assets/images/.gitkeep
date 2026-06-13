@@ -1,0 +1,2 @@
+# 图片资源目录
+# 将 PNG/JPG 图片放入此文件夹，通过 AssetLoader 加载

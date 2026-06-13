@@ -77,9 +77,18 @@ class GameEngine {
   render() {
     ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // 背景
-    ctx.fillStyle = '#FAFAFA';
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    // 背景：游戏场景用图片，菜单用纯色
+    if (databus.gameState === 'playing' || databus.gameState === 'victory' || databus.gameState === 'defeat') {
+      if (databus.gameBgImage) {
+        ctx.drawImage(databus.gameBgImage, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+      } else {
+        ctx.fillStyle = '#FAFAFA';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+      }
+    } else {
+      ctx.fillStyle = '#FAFAFA';
+      ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    }
 
     if (databus.gameState === 'playing') {
       // 渲染网格

@@ -15,6 +15,22 @@ const Level3 = require('./levels/level-3.js');
 
 databus.levels = [Level1, Level2, Level3];
 
+// 预加载游戏背景图
+function loadGameBg() {
+  return new Promise((resolve) => {
+    const img = wx.createImage();
+    img.onload = () => {
+      databus.gameBgImage = img;
+      resolve();
+    };
+    img.onerror = () => {
+      console.warn('背景图加载失败，使用纯色背景');
+      resolve();
+    };
+    img.src = 'assets/images/game-bg.jpg';
+  });
+}
+
 class Main {
   constructor() {
     this.engine = new GameEngine();
@@ -34,8 +50,10 @@ class Main {
     // 设置菜单按钮
     this.setupMenuButtons();
 
-    // 启动主循环
-    this.engine.start();
+    // 加载背景图后再启动主循环
+    loadGameBg().then(() => {
+      this.engine.start();
+    });
   }
 
   setupStateMachine() {
