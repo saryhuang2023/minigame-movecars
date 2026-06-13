@@ -57,6 +57,10 @@ class Main {
   }
 
   setupStateMachine() {
+    this.sm.on('exit', 'menu', () => {
+      Button.clearAll();
+    });
+
     this.sm.on('enter', 'playing', () => {
       setupGameButtons();
     });
