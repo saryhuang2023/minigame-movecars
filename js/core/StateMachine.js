@@ -14,7 +14,7 @@ class StateMachine {
   }
 
   /** 注册状态处理器 */
-  on(state, event, handler) {
+  on(event, state, handler) {
     if (!this.handlers[event]) this.handlers[event] = {};
     this.handlers[event][state] = handler;
   }
