@@ -123,7 +123,7 @@ class GameEngine {
       ctx.fillStyle = '#333';
       ctx.font = 'bold 28px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('停车接客', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40);
+      ctx.fillText('挪了挪车', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40);
       ctx.font = '16px sans-serif';
       ctx.fillText('点击开始游戏', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 10);
       Button.renderAll(ctx);
