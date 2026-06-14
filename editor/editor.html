@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小猪推推乐 - 关卡编辑器</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #e8e6dd; color: #333; height: 100vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+.toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+  background: #fff; border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
+}
+.toolbar .title { font-size: 16px; font-weight: 500; margin-right: 16px; }
+.toolbar button {
+  padding: 6px 14px; border: 1px solid #ccc; border-radius: 6px;
+  font-size: 13px; cursor: pointer; background: #f5f5f5; font-family: inherit;
+}
+.toolbar button:hover { background: #e8e8e8; }
+.toolbar button.primary { background: #4CAF50; color: #fff; border-color: #4CAF50; }
+.toolbar button.primary:hover { background: #43A047; }
+.toolbar button.danger { background: #f44336; color: #fff; border-color: #f44336; }
+.toolbar button.danger:hover { background: #e53935; }
+.toolbar button.accent { background: #2196F3; color: #fff; border-color: #2196F3; }
+.toolbar button.accent:hover { background: #1E88E5; }
+.toolbar .mode-label {
+  margin-left: auto; font-size: 13px; padding: 4px 10px;
+  border-radius: 4px; font-weight: 500;
+}
+.toolbar .mode-label.edit { background: #E3F2FD; color: #1565C0; }
+.toolbar .mode-label.preview { background: #FFF3E0; color: #E65100; }
+.toolbar .sep { width: 1px; height: 24px; background: #ddd; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+
+.panel-left {
+  width: 220px; background: #fff; border-right: 1px solid #e0e0e0;
+  padding: 16px; overflow-y: auto; flex-shrink: 0;
+}
+.panel-left h3 { font-size: 14px; font-weight: 500; margin-bottom: 12px; color: #555; }
+.param-row { display: flex; align-items: center; margin-bottom: 8px; }
+.param-row label { font-size: 12px; width: 56px; color: #777; flex-shrink: 0; }
+.param-row input {
+  flex: 1; padding: 4px 8px; border: 1px solid #d0d0d0; border-radius: 4px;
+  font-size: 12px; font-family: inherit; text-align: center;
+}
+.param-row input:focus { outline: none; border-color: #2196F3; }
+.param-row .unit { font-size: 11px; color: #999; margin-left: 4px; width: 16px; }
+.phone-size-select { margin-top: 12px; }
+.phone-size-select select {
+  width: 100%; padding: 4px 8px; border: 1px solid #d0d0d0;
+  border-radius: 4px; font-size: 12px; font-family: inherit;
+}
+.info-row { font-size: 11px; color: #999; margin-top: 4px; }
+
+.center {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: #e8e6dd; overflow: auto;
+}
+.phone-frame {
+  border-radius: 24px; background: #1a1a2e;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  overflow: hidden; flex-shrink: 0; position: relative;
+}
+.phone-frame canvas { display: block; }
+.phone-frame .hint {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; color: rgba(255,255,255,0.5); pointer-events: none;
+}
+
+.panel-right {
+  width: 220px; background: #fff; border-left: 1px solid #e0e0e0;
+  padding: 16px; overflow-y: auto; flex-shrink: 0;
+}
+.panel-right h3 { font-size: 14px; font-weight: 500; margin-bottom: 12px; color: #555; }
+.panel-right h4 { font-size: 13px; font-weight: 500; margin-bottom: 8px; color: #666; }
+.pig-list { margin-bottom: 16px; }
+.pig-item {
+  display: flex; align-items: center; padding: 6px 10px; margin-bottom: 4px;
+  border-radius: 6px; cursor: pointer; font-size: 12px; gap: 8px;
+  border: 2px solid transparent;
+}
+.pig-item:hover { background: #f5f5f5; }
+.pig-item.selected { border-color: #2196F3; background: #E3F2FD; }
+.pig-item .swatch {
+  width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+}
+.pig-item .info { flex: 1; }
+.pig-item .info .len { color: #999; }
+
+.pig-editor { margin-top: 8px; }
+.btn-row { display: flex; gap: 6px; margin-top: 8px; }
+.btn-row button {
+  flex: 1; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
+  font-size: 11px; cursor: pointer; font-family: inherit; background: #f5f5f5;
+}
+.btn-row button:hover { background: #e8e8e8; }
+.btn-row button.warn { border-color: #f44336; color: #f44336; }
+.btn-row button.warn:hover { background: #ffebee; }
+
+.level-section { margin-top: 8px; }
+.level-toolbar {
+  display: flex; gap: 6px; margin-bottom: 8px;
+}
+.level-toolbar button {
+  flex: 1; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
+  font-size: 11px; cursor: pointer; font-family: inherit; background: #f5f5f5;
+}
+.level-toolbar button:hover { background: #e8e8e8; }
+.level-section h3 { margin-bottom: 8px; }
+.level-list { max-height: 260px; overflow-y: auto; }
+.level-item {
+  display: flex; align-items: center; padding: 5px 8px; margin-bottom: 2px;
+  border-radius: 5px; cursor: pointer; font-size: 11px; gap: 4px;
+  border: 1px solid transparent; transition: background 0.15s;
+}
+.level-item:hover { background: #f5f5f5; }
+.level-item.active { border-color: #4CAF50; background: #E8F5E9; }
+.level-item .lv-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;
+}
+.level-item .lv-info { color: #999; font-size: 10px; flex-shrink: 0; }
+.level-item .lv-dirty { color: #f44336; font-size: 9px; }
+.level-item .lv-save {
+  flex-shrink: 0; padding: 2px 6px; border: 1px solid #4CAF50; border-radius: 3px;
+  background: #E8F5E9; color: #2E7D32; font-size: 9px; cursor: pointer; font-family: inherit;
+  display: none;
+}
+.level-item.active .lv-save { display: inline-block; }
+.level-item .lv-save:hover { background: #C8E6C9; }
+
+.toast {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  background: #333; color: #fff; padding: 8px 20px; border-radius: 6px;
+  font-size: 13px; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  z-index: 100;
+}
+.toast.show { opacity: 1; }
+
+canvas { cursor: crosshair; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="title">小猪推推乐 - 关卡编辑器</span>
+  <span class="sep"></span>
+  <button id="btnMode" class="accent" onclick="toggleMode()">关卡试玩</button>
+  <span id="modeLabel" class="mode-label edit">编辑模式</span>
+</div>
+
+<div class="main">
+  <div class="panel-left">
+    <h3>棋盘参数</h3>
+    <div class="param-row">
+      <label>圆洞直径</label>
+      <input type="number" id="diameter" value="30" min="6" max="80" onchange="updateBoardParams()">
+      <span class="unit">px</span>
+    </div>
+    <div class="param-row">
+      <label>横向个数</label>
+      <input type="number" id="cols" value="6" min="2" max="20" onchange="updateBoardParams()">
+      <span class="unit">个</span>
+    </div>
+    <div class="param-row">
+      <label>横向边距</label>
+      <input type="number" id="hSpacing" value="40" min="0" max="200" onchange="updateBoardParams()">
+      <span class="unit">px</span>
+    </div>
+    <div class="param-row">
+      <label>纵向个数</label>
+      <input type="number" id="rows" value="12" min="2" max="25" onchange="updateBoardParams()">
+      <span class="unit">个</span>
+    </div>
+    <div class="param-row">
+      <label>纵向边距</label>
+      <input type="number" id="vSpacing" value="20" min="0" max="200" onchange="updateBoardParams()">
+      <span class="unit">px</span>
+    </div>
+    <hr style="margin:12px 0; border:none; border-top:1px solid #e0e0e0;">
+    <div class="phone-size-select">
+      <label style="font-size:12px;color:#777;">手机尺寸</label>
+      <select id="phoneSize" onchange="updatePhoneSize()">
+        <option value="440x956">iPhone 17 Pro Max (440×956)</option>
+        <option value="426x950">Huawei Pura 80 Ultra (426×950)</option>
+      </select>
+    </div>
+    <div class="info-row" id="boardInfo"></div>
+    <hr style="margin:12px 0; border:none; border-top:1px solid #e0e0e0;">
+    <div class="level-toolbar">
+      <button onclick="newLevel()" title="新建空白关卡">新建</button>
+      <button onclick="refreshLevelList()" title="重新扫描 levels 目录">刷新</button>
+      <button onclick="openLevelsDir()" title="在资源管理器中打开 levels 目录">打开关卡目录</button>
+    </div>
+    <div class="level-section">
+      <h3>关卡列表 <span id="storagePathLabel" style="font-size:10px;color:#999;"></span></h3>
+      <div class="level-list" id="levelListContainer"></div>
+    </div>
+  </div>
+
+  <div class="center">
+    <div class="phone-frame" id="phoneFrame">
+      <canvas id="gameCanvas"></canvas>
+      <div class="hint" id="canvasHint">点击空圆洞放置小猪 | 拖拽头部可调整</div>
+    </div>
+  </div>
+
+  <div class="panel-right">
+    <h3>小猪列表</h3>
+    <div class="pig-list" id="pigList"></div>
+    <div class="pig-editor" id="pigEditor" style="display:none;">
+      <h4>选中小猪</h4>
+      <div id="pigEditorInfo" style="font-size:12px;color:#666;line-height:1.8;"></div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="warn" onclick="deleteSelectedPig()">删除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// GLOBAL STATE
+// ============================================================
+const PHONE_SIZES = {
+  '440x956': { w: 440, h: 956, label: 'iPhone 17 Pro Max (440×956)' },
+  '426x950': { w: 426, h: 950, label: 'Huawei Pura 80 Ultra (426×950)' }
+};
+
+let phoneW = 440, phoneH = 956;
+let board = { diameter: 30, cols: 6, rows: 12, hSpacing: 40, vSpacing: 20 };
+let pigs = [];
+let nextPigId = 0;
+let mode = 'edit';
+let selectedPigId = null;
+let dragState = null;
+let backupPigs = null;
+let animations = [];
+
+let holes = [];
+let holeOccupiedBy = [];
+let pigInstances = [];
+let flashingPigs = {};        // { pigId: startTime } — preview mode bump flash
+
+// Level management
+let levelList = [];           // [{ name, fileName, data, fileHandle, isDirty }]
+let currentLevelIdx = -1;
+const LEVELS_DIR = 'levels';
+const PIG_COLOR = '#FFD700';
+
+// Publish handle  
+let publishDirHandle = null;  // FileSystemDirectoryHandle for game levels
+
+// ============================================================
+// BOARD COMPUTATIONS
+// ============================================================
+function getTotalHoles() {
+  return board.rows * board.cols + (board.rows - 1) * (board.cols - 1);
+}
+
+function getBoardSize() {
+  const hStep = board.diameter + board.hSpacing;
+  const vStep = board.diameter + board.vSpacing;
+  return {
+    width: (board.cols - 1) * hStep + board.diameter,
+    height: (board.rows - 1) * vStep + board.diameter
+  };
+}
+
+function getBoardOffset() {
+  const size = getBoardSize();
+  return {
+    x: (phoneW - size.width) / 2,
+    y: (phoneH - size.height) / 2
+  };
+}
+
+function computeHoles() {
+  holes = [];
+  const hStep = board.diameter + board.hSpacing;
+  const vStep = board.diameter + board.vSpacing;
+  const totalGrid = board.rows * board.cols;
+  for (let i = 0; i < totalGrid; i++) {
+    const row = Math.floor(i / board.cols);
+    const col = i % board.cols;
+    holes.push({ x: col * hStep, y: row * vStep, type: 'grid', row, col });
+  }
+  for (let r = 0; r < board.rows - 1; r++) {
+    for (let c = 0; c < board.cols - 1; c++) {
+      holes.push({
+        x: c * hStep + hStep / 2,
+        y: r * vStep + vStep / 2,
+        type: 'diag', row: r, col: c
+      });
+    }
+  }
+}
+
+// ============================================================
+// OVERLAP CALCULATION (1/4 rule)
+// ============================================================
+function cellOverlapsHole(cellX, cellY, holeX, holeY) {
+  const cellSize = board.diameter;
+  const holeRadius = board.diameter / 2;
+  const maxDist = holeRadius + cellSize * Math.SQRT2 / 2;
+  const dx = cellX - holeX;
+  const dy = cellY - holeY;
+  if (dx * dx + dy * dy > maxDist * maxDist) return false;
+
+  const samples = 20;
+  const step = cellSize / samples;
+  const startX = cellX - cellSize / 2 + step / 2;
+  const startY = cellY - cellSize / 2 + step / 2;
+  let count = 0;
+  const r2 = holeRadius * holeRadius;
+
+  for (let i = 0; i < samples; i++) {
+    const px = startX + i * step;
+    for (let j = 0; j < samples; j++) {
+      const py = startY + j * step;
+      const ddx = px - holeX;
+      const ddy = py - holeY;
+      if (ddx * ddx + ddy * ddy <= r2) count++;
+    }
+  }
+
+  return count / (samples * samples) >= Math.PI / 16;
+}
+
+// ============================================================
+// PIG COMPUTATIONS
+// ============================================================
+function getPigCells(tailIndex, length, angle) {
+  if (tailIndex < 0 || tailIndex >= holes.length) return [];
+  const tail = holes[tailIndex];
+  const cells = [];
+  const rad = angle * Math.PI / 180;
+  const dirX = Math.cos(rad);
+  const dirY = -Math.sin(rad);
+
+  for (let i = 0; i < length; i++) {
+    cells.push({
+      x: tail.x + i * board.diameter * dirX,
+      y: tail.y + i * board.diameter * dirY
+    });
+  }
+  return cells;
+}
+
+function getPigOccupiedHoles(tailIndex, length, angle) {
+  const cells = getPigCells(tailIndex, length, angle);
+  if (cells.length === 0) return { occupied: [], headIndex: -1 };
+  const occupied = [];
+  const headCell = cells[cells.length - 1];
+  let headHoleIndex = -1;
+
+  for (let hi = 0; hi < holes.length; hi++) {
+    for (const cell of cells) {
+      if (cellOverlapsHole(cell.x, cell.y, holes[hi].x, holes[hi].y)) {
+        occupied.push(hi);
+        if (cell === headCell) headHoleIndex = hi;
+        break;
+      }
+    }
+  }
+  return { occupied, headHoleIndex };
+}
+
+function isPlacementValid(tailIndex, length, angle, excludePigId) {
+  const { occupied, headHoleIndex } = getPigOccupiedHoles(tailIndex, length, angle);
+  if (headHoleIndex < 0) return { valid: false, reason: '头部未占孔' };
+  for (const hi of occupied) {
+    if (holeOccupiedBy[hi] >= 0 && holeOccupiedBy[hi] !== excludePigId) {
+      return { valid: false, reason: '孔已被占用' };
+    }
+  }
+  return { valid: true, occupied };
+}
+
+function rebuildOccupancy() {
+  holeOccupiedBy = new Array(holes.length).fill(-1);
+  pigInstances = [];
+
+  for (const pig of pigs) {
+    const cells = getPigCells(pig.tailIndex, pig.length, pig.angle);
+    const { occupied } = getPigOccupiedHoles(pig.tailIndex, pig.length, pig.angle);
+
+    for (const hi of occupied) {
+      holeOccupiedBy[hi] = pig.id;
+    }
+
+    pigInstances.push({
+      id: pig.id,
+      tailIndex: pig.tailIndex,
+      length: pig.length,
+      angle: pig.angle,
+      cells,
+      occupiedHoles: occupied
+    });
+  }
+}
+
+// ============================================================
+// FIND ELEMENTS AT POINT
+// ============================================================
+function getHoleAtPoint(canvasX, canvasY, margin) {
+  const offset = getBoardOffset();
+  const r = board.diameter / 2 + (margin || 0);
+  for (let i = 0; i < holes.length; i++) {
+    const hx = offset.x + holes[i].x;
+    const hy = offset.y + holes[i].y;
+    const dx = canvasX - hx;
+    const dy = canvasY - hy;
+    if (dx * dx + dy * dy <= r * r) return i;
+  }
+  return -1;
+}
+
+function getPigAtPoint(canvasX, canvasY) {
+  const offset = getBoardOffset();
+  for (const inst of pigInstances) {
+    for (const cell of inst.cells) {
+      const cx = offset.x + cell.x;
+      const cy = offset.y + cell.y;
+      const half = board.diameter / 2;
+      if (canvasX >= cx - half && canvasX <= cx + half &&
+          canvasY >= cy - half && canvasY <= cy + half) {
+        return inst.id;
+      }
+    }
+  }
+  return -1;
+}
+
+function getHeadAtPoint(canvasX, canvasY) {
+  const offset = getBoardOffset();
+  for (const inst of pigInstances) {
+    const headCell = inst.cells[inst.cells.length - 1];
+    const cx = offset.x + headCell.x;
+    const cy = offset.y + headCell.y;
+    const half = board.diameter / 2 + 3;
+    if (canvasX >= cx - half && canvasX <= cx + half &&
+        canvasY >= cy - half && canvasY <= cy + half) {
+      return inst.id;
+    }
+  }
+  return -1;
+}
+
+// ============================================================
+// CANVAS RENDERING
+// ============================================================
+function render() {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, phoneW, phoneH);
+
+  const offset = getBoardOffset();
+  const r = board.diameter / 2;
+
+  ctx.save();
+  ctx.translate(offset.x, offset.y);
+
+  // Draw holes
+  for (let i = 0; i < holes.length; i++) {
+    const h = holes[i];
+    const occ = holeOccupiedBy[i];
+
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, r, 0, Math.PI * 2);
+
+    if (occ >= 0) {
+      ctx.fillStyle = '#FFB6C1';
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+    ctx.fill();
+  }
+
+  // Draw pigs
+  const animOffsets = {};
+  for (const a of animations) {
+    animOffsets[a.pigId] = { dx: a.currentDx, dy: a.currentDy };
+  }
+
+  for (const inst of pigInstances) {
+    const off = animOffsets[inst.id] || { dx: 0, dy: 0 };
+    const rad = inst.angle * Math.PI / 180;
+    const dirX = Math.cos(rad);
+    const dirY = -Math.sin(rad);
+    const tail = holes[inst.tailIndex];
+    const totalLen = inst.length * board.diameter;
+    const centerX = tail.x + (inst.length - 1) / 2 * board.diameter * dirX + off.dx;
+    const centerY = tail.y + (inst.length - 1) / 2 * board.diameter * dirY + off.dy;
+
+    // Check flash state
+    let flashAlpha = 1;
+    if (flashingPigs[inst.id]) {
+      const elapsed = performance.now() - flashingPigs[inst.id];
+      const FLASH_DURATION = 500;
+      if (elapsed > FLASH_DURATION) {
+        delete flashingPigs[inst.id];
+      } else {
+        // Oscillate: 2 quick blinks
+        const t = elapsed / FLASH_DURATION;
+        flashAlpha = 0.25 + 0.75 * Math.abs(Math.sin(t * Math.PI * 4));
+      }
+    }
+
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(-rad);
+
+    ctx.globalAlpha = 0.35 * flashAlpha;
+    ctx.fillStyle = '#FFD700';
+    roundRect(ctx, -totalLen / 2, -board.diameter / 2, totalLen, board.diameter, 6);
+    ctx.fill();
+    ctx.globalAlpha = flashAlpha;
+
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Eye on head side
+    ctx.globalAlpha = flashAlpha;
+    const eyeX = totalLen / 2 - board.diameter * 0.35;
+    const eyeY = -board.diameter * 0.15;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(eyeX, eyeY, board.diameter * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(eyeX + 1, eyeY, board.diameter * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Draw selected pig highlight
+  if (selectedPigId >= 0 && !dragState) {
+    const inst = pigInstances.find(p => p.id === selectedPigId);
+    if (inst) {
+      const rad = inst.angle * Math.PI / 180;
+      const dirX = Math.cos(rad);
+      const dirY = -Math.sin(rad);
+      const tail = holes[inst.tailIndex];
+      const totalLen = inst.length * board.diameter;
+      const centerX = tail.x + (inst.length - 1) / 2 * board.diameter * dirX;
+      const centerY = tail.y + (inst.length - 1) / 2 * board.diameter * dirY;
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(-rad);
+
+      ctx.strokeStyle = '#2196F3';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 2]);
+      ctx.strokeRect(-totalLen / 2 - 2, -board.diameter / 2 - 2, totalLen + 4, board.diameter + 4);
+      ctx.setLineDash([]);
+
+      ctx.restore();
+    }
+  }
+
+  // Draw drag preview
+  if (dragState && dragState.tailIndex >= 0) {
+    const tail = holes[dragState.tailIndex];
+    const dx = dragState.mouseX - offset.x - tail.x;
+    const dy = dragState.mouseY - offset.y - tail.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const len = Math.max(2, Math.min(20, Math.floor(dist / board.diameter) + 1));
+    let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+    if (angle < 0) angle += 360;
+
+    const rad = angle * Math.PI / 180;
+    const dirX = Math.cos(rad);
+    const dirY = -Math.sin(rad);
+
+    // Check conflicts
+    let conflicts = false;
+    const excludeId = dragState.repositionPigId;
+    for (let i = 0; i < len; i++) {
+      const cx = tail.x + i * board.diameter * dirX;
+      const cy = tail.y + i * board.diameter * dirY;
+      for (let hi = 0; hi < holes.length; hi++) {
+        if (holeOccupiedBy[hi] >= 0 && holeOccupiedBy[hi] !== excludeId && cellOverlapsHole(cx, cy, holes[hi].x, holes[hi].y)) {
+          conflicts = true;
+          break;
+        }
+      }
+      if (conflicts) break;
+    }
+
+    const totalLen = len * board.diameter;
+    const centerX = tail.x + (len - 1) / 2 * board.diameter * dirX;
+    const centerY = tail.y + (len - 1) / 2 * board.diameter * dirY;
+
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(-rad);
+
+    ctx.fillStyle = conflicts ? 'rgba(244,67,54,0.35)' : 'rgba(255,215,0,0.35)';
+    roundRect(ctx, -totalLen / 2, -board.diameter / 2, totalLen, board.diameter, 6);
+    ctx.fill();
+
+    ctx.strokeStyle = conflicts ? '#f44336' : '#FFD700';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.restore();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${len}格 ${Math.round(angle)}°`, tail.x, tail.y - r - 8);
+  }
+
+  ctx.restore();
+
+  // Board bounds warning
+  const size = getBoardSize();
+  if (size.width > phoneW - 20 || size.height > phoneH - 20) {
+    ctx.strokeStyle = '#f44336';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.strokeRect(offset.x, offset.y, size.width, size.height);
+    ctx.setLineDash([]);
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+// ============================================================
+// CANVAS MOUSE EVENTS
+// ============================================================
+function getCanvasPos(e) {
+  const canvas = document.getElementById('gameCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = phoneW / rect.width;
+  const scaleY = phoneH / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+function onCanvasMouseDown(e) {
+  const pos = getCanvasPos(e);
+  if (mode === 'edit') handleEditMouseDown(pos);
+  else handlePreviewMouseDown(pos);
+}
+
+function onCanvasMouseMove(e) {
+  const pos = getCanvasPos(e);
+  if (mode === 'edit' && dragState) {
+    dragState.mouseX = pos.x;
+    dragState.mouseY = pos.y;
+    render();
+  }
+}
+
+function onCanvasMouseUp(e) {
+  if (mode === 'edit' && dragState) {
+    handleEditMouseUp(getCanvasPos(e));
+  }
+}
+
+function handleEditMouseDown(pos) {
+  const holeIdx = getHoleAtPoint(pos.x, pos.y, 4);
+
+  if (holeIdx >= 0 && holeOccupiedBy[holeIdx] < 0) {
+    // Empty hole - start placing new pig
+    dragState = { tailIndex: holeIdx, mouseX: pos.x, mouseY: pos.y, repositionPigId: null };
+    selectedPigId = null;
+    updatePigEditor();
+    render();
+  } else if (holeIdx >= 0 && holeOccupiedBy[holeIdx] >= 0) {
+    // Occupied hole - check if clicking on head first
+    const pigId = holeOccupiedBy[holeIdx];
+    const headPigId = getHeadAtPoint(pos.x, pos.y);
+    if (headPigId === pigId) {
+      // Clicking on head of occupying pig - start reposition
+      const pig = pigs.find(p => p.id === pigId);
+      selectedPigId = pigId;
+      dragState = { tailIndex: pig.tailIndex, mouseX: pos.x, mouseY: pos.y, repositionPigId: pigId };
+      updatePigEditor();
+      render();
+      return;
+    }
+    // Just select the pig
+    selectedPigId = pigId;
+    dragState = null;
+    updatePigEditor();
+    render();
+  } else {
+    // Check if clicking on a pig head to reposition
+    const headPigId = getHeadAtPoint(pos.x, pos.y);
+    if (headPigId >= 0) {
+      const pig = pigs.find(p => p.id === headPigId);
+      selectedPigId = headPigId;
+      dragState = { tailIndex: pig.tailIndex, mouseX: pos.x, mouseY: pos.y, repositionPigId: headPigId };
+      updatePigEditor();
+      render();
+      return;
+    }
+
+    // Check if clicking on a pig body
+    const pigId = getPigAtPoint(pos.x, pos.y);
+    if (pigId >= 0) {
+      selectedPigId = pigId;
+      dragState = null;
+      updatePigEditor();
+      render();
+    } else {
+      selectedPigId = null;
+      dragState = null;
+      updatePigEditor();
+      render();
+    }
+  }
+}
+
+function handleEditMouseUp(pos) {
+  if (!dragState) return;
+
+  const tail = holes[dragState.tailIndex];
+  const offset = getBoardOffset();
+  const dx = pos.x - offset.x - tail.x;
+  const dy = pos.y - offset.y - tail.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const len = Math.max(2, Math.min(20, Math.floor(dist / board.diameter) + 1));
+  let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+  if (angle < 0) angle += 360;
+
+  if (dragState.repositionPigId !== null) {
+    // Repositioning existing pig
+    const pig = pigs.find(p => p.id === dragState.repositionPigId);
+    if (!pig) { dragState = null; render(); return; }
+
+    const result = isPlacementValid(dragState.tailIndex, len, angle, pig.id);
+    if (result.valid) {
+      pig.length = len;
+      pig.angle = Math.round(angle);
+      rebuildOccupancy();
+      updatePigList();
+      updatePigEditor();
+      markCurrentDirty();
+      showToast(`小猪 #${pig.id} 已调整 (${len}格, ${Math.round(angle)}°)`);
+    } else {
+      showToast('调整失败: ' + result.reason);
+    }
+  } else {
+    // New placement
+    const result = isPlacementValid(dragState.tailIndex, len, angle, -1);
+    if (result.valid) {
+      const pig = { id: nextPigId++, tailIndex: dragState.tailIndex, length: len, angle: Math.round(angle) };
+      pigs.push(pig);
+      rebuildOccupancy();
+      selectedPigId = pig.id;
+      updatePigEditor();
+      updatePigList();
+      markCurrentDirty();
+      showToast(`小猪 #${pig.id} 已放置 (${len}格, ${Math.round(angle)}°)`);
+    } else {
+      showToast('放置失败: ' + result.reason);
+    }
+  }
+
+  dragState = null;
+  render();
+}
+
+function handlePreviewMouseDown(pos) {
+  const pigId = getPigAtPoint(pos.x, pos.y);
+  if (pigId >= 0) {
+    tryPushPig(pigId);
+  }
+}
+
+// ============================================================
+// PUSH MECHANIC (preview mode)
+// ============================================================
+function canPushPig(pigId) {
+  const inst = pigInstances.find(p => p.id === pigId);
+  if (!inst) return { canPush: false, reason: '猪不存在' };
+
+  const rad = inst.angle * Math.PI / 180;
+  const dirX = Math.cos(rad);
+  const dirY = -Math.sin(rad);
+  const stepSize = board.diameter;
+
+  // Try up to a large number of steps (off-screen)
+  const maxSteps = Math.ceil(Math.max(phoneW, phoneH) / stepSize) + inst.length;
+  for (let step = 1; step <= maxSteps; step++) {
+    for (const cell of inst.cells) {
+      const nx = cell.x + step * stepSize * dirX;
+      const ny = cell.y + step * stepSize * dirY;
+      for (let hi = 0; hi < holes.length; hi++) {
+        if (holeOccupiedBy[hi] >= 0 && holeOccupiedBy[hi] !== pigId) {
+          if (cellOverlapsHole(nx, ny, holes[hi].x, holes[hi].y)) {
+            return { canPush: false, reason: `推进中会碰到猪 #${holeOccupiedBy[hi]}`, collidedPigId: holeOccupiedBy[hi] };
+          }
+        }
+      }
+    }
+  }
+
+  const totalDist = maxSteps * stepSize;
+  return { canPush: true, dirX, dirY, totalDist };
+}
+
+function tryPushPig(pigId) {
+  const result = canPushPig(pigId);
+  if (!result.canPush) {
+    // Flash the collided pig
+    if (result.collidedPigId !== undefined) {
+      flashingPigs[result.collidedPigId] = performance.now();
+      showToast(`碰到了猪 #${result.collidedPigId}!`);
+    } else {
+      showToast(result.reason);
+    }
+    render();
+    return;
+  }
+
+  showToast(`猪 #${pigId} 被推出!`);
+
+  // Start animation
+  const anim = {
+    pigId,
+    dirX: result.dirX,
+    dirY: result.dirY,
+    totalDist: result.totalDist,
+    currentDx: 0,
+    currentDy: 0,
+    startTime: performance.now(),
+    duration: 600
+  };
+  animations.push(anim);
+
+  // Remove pig after animation
+  setTimeout(() => {
+    pigs = pigs.filter(p => p.id !== pigId);
+    rebuildOccupancy();
+    updatePigList();
+    animations = animations.filter(a => a.pigId !== pigId);
+    render();
+  }, anim.duration + 50);
+}
+
+function updateAnimations() {
+  const now = performance.now();
+  for (const anim of animations) {
+    const elapsed = now - anim.startTime;
+    const progress = Math.min(1, elapsed / anim.duration);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease out
+    anim.currentDx = anim.dirX * anim.totalDist * eased;
+    anim.currentDy = anim.dirY * anim.totalDist * eased;
+  }
+}
+
+// ============================================================
+// PIG EDITOR (right panel)
+// ============================================================
+function updatePigEditor() {
+  const editor = document.getElementById('pigEditor');
+  const info = document.getElementById('pigEditorInfo');
+  if (selectedPigId >= 0) {
+    const pig = pigs.find(p => p.id === selectedPigId);
+    if (pig) {
+      const inst = pigInstances.find(i => i.id === pig.id);
+      const holeCount = inst ? inst.occupiedHoles.length : 0;
+      editor.style.display = 'block';
+      info.innerHTML = `编号: #${pig.id}<br>长度: ${pig.length} 格<br>角度: ${Math.round(pig.angle)}°<br>占用: ${holeCount} 个孔<br>尾部孔: #${pig.tailIndex}`;
+      return;
+    }
+  }
+  editor.style.display = 'none';
+}
+
+function deleteSelectedPig() {
+  if (selectedPigId < 0) return;
+  pigs = pigs.filter(p => p.id !== selectedPigId);
+  selectedPigId = null;
+  rebuildOccupancy();
+  updatePigEditor();
+  updatePigList();
+  markCurrentDirty();
+  render();
+}
+
+function updatePigList() {
+  const container = document.getElementById('pigList');
+  if (pigs.length === 0) {
+    container.innerHTML = '<div style="font-size:12px;color:#999;">还没有放置小猪</div>';
+    return;
+  }
+
+  container.innerHTML = pigs.map(p => {
+    const inst = pigInstances.find(i => i.id === p.id);
+    const holeCount = inst ? inst.occupiedHoles.length : 0;
+    const sel = p.id === selectedPigId ? ' selected' : '';
+    return `<div class="pig-item${sel}" onclick="selectPig(${p.id})">
+      <span class="swatch" style="background:#FFD700"></span>
+      <span class="info">猪 #${p.id} <span class="len">${p.length}格 ${Math.round(p.angle)}° ${holeCount}孔</span></span>
+    </div>`;
+  }).join('');
+}
+
+function selectPig(id) {
+  selectedPigId = id;
+  dragState = null;
+  updatePigEditor();
+  updatePigList();
+  render();
+}
+
+// ============================================================
+// MODE TOGGLE
+// ============================================================
+function toggleMode() {
+  if (mode === 'edit') {
+    mode = 'preview';
+    backupPigs = JSON.parse(JSON.stringify(pigs));
+    document.getElementById('btnMode').textContent = '返回编辑';
+    document.getElementById('btnMode').classList.remove('accent');
+    document.getElementById('btnMode').classList.add('danger');
+    document.getElementById('modeLabel').textContent = '预览模式';
+    document.getElementById('modeLabel').className = 'mode-label preview';
+    document.getElementById('canvasHint').textContent = '点击小猪推动消除';
+    selectedPigId = null;
+    dragState = null;
+    updatePigEditor();
+    document.getElementById('gameCanvas').style.cursor = 'pointer';
+  } else {
+    mode = 'edit';
+    pigs = backupPigs || [];
+    backupPigs = null;
+    animations = [];
+    flashingPigs = {};
+    rebuildOccupancy();
+    updatePigList();
+    document.getElementById('btnMode').textContent = '关卡试玩';
+    document.getElementById('btnMode').classList.remove('danger');
+    document.getElementById('btnMode').classList.add('accent');
+    document.getElementById('modeLabel').textContent = '编辑模式';
+    document.getElementById('modeLabel').className = 'mode-label edit';
+    document.getElementById('canvasHint').textContent = '点击空圆洞放置小猪 | 拖拽头部可调整';
+    document.getElementById('gameCanvas').style.cursor = 'crosshair';
+  }
+  render();
+}
+
+// ============================================================
+// BOARD PARAMS UPDATE
+// ============================================================
+function updateBoardParams() {
+  board.diameter = parseInt(document.getElementById('diameter').value) || 30;
+  board.cols = parseInt(document.getElementById('cols').value) || 6;
+  board.rows = parseInt(document.getElementById('rows').value) || 12;
+  board.hSpacing = parseInt(document.getElementById('hSpacing').value) || 40;
+  board.vSpacing = parseInt(document.getElementById('vSpacing').value) || 20;
+
+  computeHoles();
+  rebuildOccupancy();
+
+  const info = document.getElementById('boardInfo');
+  const size = getBoardSize();
+  const total = getTotalHoles();
+  const hC2C = board.diameter + board.hSpacing;
+  const vC2C = board.diameter + board.vSpacing;
+  info.innerHTML = `总孔数: ${total}<br>棋盘: ${size.width}×${size.height}px<br>孔心距: ${hC2C}×${vC2C}px<br>${size.width > phoneW - 20 || size.height > phoneH - 20 ? '<span style="color:#f44336;">⚠ 超出屏幕</span>' : '✓ 适配屏幕'}`;
+
+  updatePigList();
+  render();
+  markCurrentDirty();
+}
+
+function updatePhoneSize() {
+  const sel = document.getElementById('phoneSize').value;
+  const sz = PHONE_SIZES[sel];
+  phoneW = sz.w;
+  phoneH = sz.h;
+  resizeCanvas();
+  updateBoardParams();
+}
+
+function resizeCanvas() {
+  const canvas = document.getElementById('gameCanvas');
+  canvas.width = phoneW;
+  canvas.height = phoneH;
+  const frame = document.getElementById('phoneFrame');
+  const panelWidth = 220 + 220 + 48;
+  const maxW = Math.min(phoneW, window.innerWidth - panelWidth);
+  const maxH = window.innerHeight - 120;
+  const scale = Math.max(0.4, Math.min(maxW / phoneW, maxH / phoneH));
+  canvas.style.width = (phoneW * scale) + 'px';
+  canvas.style.height = (phoneH * scale) + 'px';
+  frame.style.width = (phoneW * scale) + 'px';
+  frame.style.height = (phoneH * scale) + 'px';
+}
+
+// ============================================================
+// FILE SYSTEM ACCESS API HELPERS
+// ============================================================
+const IDB_NAME = 'pigEditorFS';
+const IDB_VERSION = 1;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => { req.result.createObjectStore('handles'); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function persistPublishHandle(handle) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'publishDir');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function restorePublishHandle() {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('handles', 'readonly');
+      const req = tx.objectStore('handles').get('publishDir');
+      req.onsuccess = async () => {
+        const handle = req.result;
+        if (handle) {
+          const opts = { mode: 'readwrite' };
+          const ok = await handle.queryPermission(opts) === 'granted';
+          resolve(ok ? handle : null);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+async function writeFileToHandle(fileHandle, content) {
+  const writable = await fileHandle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
+// Fetch-based reading from the levels/ directory
+async function fetchJSON(relativePath) {
+  const resp = await fetch(relativePath);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  return await resp.json();
+}
+
+async function scanDefaultLevels() {
+  const found = [];
+  let consecutiveFails = 0;
+  for (let n = 1; n <= 9999 && consecutiveFails < 10; n++) {
+    const fileName = 'level_' + pad4(n) + '.json';
+    const path = LEVELS_DIR + '/' + fileName;
+    try {
+      const data = await fetchJSON(path);
+      if (data && data.board && Array.isArray(data.pigs)) {
+        found.push({ name: 'level_' + pad4(n), fileName, data, fileHandle: null, isDirty: false });
+        consecutiveFails = 0;
+      }
+    } catch (e) {
+      consecutiveFails++;
+    }
+  }
+  return found;
+}
+
+async function getNextLevelNumber() {
+  let maxNum = 0;
+  for (const lv of levelList) {
+    const m = lv.name.match(/^level_(\d{4})$/);
+    if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+  }
+  return maxNum + 1;
+}
+
+function pad4(n) { return String(n).padStart(4, '0'); }
+
+// ============================================================
+// OPEN LEVELS DIRECTORY
+// ============================================================
+function openLevelsDir() {
+  const dirUrl = new URL(LEVELS_DIR + '/', window.location.href);
+  window.open(dirUrl.href, '_blank');
+}
+
+// ============================================================
+// LEVEL DATA HELPERS
+// ============================================================
+function getLevelData() {
+  return {
+    board: { diameter: board.diameter, cols: board.cols, rows: board.rows, hSpacing: board.hSpacing, vSpacing: board.vSpacing },
+    pigs: pigs.map(p => ({ id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle }))
+  };
+}
+
+function loadLevelData(data) {
+  if (data.board) {
+    board.diameter = data.board.diameter || 30;
+    board.cols = data.board.cols || 6;
+    board.rows = data.board.rows || 12;
+    board.hSpacing = data.board.hSpacing || 40;
+    board.vSpacing = data.board.vSpacing || 20;
+    document.getElementById('diameter').value = board.diameter;
+    document.getElementById('cols').value = board.cols;
+    document.getElementById('rows').value = board.rows;
+    document.getElementById('hSpacing').value = board.hSpacing;
+    document.getElementById('vSpacing').value = board.vSpacing;
+  }
+  pigs = (data.pigs || []).map(p => ({ id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle }));
+  nextPigId = pigs.length > 0 ? Math.max(...pigs.map(p => p.id)) + 1 : 0;
+  selectedPigId = null;
+  dragState = null;
+  flashingPigs = {};
+
+  computeHoles();
+  rebuildOccupancy();
+  updatePigEditor();
+  updatePigList();
+  updateBoardParams();
+  render();
+}
+
+function saveCurrentToEntry() {
+  if (currentLevelIdx >= 0 && currentLevelIdx < levelList.length) {
+    levelList[currentLevelIdx].data = getLevelData();
+    levelList[currentLevelIdx].isDirty = true;
+  }
+}
+
+function markCurrentDirty() {
+  if (currentLevelIdx >= 0 && currentLevelIdx < levelList.length) {
+    levelList[currentLevelIdx].isDirty = true;
+    updateLevelListUI();
+  }
+}
+
+// Auto-save when switching/leaving a level (sync data in memory)
+async function autoSaveCurrent() {
+  if (currentLevelIdx < 0 || currentLevelIdx >= levelList.length) return;
+  const entry = levelList[currentLevelIdx];
+  entry.data = getLevelData();
+  entry.isDirty = false;
+  updateLevelListUI();
+}
+
+// ============================================================
+// LEVEL LIST UI
+// ============================================================
+function updateLevelListUI() {
+  const container = document.getElementById('levelListContainer');
+  if (levelList.length === 0) {
+    container.innerHTML = '<div style="font-size:11px;color:#999;padding:4px 8px;">暂无关卡</div>';
+    return;
+  }
+  container.innerHTML = levelList.map((lv, i) => {
+    const active = i === currentLevelIdx ? ' active' : '';
+    const dirty = lv.isDirty ? ' <span class="lv-dirty">*</span>' : '';
+    const pigCount = (lv.data && lv.data.pigs) ? lv.data.pigs.length : 0;
+    const fileInfo = lv.fileName ? lv.fileName : '未保存';
+    return `<div class="level-item${active}" onclick="switchToLevel(${i})" title="${lv.name} — ${fileInfo}">
+      <span class="lv-name">${lv.name}${dirty}</span>
+      <span class="lv-info">${pigCount}猪</span>
+      <button class="lv-save" onclick="event.stopPropagation();saveLevel()" title="保存当前关卡">保存</button>
+    </div>`;
+  }).join('');
+}
+
+async function switchToLevel(idx) {
+  if (idx === currentLevelIdx) return;
+  if (idx < 0 || idx >= levelList.length) return;
+  await autoSaveCurrent();
+  currentLevelIdx = idx;
+  const entry = levelList[idx];
+  loadLevelData(entry.data);
+  updateLevelListUI();
+}
+
+async function addLevelToList(name, fileName, data, fileHandle) {
+  await autoSaveCurrent();
+  const entry = { name, fileName: fileName || null, data: data || getDefaultLevelData(), fileHandle: fileHandle || null, isDirty: false };
+  levelList.push(entry);
+  currentLevelIdx = levelList.length - 1;
+  loadLevelData(entry.data);
+  updateLevelListUI();
+  return entry;
+}
+
+function getDefaultLevelData() {
+  return {
+    board: { diameter: 30, cols: 6, rows: 12, hSpacing: 40, vSpacing: 20 },
+    pigs: []
+  };
+}
+
+// ============================================================
+// NEW LEVEL
+// ============================================================
+async function newLevel() {
+  await autoSaveCurrent();
+  // Find next level number from existing list
+  let maxNum = 0;
+  for (const lv of levelList) {
+    const m = lv.name.match(/^level_(\d{4})$/);
+    if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+  }
+  const autoName = 'level_' + pad4(maxNum + 1);
+  addLevelToList(autoName, null, getDefaultLevelData(), null);
+  showToast('已创建: ' + autoName);
+}
+
+// ============================================================
+// SAVE LEVEL (download JSON file)
+// ============================================================
+async function saveLevel() {
+  if (currentLevelIdx < 0) { showToast('没有可保存的关卡'); return; }
+  const entry = levelList[currentLevelIdx];
+
+  // Sync current state into entry
+  entry.data = getLevelData();
+  entry.isDirty = false;
+
+  let fileName = entry.fileName;
+  if (!fileName) {
+    // Generate new file name
+    const num = await getNextLevelNumber();
+    fileName = 'level_' + pad4(num) + '.json';
+    entry.fileName = fileName;
+    entry.name = 'level_' + pad4(num);
+  }
+
+  downloadJSON(entry.data, fileName);
+  updateLevelListUI();
+  showToast('已下载: ' + fileName + ' (请放入 levels 目录后刷新)');
+}
+
+// ============================================================
+// LOAD LEVEL (from file picker)
+// ============================================================
+async function refreshLevelList() {
+  await autoSaveCurrent();
+  const oldLen = levelList.length;
+  levelList = [];
+  currentLevelIdx = -1;
+
+  // Re-scan levels/ directory via fetch
+  try {
+    const defaultLevels = await scanDefaultLevels();
+    levelList = defaultLevels;
+    if (levelList.length > 0) {
+      currentLevelIdx = 0;
+      loadLevelData(levelList[0].data);
+    }
+  } catch (e) {
+    console.log('Refresh scan error:', e);
+  }
+
+  if (levelList.length === 0) {
+    addLevelToList('level_0001', null, getDefaultLevelData(), null);
+  }
+  updateLevelListUI();
+  showToast('关卡列表已刷新（' + levelList.length + ' 个关卡）');
+}
+
+function downloadJSON(data, fileName) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
+// ============================================================
+// PUBLISH LEVEL to game directory
+// ============================================================
+async function publishLevel(idx) {
+  if (idx < 0 || idx >= levelList.length) return;
+  const entry = levelList[idx];
+
+  // Ensure data is current if this is the active level
+  if (idx === currentLevelIdx) {
+    entry.data = getLevelData();
+  }
+
+  // Validate: level must contain pigs
+  const pigCount = (entry.data && entry.data.pigs) ? entry.data.pigs.length : 0;
+  if (pigCount === 0) {
+    showToast('发布失败：关卡内没有小猪');
+    return;
+  }
+
+  // Get or request publish directory handle
+  if (!publishDirHandle) {
+    try {
+      const pickerOpts = { id: 'pig-editor-publish', mode: 'readwrite' };
+      const handle = await window.showDirectoryPicker(pickerOpts);
+      publishDirHandle = handle;
+      await persistPublishHandle(handle);
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      showToast('选择目录失败: ' + e.message);
+      return;
+    }
+  }
+
+  // Determine file name: use existing fileName or generate from name
+  let fileName;
+  if (entry.fileName) {
+    fileName = entry.fileName;
+  } else {
+    // Generate from level name (sanitize)
+    fileName = entry.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_') + '.json';
+  }
+
+  try {
+    const json = JSON.stringify(entry.data, null, 2);
+    const fileHandle = await publishDirHandle.getFileHandle(fileName, { create: true });
+    await writeFileToHandle(fileHandle, json);
+    showToast('已发布: ' + fileName + ' → 游戏关卡目录');
+  } catch (e) {
+    showToast('发布失败: ' + e.message);
+    console.error(e);
+  }
+}
+
+// ============================================================
+// KEYBOARD SHORTCUTS
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (mode !== 'edit') return;
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedPigId >= 0 && document.activeElement === document.body) {
+      deleteSelectedPig();
+      e.preventDefault();
+    }
+  }
+  if (e.key === 'Escape') {
+    selectedPigId = null;
+    dragState = null;
+    updatePigEditor();
+    updatePigList();
+    render();
+  }
+});
+
+// ============================================================
+// DRAG & DROP JSON IMPORT
+// ============================================================
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.board || !Array.isArray(data.pigs)) { showToast('无效的关卡文件格式'); return; }
+      const fileName = file.name;
+      const levelName = fileName.replace(/\.json$/i, '');
+      // Check duplicates
+      if (levelList.some(l => l.fileName === fileName)) {
+        showToast('关卡文件已存在: ' + fileName);
+        return;
+      }
+      if (levelList.some(l => l.name === levelName)) {
+        if (!confirm(`关卡 "${levelName}" 已在列表中（来自不同文件）。\n是否替换？`)) return;
+        const idx = levelList.findIndex(l => l.name === levelName);
+        levelList[idx].data = data;
+        levelList[idx].fileName = fileName;
+        levelList[idx].isDirty = false;
+        switchToLevel(idx);
+        showToast('已替换: ' + fileName);
+        return;
+      }
+      addLevelToList(levelName, fileName, data, null);
+      showToast('已导入: ' + fileName);
+    } catch (err) {
+      showToast('JSON 解析失败');
+    }
+  };
+  reader.readAsText(file);
+});
+
+// ============================================================
+// TOAST
+// ============================================================
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  const canvas = document.getElementById('gameCanvas');
+  canvas.addEventListener('mousedown', onCanvasMouseDown);
+  canvas.addEventListener('mousemove', onCanvasMouseMove);
+  canvas.addEventListener('mouseup', onCanvasMouseUp);
+  canvas.addEventListener('mouseleave', () => {
+    if (dragState) { dragState = null; render(); }
+  });
+
+  resizeCanvas();
+  computeHoles();
+  rebuildOccupancy();
+  updatePigList();
+  updateLevelListUI();
+  render();
+
+  // Set storage path label
+  document.getElementById('storagePathLabel').textContent = ' [levels/]';
+
+  // Auto-scan levels directory via fetch on startup
+  try {
+    const defaultLevels = await scanDefaultLevels();
+    if (defaultLevels.length > 0) {
+      levelList = defaultLevels;
+      currentLevelIdx = 0;
+      loadLevelData(levelList[0].data);
+      updateLevelListUI();
+    }
+  } catch (e) {
+    console.log('Level scan skipped:', e.message);
+  }
+
+  // Restore publish directory handle
+  publishDirHandle = await restorePublishHandle();
+
+  // If no levels at all, create a default one
+  if (levelList.length === 0) {
+    addLevelToList('level_0001', null, getDefaultLevelData(), null);
+  }
+
+  // Animation loop
+  function loop() {
+    if (animations.length > 0 || Object.keys(flashingPigs).length > 0) {
+      if (animations.length > 0) updateAnimations();
+      // Clean up expired flashes
+      const now = performance.now();
+      for (const [pid, start] of Object.entries(flashingPigs)) {
+        if (now - start > 500) delete flashingPigs[pid];
+      }
+      render();
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', resizeCanvas);
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "board": {
+    "diameter": 30,
+    "cols": 6,
+    "rows": 12,
+    "hSpacing": 40,
+    "vSpacing": 20
+  },
+  "pigs": [
+    {
+      "id": 0,
+      "tail": 26,
+      "length": 7,
+      "angle": 322
+    },
+    {
+      "id": 1,
+      "tail": 118,
+      "length": 7,
+      "angle": 35
+    }
+  ]
+}
