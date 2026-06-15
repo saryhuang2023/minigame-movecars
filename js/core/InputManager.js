@@ -8,16 +8,31 @@ class InputManager {
     this.listeners = {};
 
     wx.onTouchStart((e) => {
-      this.events.push({ type: 'touchstart', ...e });
+      this.events.push(this.normalizeEvent('touchstart', e));
     });
 
     wx.onTouchMove((e) => {
-      this.events.push({ type: 'touchmove', ...e });
+      this.events.push(this.normalizeEvent('touchmove', e));
     });
 
     wx.onTouchEnd((e) => {
-      this.events.push({ type: 'touchend', ...e });
+      this.events.push(this.normalizeEvent('touchend', e));
     });
+  }
+
+  /** 将微信触摸事件统一转为 x/y 坐标格式 */
+  normalizeEvent(type, e) {
+    const mapTouch = (t) => ({
+      identifier: t.identifier,
+      x: t.clientX,
+      y: t.clientY
+    });
+    return {
+      type,
+      touches: (e.touches || []).map(mapTouch),
+      changedTouches: (e.changedTouches || []).map(mapTouch),
+      timeStamp: e.timeStamp
+    };
   }
 
   /** 每帧调用，处理积压事件 */
