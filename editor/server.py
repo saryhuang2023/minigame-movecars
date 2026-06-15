@@ -49,4 +49,4 @@ class EditorHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     print(f'Editor server running at http://localhost:{PORT}')
-    http.server.HTTPServer(('127.0.0.1', PORT), EditorHandler).serve_forever()
+    http.server.HTTPServer(('0.0.0.0', PORT), EditorHandler).serve_forever()

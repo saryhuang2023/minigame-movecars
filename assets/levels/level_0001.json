@@ -1,0 +1,47 @@
+{
+  "board": {
+    "diameter": 30,
+    "cols": 6,
+    "rows": 12,
+    "hSpacing": 40,
+    "vSpacing": 20
+  },
+  "pigs": [
+    {
+      "id": 0,
+      "tail": 83,
+      "length": 5,
+      "angle": 324
+    },
+    {
+      "id": 1,
+      "tail": 99,
+      "length": 5,
+      "angle": 322
+    },
+    {
+      "id": 2,
+      "tail": 95,
+      "length": 4,
+      "angle": 37
+    },
+    {
+      "id": 3,
+      "tail": 24,
+      "length": 12,
+      "angle": 319
+    },
+    {
+      "id": 4,
+      "tail": 58,
+      "length": 7,
+      "angle": 214
+    },
+    {
+      "id": 5,
+      "tail": 1,
+      "length": 9,
+      "angle": 338
+    }
+  ]
+}

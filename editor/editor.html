@@ -16,6 +16,10 @@ body {
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;
   background: #fff; border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
 }
+.toolbar .version {
+  font-size: 11px; color: #aaa; font-family: monospace; margin-right: 8px;
+  border: 1px solid #ddd; border-radius: 4px; padding: 1px 6px; line-height: 1.6;
+}
 .toolbar .title { font-size: 16px; font-weight: 500; margin-right: 16px; }
 .toolbar button {
   padding: 6px 14px; border: 1px solid #ccc; border-radius: 6px;
@@ -133,6 +137,13 @@ body {
 }
 .level-item.active .lv-save { display: inline-block; }
 .level-item .lv-save:hover { background: #C8E6C9; }
+.level-item .lv-publish {
+  flex-shrink: 0; padding: 2px 6px; border: 1px solid #FF9800; border-radius: 3px;
+  background: #FFF3E0; color: #E65100; font-size: 9px; cursor: pointer; font-family: inherit;
+  display: none;
+}
+.level-item.active .lv-publish { display: inline-block; }
+.level-item .lv-publish:hover { background: #FFE0B2; }
 
 .toast {
   position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
@@ -148,6 +159,7 @@ canvas { cursor: crosshair; }
 <body>
 
 <div class="toolbar">
+  <span class="version" id="verDisplay">v2</span>
   <span class="title">小猪推推乐 - 关卡编辑器</span>
   <span class="sep"></span>
   <button id="btnMode" class="accent" onclick="toggleMode()">关卡试玩</button>
@@ -195,6 +207,7 @@ canvas { cursor: crosshair; }
     <div class="level-toolbar">
       <button onclick="newLevel()" title="新建空白关卡">新建</button>
       <button onclick="refreshLevelList()" title="重新扫描 levels 目录">刷新</button>
+      <button onclick="publishAllLevels()" title="将所有关卡发布到游戏目录" style="background:#FFF3E0;color:#E65100;border:1px solid #FF9800;">发布所有</button>
       <button onclick="openLevelsDir()" title="在资源管理器中打开 levels 目录">打开关卡目录</button>
     </div>
     <div class="level-section">
@@ -574,61 +587,6 @@ function render() {
     }
   }
 
-  // Draw drag preview
-  if (dragState && dragState.tailIndex >= 0) {
-    const tail = holes[dragState.tailIndex];
-    const dx = dragState.mouseX - offset.x - tail.x;
-    const dy = dragState.mouseY - offset.y - tail.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const len = Math.max(2, Math.min(20, Math.floor(dist / board.diameter) + 1));
-    let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
-    if (angle < 0) angle += 360;
-
-    const rad = angle * Math.PI / 180;
-    const dirX = Math.cos(rad);
-    const dirY = -Math.sin(rad);
-
-    // Check conflicts
-    let conflicts = false;
-    const excludeId = dragState.repositionPigId;
-    for (let i = 0; i < len; i++) {
-      const cx = tail.x + i * board.diameter * dirX;
-      const cy = tail.y + i * board.diameter * dirY;
-      for (let hi = 0; hi < holes.length; hi++) {
-        if (holeOccupiedBy[hi] >= 0 && holeOccupiedBy[hi] !== excludeId && cellOverlapsHole(cx, cy, holes[hi].x, holes[hi].y)) {
-          conflicts = true;
-          break;
-        }
-      }
-      if (conflicts) break;
-    }
-
-    const totalLen = len * board.diameter;
-    const centerX = tail.x + (len - 1) / 2 * board.diameter * dirX;
-    const centerY = tail.y + (len - 1) / 2 * board.diameter * dirY;
-
-    ctx.save();
-    ctx.translate(centerX, centerY);
-    ctx.rotate(-rad);
-
-    ctx.fillStyle = conflicts ? 'rgba(244,67,54,0.35)' : 'rgba(255,215,0,0.35)';
-    roundRect(ctx, -totalLen / 2, -board.diameter / 2, totalLen, board.diameter, 6);
-    ctx.fill();
-
-    ctx.strokeStyle = conflicts ? '#f44336' : '#FFD700';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 3]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.restore();
-
-    ctx.fillStyle = '#fff';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${len}格 ${Math.round(angle)}°`, tail.x, tail.y - r - 8);
-  }
-
   ctx.restore();
 
   // Board bounds warning
@@ -678,119 +636,167 @@ function onCanvasMouseDown(e) {
 
 function onCanvasMouseMove(e) {
   const pos = getCanvasPos(e);
-  if (mode === 'edit' && dragState) {
+  if (dragState) {
     dragState.mouseX = pos.x;
     dragState.mouseY = pos.y;
+    const cfg = findBestDragConfig(pos);
+    if (cfg) {
+      dragState.lastValid = cfg;
+      // Immediately apply valid config — pig snaps to position
+      applyDragConfig(cfg);
+    }
+    dragState.currentCfg = cfg; // may be null (conflict) — pig stays at lastValid
     render();
   }
 }
 
 function onCanvasMouseUp(e) {
-  if (mode === 'edit' && dragState) {
+  if (dragState && dragState.previewMode) {
+    handlePreviewMouseUp(getCanvasPos(e));
+  } else if (mode === 'edit' && dragState) {
     handleEditMouseUp(getCanvasPos(e));
   }
 }
 
-function handleEditMouseDown(pos) {
-  const holeIdx = getHoleAtPoint(pos.x, pos.y, 4);
+/**
+ * Find the best valid config for the current mouse position.
+ * Tail stays FIXED at dragState.tailIndex — only angle rotates.
+ * For reposition: length is also fixed.
+ * For new placement: length computed from tail→mouse distance.
+ * Returns { tailIndex, length, angle } or null if angle is invalid (conflict).
+ */
+function findBestDragConfig(pos) {
+  const offset = getBoardOffset();
+  const mx = pos.x - offset.x;
+  const my = pos.y - offset.y;
+  const excludeId = dragState.repositionPigId;
 
+  // Tail is FIXED — does not move during drag
+  const tailIndex = dragState.tailIndex;
+  const tail = holes[tailIndex];
+  if (!tail) return null;
+
+  // Angle: from fixed tail to mouse position
+  const dx = mx - tail.x;
+  const dy = my - tail.y;
+  let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+  if (angle < 0) angle += 360;
+  angle = Math.round(angle);
+
+  // Length: fixed for reposition, distance-based for new placement
+  let len;
+  if (excludeId !== null) {
+    const origPig = pigs.find(p => p.id === excludeId);
+    len = origPig ? origPig.length : 2;
+  } else {
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    len = Math.max(2, Math.min(20, Math.floor(dist / board.diameter) + 1));
+  }
+
+  const result = isPlacementValid(tailIndex, len, angle, excludeId !== null ? excludeId : -1);
+  if (result.valid) return { tailIndex, length: len, angle };
+  return null;
+}
+
+/**
+ * Apply a valid drag config immediately — the pig lands at this position in real time.
+ * For reposition: updates the existing pig's angle.
+ * For new placement: creates/updates a pending pig in the pigs array.
+ */
+function applyDragConfig(cfg) {
+  if (dragState.repositionPigId !== null) {
+    // Repositioning: update existing pig's angle in-place
+    const pig = pigs.find(p => p.id === dragState.repositionPigId);
+    if (pig) { pig.angle = cfg.angle; }
+  } else {
+    // New placement: create pending pig on first valid config, update thereafter
+    if (dragState.pendingPigId === null) {
+      const newPig = { id: -1, tailIndex: cfg.tailIndex, length: cfg.length, angle: cfg.angle };
+      pigs.push(newPig);
+      dragState.pendingPigId = -1;
+    } else {
+      const pig = pigs.find(p => p.id === dragState.pendingPigId);
+      if (pig) { pig.tailIndex = cfg.tailIndex; pig.length = cfg.length; pig.angle = cfg.angle; }
+    }
+  }
+  rebuildOccupancy();
+  updatePigEditor();
+}
+
+function handleEditMouseDown(pos) {
+  // Check body / head click first (any part of pig = start drag to rotate angle)
+  const pigId = getPigAtPoint(pos.x, pos.y);
+  if (pigId >= 0) {
+    const pig = pigs.find(p => p.id === pigId);
+    selectedPigId = pigId;
+    // Tail stays FIXED at original hole, only angle rotates with mouse
+    dragState = {
+      mouseX: pos.x, mouseY: pos.y,
+      tailIndex: pig.tailIndex,
+      repositionPigId: pigId,
+      pendingPigId: null,
+      lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+      currentCfg: null
+    };
+    updatePigEditor();
+    render();
+    return;
+  }
+
+  // Click on empty hole → new pig placement
+  const holeIdx = getHoleAtPoint(pos.x, pos.y, 4);
   if (holeIdx >= 0 && holeOccupiedBy[holeIdx] < 0) {
-    // Empty hole - start placing new pig
-    dragState = { tailIndex: holeIdx, mouseX: pos.x, mouseY: pos.y, repositionPigId: null };
+    dragState = {
+      mouseX: pos.x, mouseY: pos.y,
+      tailIndex: holeIdx,
+      repositionPigId: null,
+      pendingPigId: null,
+      lastValid: null,
+      currentCfg: null
+    };
     selectedPigId = null;
     updatePigEditor();
     render();
-  } else if (holeIdx >= 0 && holeOccupiedBy[holeIdx] >= 0) {
-    // Occupied hole - check if clicking on head first
-    const pigId = holeOccupiedBy[holeIdx];
-    const headPigId = getHeadAtPoint(pos.x, pos.y);
-    if (headPigId === pigId) {
-      // Clicking on head of occupying pig - start reposition
-      const pig = pigs.find(p => p.id === pigId);
-      selectedPigId = pigId;
-      dragState = { tailIndex: pig.tailIndex, mouseX: pos.x, mouseY: pos.y, repositionPigId: pigId };
-      updatePigEditor();
-      render();
-      return;
-    }
-    // Just select the pig
-    selectedPigId = pigId;
-    dragState = null;
-    updatePigEditor();
-    render();
-  } else {
-    // Check if clicking on a pig head to reposition
-    const headPigId = getHeadAtPoint(pos.x, pos.y);
-    if (headPigId >= 0) {
-      const pig = pigs.find(p => p.id === headPigId);
-      selectedPigId = headPigId;
-      dragState = { tailIndex: pig.tailIndex, mouseX: pos.x, mouseY: pos.y, repositionPigId: headPigId };
-      updatePigEditor();
-      render();
-      return;
-    }
-
-    // Check if clicking on a pig body
-    const pigId = getPigAtPoint(pos.x, pos.y);
-    if (pigId >= 0) {
-      selectedPigId = pigId;
-      dragState = null;
-      updatePigEditor();
-      render();
-    } else {
-      selectedPigId = null;
-      dragState = null;
-      updatePigEditor();
-      render();
-    }
+    return;
   }
+
+  // Click on nothing
+  selectedPigId = null;
+  cancelDrag();
+  updatePigEditor();
+  render();
 }
 
 function handleEditMouseUp(pos) {
   if (!dragState) return;
 
-  const tail = holes[dragState.tailIndex];
-  const offset = getBoardOffset();
-  const dx = pos.x - offset.x - tail.x;
-  const dy = pos.y - offset.y - tail.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const len = Math.max(2, Math.min(20, Math.floor(dist / board.diameter) + 1));
-  let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
-  if (angle < 0) angle += 360;
+  const lv = dragState.lastValid;
 
   if (dragState.repositionPigId !== null) {
-    // Repositioning existing pig
-    const pig = pigs.find(p => p.id === dragState.repositionPigId);
-    if (!pig) { dragState = null; render(); return; }
-
-    const result = isPlacementValid(dragState.tailIndex, len, angle, pig.id);
-    if (result.valid) {
-      pig.length = len;
-      pig.angle = Math.round(angle);
-      rebuildOccupancy();
+    // Repositioning: pig already at lastValid angle (applied in real-time)
+    if (lv) {
       updatePigList();
       updatePigEditor();
       markCurrentDirty();
-      showToast(`小猪 #${pig.id} 已调整 (${len}格, ${Math.round(angle)}°)`);
-    } else {
-      showToast('调整失败: ' + result.reason);
+      showToast(`小猪 #${dragState.repositionPigId} 角度已调整 → ${lv.angle}°`);
     }
-  } else {
-    // New placement
-    const result = isPlacementValid(dragState.tailIndex, len, angle, -1);
-    if (result.valid) {
-      const pig = { id: nextPigId++, tailIndex: dragState.tailIndex, length: len, angle: Math.round(angle) };
-      pigs.push(pig);
-      rebuildOccupancy();
-      selectedPigId = pig.id;
-      updatePigEditor();
-      updatePigList();
-      markCurrentDirty();
-      showToast(`小猪 #${pig.id} 已放置 (${len}格, ${Math.round(angle)}°)`);
-    } else {
-      showToast('放置失败: ' + result.reason);
-    }
+  } else if (dragState.pendingPigId !== null && lv) {
+    // New placement finalized: remove pending pig, add proper one
+    pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
+    const pig = { id: nextPigId++, tailIndex: lv.tailIndex, length: lv.length, angle: lv.angle };
+    pigs.push(pig);
+    rebuildOccupancy();
+    selectedPigId = pig.id;
+    updatePigEditor();
+    updatePigList();
+    markCurrentDirty();
+    showToast(`小猪 #${pig.id} 已放置 (${lv.length}格, ${lv.angle}°)`);
+  } else if (dragState.pendingPigId !== null) {
+    // Pending pig created but no valid config — remove it
+    pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
+    rebuildOccupancy();
   }
+  // else: no pending pig, no reposition — nothing to do (user clicked empty hole, never moved to valid)
 
   dragState = null;
   render();
@@ -799,8 +805,70 @@ function handleEditMouseUp(pos) {
 function handlePreviewMouseDown(pos) {
   const pigId = getPigAtPoint(pos.x, pos.y);
   if (pigId >= 0) {
-    tryPushPig(pigId);
+    const pig = pigs.find(p => p.id === pigId);
+    // Start drag-to-rotate, same logic as editor
+    dragState = {
+      mouseX: pos.x, mouseY: pos.y,
+      tailIndex: pig.tailIndex,
+      repositionPigId: pigId,
+      pendingPigId: null,
+      lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+      currentCfg: null,
+      originalAngle: pig.angle,
+      previewMode: true
+    };
+    document.getElementById('gameCanvas').style.cursor = 'grabbing';
+    render();
   }
+}
+
+function handlePreviewMouseUp(pos) {
+  if (!dragState || !dragState.previewMode) return;
+
+  const pigId = dragState.repositionPigId;
+  const pig = pigs.find(p => p.id === pigId);
+  if (!pig) { dragState = null; render(); return; }
+
+  // Execute escape (push) in the current direction
+  const result = canPushPig(pigId);
+  if (!result.canPush) {
+    // Collision → restore original angle & flash
+    pig.angle = dragState.originalAngle;
+    rebuildOccupancy();
+    if (result.collidedPigId !== undefined) {
+      flashingPigs[result.collidedPigId] = performance.now();
+      showToast(`碰到了猪 #${result.collidedPigId}!`);
+    } else {
+      showToast(result.reason);
+    }
+  } else {
+    // Clear path → animate escape
+    showToast(`猪 #${pigId} 被推出!`);
+
+    const anim = {
+      pigId,
+      dirX: result.dirX,
+      dirY: result.dirY,
+      totalDist: result.totalDist,
+      currentDx: 0,
+      currentDy: 0,
+      startTime: performance.now(),
+      duration: 600
+    };
+    animations.push(anim);
+
+    setTimeout(() => {
+      pigs = pigs.filter(p => p.id !== pigId);
+      rebuildOccupancy();
+      updatePigList();
+      animations = animations.filter(a => a.pigId !== pigId);
+      render();
+    }, anim.duration + 50);
+  }
+
+  dragState = null;
+  document.getElementById('gameCanvas').style.cursor = 'pointer';
+  render();
 }
 
 // ============================================================
@@ -934,11 +1002,31 @@ function updatePigList() {
 }
 
 function selectPig(id) {
+  cancelDrag();
   selectedPigId = id;
-  dragState = null;
   updatePigEditor();
   updatePigList();
   render();
+}
+
+/**
+ * Cancel any ongoing drag — removes pending pig and resets dragState.
+ */
+function cancelDrag() {
+  if (dragState && dragState.pendingPigId !== null) {
+    pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
+    rebuildOccupancy();
+  }
+  // Restore original angle for preview mode drag (e.g. mouseleave, Escape)
+  if (dragState && dragState.previewMode) {
+    const pig = pigs.find(p => p.id === dragState.repositionPigId);
+    if (pig && dragState.originalAngle !== undefined) {
+      pig.angle = dragState.originalAngle;
+      rebuildOccupancy();
+    }
+    document.getElementById('gameCanvas').style.cursor = 'pointer';
+  }
+  dragState = null;
 }
 
 // ============================================================
@@ -953,9 +1041,9 @@ function toggleMode() {
     document.getElementById('btnMode').classList.add('danger');
     document.getElementById('modeLabel').textContent = '预览模式';
     document.getElementById('modeLabel').className = 'mode-label preview';
-    document.getElementById('canvasHint').textContent = '点击小猪推动消除';
+    document.getElementById('canvasHint').textContent = '按住小猪拖拽旋转 | 松手推出';
     selectedPigId = null;
-    dragState = null;
+    cancelDrag();
     updatePigEditor();
     document.getElementById('gameCanvas').style.cursor = 'pointer';
   } else {
@@ -1121,8 +1209,7 @@ function pad4(n) { return String(n).padStart(4, '0'); }
 // OPEN LEVELS DIRECTORY
 // ============================================================
 function openLevelsDir() {
-  const dirUrl = new URL(LEVELS_DIR + '/', window.location.href);
-  window.open(dirUrl.href, '_blank');
+  fetch('/open-dir?path=' + encodeURIComponent(LEVELS_DIR));
 }
 
 // ============================================================
@@ -1151,6 +1238,9 @@ function loadLevelData(data) {
   pigs = (data.pigs || []).map(p => ({ id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle }));
   nextPigId = pigs.length > 0 ? Math.max(...pigs.map(p => p.id)) + 1 : 0;
   selectedPigId = null;
+  if (dragState && dragState.pendingPigId !== null) {
+    pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
+  }
   dragState = null;
   flashingPigs = {};
 
@@ -1203,6 +1293,7 @@ function updateLevelListUI() {
       <span class="lv-name">${lv.name}${dirty}</span>
       <span class="lv-info">${pigCount}猪</span>
       <button class="lv-save" onclick="event.stopPropagation();saveLevel()" title="保存当前关卡">保存</button>
+      <button class="lv-publish" onclick="event.stopPropagation();publishLevel(${i})" title="发布到游戏关卡目录">发布</button>
     </div>`;
   }).join('');
 }
@@ -1369,22 +1460,86 @@ async function publishLevel(idx) {
 }
 
 // ============================================================
+// PUBLISH ALL LEVELS
+// ============================================================
+async function publishAllLevels() {
+  // Sync current level data first
+  if (currentLevelIdx >= 0 && currentLevelIdx < levelList.length) {
+    levelList[currentLevelIdx].data = getLevelData();
+  }
+
+  // Validate: at least one level has pigs
+  const validLevels = levelList.filter(lv => lv.data && lv.data.pigs && lv.data.pigs.length > 0);
+  if (validLevels.length === 0) {
+    showToast('发布失败：没有包含小猪的关卡');
+    return;
+  }
+
+  // Get or request publish directory handle
+  if (!publishDirHandle) {
+    try {
+      const pickerOpts = { id: 'pig-editor-publish', mode: 'readwrite' };
+      const handle = await window.showDirectoryPicker(pickerOpts);
+      publishDirHandle = handle;
+      await persistPublishHandle(handle);
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      showToast('选择目录失败: ' + e.message);
+      return;
+    }
+  }
+
+  let success = 0;
+  let fail = 0;
+  const skipped = levelList.length - validLevels.length;
+
+  for (const entry of validLevels) {
+    let fileName = entry.fileName;
+    if (!fileName) {
+      fileName = entry.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_') + '.json';
+    }
+    try {
+      const json = JSON.stringify(entry.data, null, 2);
+      const fileHandle = await publishDirHandle.getFileHandle(fileName, { create: true });
+      await writeFileToHandle(fileHandle, json);
+      success++;
+    } catch (e) {
+      fail++;
+      console.error('Publish failed:', fileName, e);
+    }
+  }
+
+  let msg = `发布完成：${success} 成功`;
+  if (fail > 0) msg += `, ${fail} 失败`;
+  if (skipped > 0) msg += `, ${skipped} 跳过(无小猪)`;
+  showToast(msg + ' → 游戏关卡目录');
+}
+
+// ============================================================
 // KEYBOARD SHORTCUTS
 // ============================================================
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (dragState && dragState.previewMode) {
+      cancelDrag();
+      render();
+      e.preventDefault();
+      return;
+    }
+    if (mode !== 'edit') return;
+    selectedPigId = null;
+    cancelDrag();
+    updatePigEditor();
+    updatePigList();
+    render();
+    e.preventDefault();
+  }
   if (mode !== 'edit') return;
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (selectedPigId >= 0 && document.activeElement === document.body) {
       deleteSelectedPig();
       e.preventDefault();
     }
-  }
-  if (e.key === 'Escape') {
-    selectedPigId = null;
-    dragState = null;
-    updatePigEditor();
-    updatePigList();
-    render();
   }
 });
 
@@ -1443,12 +1598,13 @@ function showToast(msg) {
 // INIT
 // ============================================================
 async function init() {
+
   const canvas = document.getElementById('gameCanvas');
   canvas.addEventListener('mousedown', onCanvasMouseDown);
   canvas.addEventListener('mousemove', onCanvasMouseMove);
   canvas.addEventListener('mouseup', onCanvasMouseUp);
   canvas.addEventListener('mouseleave', () => {
-    if (dragState) { dragState = null; render(); }
+    if (dragState) { cancelDrag(); render(); }
   });
 
   resizeCanvas();
