@@ -6,7 +6,7 @@ class DataBus {
   }
 
   reset() {
-    this.gameState = 'playing';
+    this.gameState = 'menu'; // menu / playing / editor
     this.frame = 0;
     this.screenWidth = 0;
     this.screenHeight = 0;
