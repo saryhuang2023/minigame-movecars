@@ -41,6 +41,38 @@ class EditorHandler(http.server.SimpleHTTPRequestHandler):
         # Default: serve static files
         super().do_GET()
 
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+
+        # /save-level?name=level_0001.json → save JSON body to levels/<name>
+        if parsed.path == '/save-level':
+            qs = urllib.parse.parse_qs(parsed.query)
+            name = qs.get('name', [None])[0]
+            if not name:
+                self.send_error(400, 'Missing name parameter')
+                return
+            # Sanitize filename
+            name = os.path.basename(name)
+            levels_dir = os.path.join(os.path.dirname(__file__), 'levels')
+            os.makedirs(levels_dir, exist_ok=True)
+            filepath = os.path.join(levels_dir, name)
+
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+
+            try:
+                with open(filepath, 'wb') as f:
+                    f.write(body)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+            except Exception as e:
+                self.send_error(500, str(e))
+            return
+
+        self.send_error(404, 'Not found')
+
     def log_message(self, format, *args):
         # Quiet logging
         sys.stderr.write('[%s] %s\n' % (self.log_date_time_string(), format % args))

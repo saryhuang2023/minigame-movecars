@@ -24,6 +24,24 @@
       "tail": 95,
       "length": 4,
       "angle": 37
+    },
+    {
+      "id": 3,
+      "tail": 53,
+      "length": 6,
+      "angle": 270
+    },
+    {
+      "id": 4,
+      "tail": 43,
+      "length": 5,
+      "angle": 326
+    },
+    {
+      "id": 5,
+      "tail": 113,
+      "length": 4,
+      "angle": 279
     }
   ]
 }

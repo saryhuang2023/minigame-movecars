@@ -256,6 +256,7 @@ let selectedPigId = null;
 let dragState = null;
 let backupPigs = null;
 let animations = [];
+let ghostAnimations = []; // edit-mode push preview ghosts
 
 let holes = [];
 let holeOccupiedBy = [];
@@ -270,6 +271,7 @@ const PIG_COLOR = '#FFD700';
 
 // Publish handle  
 let publishDirHandle = null;  // FileSystemDirectoryHandle for game levels
+let levelsDirHandle = null;   // FileSystemDirectoryHandle for editor levels/
 
 // ============================================================
 // BOARD COMPUTATIONS
@@ -558,6 +560,64 @@ function render() {
     ctx.fill();
 
     ctx.globalAlpha = 1;
+      ctx.restore();
+  }
+
+  // Draw ghost push animations (edit mode — real pig stays, ghost slides out)
+  for (const ga of ghostAnimations) {
+    const inst = pigInstances.find(p => p.id === ga.pigId);
+    if (!inst) continue;
+    const rad = inst.angle * Math.PI / 180;
+    const dirX = Math.cos(rad);
+    const dirY = -Math.sin(rad);
+    const tail = holes[inst.tailIndex];
+    const totalLen = inst.length * board.diameter;
+    const ghostCX = tail.x + (inst.length - 1) / 2 * board.diameter * dirX + ga.currentDx;
+    const ghostCY = tail.y + (inst.length - 1) / 2 * board.diameter * dirY + ga.currentDy;
+
+    ctx.save();
+    ctx.translate(ghostCX, ghostCY);
+    ctx.rotate(-rad);
+
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#FFD700';
+    roundRect(ctx, -totalLen / 2, -board.diameter / 2, totalLen, board.diameter, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  // Draw orphaned preview escape animations (pig removed from pigs[] immediately, but still animating out)
+  for (const a of animations) {
+    if (!a.tailIndex) continue; // only preview-mode animations have rendering info stored
+    const inst = pigInstances.find(p => p.id === a.pigId);
+    if (inst) continue; // pig still in pigs[] — handled by main loop above
+    const rad = a.angle * Math.PI / 180;
+    const dirX = Math.cos(rad);
+    const dirY = -Math.sin(rad);
+    const tail = holes[a.tailIndex];
+    const totalLen = a.length * board.diameter;
+    const cx = tail.x + (a.length - 1) / 2 * board.diameter * dirX + a.currentDx;
+    const cy = tail.y + (a.length - 1) / 2 * board.diameter * dirY + a.currentDy;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-rad);
+
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#FFD700';
+    roundRect(ctx, -totalLen / 2, -board.diameter / 2, totalLen, board.diameter, 6);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
     ctx.restore();
   }
 
@@ -641,9 +701,12 @@ function onCanvasMouseMove(e) {
     dragState.mouseY = pos.y;
     const cfg = findBestDragConfig(pos);
     if (cfg) {
-      dragState.lastValid = cfg;
-      // Immediately apply valid config — pig snaps to position
+      // Always apply — pig rotates freely (including outside board)
       applyDragConfig(cfg);
+      // Only track as lastValid if inside board (for snap-back on release)
+      if (cfg.inBounds) {
+        dragState.lastValid = cfg;
+      }
     }
     dragState.currentCfg = cfg; // may be null (conflict) — pig stays at lastValid
     render();
@@ -663,7 +726,7 @@ function onCanvasMouseUp(e) {
  * Tail stays FIXED at dragState.tailIndex — only angle rotates.
  * For reposition: length is also fixed.
  * For new placement: length computed from tail→mouse distance.
- * Returns { tailIndex, length, angle } or null if angle is invalid (conflict).
+ * Returns { tailIndex, length, angle, inBounds } or null if hole collision.
  */
 function findBestDragConfig(pos) {
   const offset = getBoardOffset();
@@ -693,9 +756,14 @@ function findBestDragConfig(pos) {
     len = Math.max(2, Math.min(20, Math.floor(dist / board.diameter) + 1));
   }
 
-  const result = isPlacementValid(tailIndex, len, angle, excludeId !== null ? excludeId : -1);
-  if (result.valid) return { tailIndex, length: len, angle };
-  return null;
+  // During drag: allow rotation outside board edges, only block actual hole collisions
+  const { occupied } = getPigOccupiedHoles(tailIndex, len, angle);
+  const excludeIdVal = excludeId !== null ? excludeId : -1;
+  const hasCollision = occupied.some(hi => holeOccupiedBy[hi] >= 0 && holeOccupiedBy[hi] !== excludeIdVal);
+  if (hasCollision) return null;
+
+  const inBounds = isPlacementValid(tailIndex, len, angle, excludeIdVal).valid;
+  return { tailIndex, length: len, angle, inBounds };
 }
 
 /**
@@ -735,7 +803,7 @@ function handleEditMouseDown(pos) {
       tailIndex: pig.tailIndex,
       repositionPigId: pigId,
       pendingPigId: null,
-      lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+      lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle, inBounds: true },
       currentCfg: null
     };
     updatePigEditor();
@@ -773,24 +841,70 @@ function handleEditMouseUp(pos) {
   const lv = dragState.lastValid;
 
   if (dragState.repositionPigId !== null) {
-    // Repositioning: pig already at lastValid angle (applied in real-time)
+    // Repositioning: pig already at current angle (applied in real-time)
     if (lv) {
-      updatePigList();
-      updatePigEditor();
-      markCurrentDirty();
-      showToast(`小猪 #${dragState.repositionPigId} 角度已调整 → ${lv.angle}°`);
+      const pig = pigs.find(p => p.id === dragState.repositionPigId);
+      // Check pig's current position (may be outside board after drag)
+      const check = pig ? isPlacementValid(pig.tailIndex, pig.length, pig.angle, pig.id) : { valid: false };
+      if (!check.valid) {
+        // Pig landed outside → snap back to last in-bounds position
+        if (pig) {
+          pig.angle = lv.angle;
+          rebuildOccupancy();
+          updatePigList();
+          updatePigEditor();
+          showToast('小猪不能停在棋盘外，已回弹');
+          // 回弹后继续执行逃脱逻辑
+          tryGhostPush(dragState.repositionPigId);
+        }
+      } else {
+        updatePigList();
+        updatePigEditor();
+        markCurrentDirty();
+        showToast(`小猪 #${dragState.repositionPigId} 角度已调整 → ${pig.angle}°`);
+        // 落地后尝试逃脱（编辑模式：幽灵猪飞走，真猪留在原地）
+        tryGhostPush(dragState.repositionPigId);
+      }
     }
   } else if (dragState.pendingPigId !== null && lv) {
-    // New placement finalized: remove pending pig, add proper one
-    pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
-    const pig = { id: nextPigId++, tailIndex: lv.tailIndex, length: lv.length, angle: lv.angle };
-    pigs.push(pig);
-    rebuildOccupancy();
-    selectedPigId = pig.id;
-    updatePigEditor();
-    updatePigList();
-    markCurrentDirty();
-    showToast(`小猪 #${pig.id} 已放置 (${lv.length}格, ${lv.angle}°)`);
+    // New placement: check pending pig's current position (may be outside board after drag)
+    const pendingPig = pigs.find(p => p.id === dragState.pendingPigId);
+    const check = pendingPig ? isPlacementValid(pendingPig.tailIndex, pendingPig.length, pendingPig.angle, -1) : { valid: false };
+    if (!check.valid) {
+      // Pig placed outside board → snap back or cancel
+      pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
+      if (dragState.lastValid && dragState.lastValid.inBounds) {
+        const slv = dragState.lastValid;
+        const pig = { id: nextPigId++, tailIndex: slv.tailIndex, length: slv.length, angle: slv.angle };
+        pigs.push(pig);
+        rebuildOccupancy();
+        selectedPigId = pig.id;
+        updatePigEditor();
+        updatePigList();
+        markCurrentDirty();
+        showToast(`小猪 #${pig.id} 已回弹至上一有效位置 (${slv.length}格, ${slv.angle}°)`);
+        tryGhostPush(pig.id);
+      } else {
+        rebuildOccupancy();
+        selectedPigId = null;
+        updatePigEditor();
+        updatePigList();
+        showToast('小猪不能停在棋盘外，已取消');
+      }
+    } else {
+      // Remove pending pig, add proper one
+      pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
+      const pig = { id: nextPigId++, tailIndex: lv.tailIndex, length: lv.length, angle: lv.angle };
+      pigs.push(pig);
+      rebuildOccupancy();
+      selectedPigId = pig.id;
+      updatePigEditor();
+      updatePigList();
+      markCurrentDirty();
+      showToast(`小猪 #${pig.id} 已放置 (${lv.length}格, ${lv.angle}°)`);
+      // 落地后尝试逃脱（编辑模式：幽灵猪飞走，真猪留在原地）
+      tryGhostPush(pig.id);
+    }
   } else if (dragState.pendingPigId !== null) {
     // Pending pig created but no valid config — remove it
     pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
@@ -812,7 +926,7 @@ function handlePreviewMouseDown(pos) {
       tailIndex: pig.tailIndex,
       repositionPigId: pigId,
       pendingPigId: null,
-      lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+      lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle, inBounds: true },
       currentCfg: null,
       originalAngle: pig.angle,
       previewMode: true
@@ -829,12 +943,26 @@ function handlePreviewMouseUp(pos) {
   const pig = pigs.find(p => p.id === pigId);
   if (!pig) { dragState = null; render(); return; }
 
-  // Execute escape (push) in the current direction
+  // Check if pig landed outside board → snap back
+  const check = isPlacementValid(pig.tailIndex, pig.length, pig.angle, pigId);
+  if (!check.valid) {
+    if (dragState.lastValid && dragState.lastValid.inBounds) {
+      pig.angle = dragState.lastValid.angle;
+      rebuildOccupancy();
+      showToast('小猪不能停在棋盘外，已回弹');
+    } else {
+      pig.angle = dragState.originalAngle;
+      rebuildOccupancy();
+      showToast('小猪不能停在棋盘外，已回弹');
+    }
+    // After snap-back, continue to escape logic (no return)
+  }
+
+  // 先落地：当前角度已确认，不再回退
+  // 再执行逃脱逻辑
   const result = canPushPig(pigId);
   if (!result.canPush) {
-    // Collision → restore original angle & flash
-    pig.angle = dragState.originalAngle;
-    rebuildOccupancy();
+    // 碰撞 → 猪留在落地位置，被碰猪闪烁
     if (result.collidedPigId !== undefined) {
       flashingPigs[result.collidedPigId] = performance.now();
       showToast(`碰到了猪 #${result.collidedPigId}!`);
@@ -853,14 +981,20 @@ function handlePreviewMouseUp(pos) {
       currentDx: 0,
       currentDy: 0,
       startTime: performance.now(),
-      duration: 600
+      duration: 4800,
+      // Store rendering info so pig can be drawn even after removal from pigs[]
+      tailIndex: pig.tailIndex,
+      length: pig.length,
+      angle: pig.angle
     };
     animations.push(anim);
 
+    // Immediately release grid cells (don't wait for animation to finish)
+    pigs = pigs.filter(p => p.id !== pigId);
+    rebuildOccupancy();
+    updatePigList();
+
     setTimeout(() => {
-      pigs = pigs.filter(p => p.id !== pigId);
-      rebuildOccupancy();
-      updatePigList();
       animations = animations.filter(a => a.pigId !== pigId);
       render();
     }, anim.duration + 50);
@@ -903,6 +1037,31 @@ function canPushPig(pigId) {
   return { canPush: true, dirX, dirY, totalDist };
 }
 
+function tryGhostPush(pigId) {
+  const result = canPushPig(pigId);
+  if (result.canPush) {
+    // Ghost slides out — real pig stays
+    ghostAnimations.push({
+      pigId,
+      dirX: result.dirX,
+      dirY: result.dirY,
+      totalDist: result.totalDist,
+      currentDx: 0,
+      currentDy: 0,
+      startTime: performance.now(),
+      duration: 4800
+    });
+    // Clean up ghost after animation
+    setTimeout(() => {
+      ghostAnimations = ghostAnimations.filter(g => g.pigId !== pigId);
+      render();
+    }, 4850);
+  } else if (result.collidedPigId !== undefined) {
+    flashingPigs[result.collidedPigId] = performance.now();
+    showToast(`碰到了猪 #${result.collidedPigId}!`);
+  }
+}
+
 function tryPushPig(pigId) {
   const result = canPushPig(pigId);
   if (!result.canPush) {
@@ -928,7 +1087,7 @@ function tryPushPig(pigId) {
     currentDx: 0,
     currentDy: 0,
     startTime: performance.now(),
-    duration: 600
+    duration: 4800
   };
   animations.push(anim);
 
@@ -950,6 +1109,17 @@ function updateAnimations() {
     const eased = 1 - Math.pow(1 - progress, 3); // ease out
     anim.currentDx = anim.dirX * anim.totalDist * eased;
     anim.currentDy = anim.dirY * anim.totalDist * eased;
+  }
+}
+
+function updateGhostAnimations() {
+  const now = performance.now();
+  for (const ga of ghostAnimations) {
+    const elapsed = now - ga.startTime;
+    const progress = Math.min(1, elapsed / ga.duration);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease out
+    ga.currentDx = ga.dirX * ga.totalDist * eased;
+    ga.currentDy = ga.dirY * ga.totalDist * eased;
   }
 }
 
@@ -1139,6 +1309,39 @@ async function persistPublishHandle(handle) {
   });
 }
 
+async function persistLevelsDirHandle(handle) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'levelsDir');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function restoreLevelsDirHandle() {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('handles', 'readonly');
+      const req = tx.objectStore('handles').get('levelsDir');
+      req.onsuccess = async () => {
+        const handle = req.result;
+        if (handle) {
+          const opts = { mode: 'readwrite' };
+          const ok = await handle.queryPermission(opts) === 'granted';
+          resolve(ok ? handle : null);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
 async function restorePublishHandle() {
   try {
     const db = await idbOpen();
@@ -1208,8 +1411,14 @@ function pad4(n) { return String(n).padStart(4, '0'); }
 // ============================================================
 // OPEN LEVELS DIRECTORY
 // ============================================================
-function openLevelsDir() {
-  fetch('/open-dir?path=' + encodeURIComponent(LEVELS_DIR));
+async function openLevelsDir() {
+  try {
+    const resp = await fetch('/open-dir?path=' + encodeURIComponent(LEVELS_DIR));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    showToast('已打开 levels 目录');
+  } catch (e) {
+    showToast('打开失败: ' + e.message);
+  }
 }
 
 // ============================================================
@@ -1361,9 +1570,19 @@ async function saveLevel() {
     entry.name = 'level_' + pad4(num);
   }
 
-  downloadJSON(entry.data, fileName);
-  updateLevelListUI();
-  showToast('已下载: ' + fileName + ' (请放入 levels 目录后刷新)');
+  const json = JSON.stringify(entry.data, null, 2);
+  try {
+    const resp = await fetch('/save-level?name=' + encodeURIComponent(fileName), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    updateLevelListUI();
+    showToast('已保存: ' + fileName + ' → levels/');
+  } catch (e) {
+    showToast('保存失败: ' + e.message);
+  }
 }
 
 // ============================================================
@@ -1602,9 +1821,22 @@ async function init() {
   const canvas = document.getElementById('gameCanvas');
   canvas.addEventListener('mousedown', onCanvasMouseDown);
   canvas.addEventListener('mousemove', onCanvasMouseMove);
-  canvas.addEventListener('mouseup', onCanvasMouseUp);
+  canvas.addEventListener('mouseup', (e) => {
+    onCanvasMouseUp(e);
+    e.stopPropagation(); // prevent document handler from double-firing
+  });
   canvas.addEventListener('mouseleave', () => {
     if (dragState) { cancelDrag(); render(); }
+  });
+
+  // Catch mouseup outside canvas (e.g. mouse released outside browser viewport)
+  document.addEventListener('mouseup', (e) => {
+    if (!dragState) return;
+    if (dragState.previewMode) {
+      handlePreviewMouseUp(null);
+    } else if (mode === 'edit') {
+      handleEditMouseUp(null);
+    }
   });
 
   resizeCanvas();
@@ -1640,8 +1872,9 @@ async function init() {
 
   // Animation loop
   function loop() {
-    if (animations.length > 0 || Object.keys(flashingPigs).length > 0) {
+    if (animations.length > 0 || ghostAnimations.length > 0 || Object.keys(flashingPigs).length > 0) {
       if (animations.length > 0) updateAnimations();
+      if (ghostAnimations.length > 0) updateGhostAnimations();
       // Clean up expired flashes
       const now = performance.now();
       for (const [pid, start] of Object.entries(flashingPigs)) {

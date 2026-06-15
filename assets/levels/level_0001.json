@@ -27,21 +27,9 @@
     },
     {
       "id": 3,
-      "tail": 24,
-      "length": 12,
-      "angle": 319
-    },
-    {
-      "id": 4,
-      "tail": 58,
-      "length": 7,
-      "angle": 214
-    },
-    {
-      "id": 5,
-      "tail": 1,
-      "length": 9,
-      "angle": 338
+      "tail": 53,
+      "length": 6,
+      "angle": 270
     }
   ]
 }

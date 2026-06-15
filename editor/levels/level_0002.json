@@ -18,6 +18,12 @@
       "tail": 118,
       "length": 7,
       "angle": 35
+    },
+    {
+      "id": 2,
+      "tail": 37,
+      "length": 5,
+      "angle": 255
     }
   ]
 }
