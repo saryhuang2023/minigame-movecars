@@ -1418,30 +1418,22 @@ async function writeFileToHandle(fileHandle, content) {
   await writable.close();
 }
 
-// Fetch-based reading from the levels/ directory
-async function fetchJSON(relativePath) {
-  const resp = await fetch(relativePath);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return await resp.json();
-}
-
 async function scanDefaultLevels() {
-  const found = [];
-  let consecutiveFails = 0;
-  for (let n = 1; n <= 9999 && consecutiveFails < 10; n++) {
-    const fileName = 'level_' + pad4(n) + '.json';
-    const path = LEVELS_DIR + '/' + fileName;
-    try {
-      const data = await fetchJSON(path);
-      if (data && data.board && Array.isArray(data.pigs)) {
-        found.push({ name: 'level_' + pad4(n), fileName, data, fileHandle: null, isDirty: false });
-        consecutiveFails = 0;
-      }
-    } catch (e) {
-      consecutiveFails++;
-    }
+  try {
+    const resp = await fetch('/list-levels');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const entries = await resp.json();
+    return entries.map(e => ({
+      name: e.name,
+      fileName: e.fileName,
+      data: e.data,
+      fileHandle: null,
+      isDirty: false
+    }));
+  } catch (e) {
+    console.log('scanDefaultLevels failed:', e.message);
+    return [];
   }
-  return found;
 }
 
 async function getNextLevelNumber() {
@@ -1858,6 +1850,12 @@ async function init() {
     } else if (mode === 'edit') {
       handleEditMouseUp(null);
     }
+  });
+
+  // Catch mousemove outside canvas for resize drag (bottom edge goes outside canvas)
+  document.addEventListener('mousemove', (e) => {
+    if (!dragState) return;
+    onCanvasMouseMove(e);
   });
 
   recomputeBoard();

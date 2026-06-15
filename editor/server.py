@@ -1,8 +1,8 @@
 """Custom HTTP server for the Pig Puzzle Level Editor.
 Serves static files from the current directory on port 8080.
-Exposes a /open-dir?path=<subdir> endpoint that opens the directory in Windows Explorer.
 """
 import http.server
+import json
 import os
 import subprocess
 import sys
@@ -36,6 +36,40 @@ class EditorHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'text/plain')
             self.end_headers()
             self.wfile.write(b'OK')
+            return
+
+        # /list-levels → return all level files in levels/ directory
+        if parsed.path == '/list-levels':
+            levels_dir = os.path.join(os.path.dirname(__file__), 'levels')
+            os.makedirs(levels_dir, exist_ok=True)
+            results = []
+            try:
+                for fname in sorted(os.listdir(levels_dir)):
+                    if not fname.endswith('.json'):
+                        continue
+                    fpath = os.path.join(levels_dir, fname)
+                    try:
+                        with open(fpath, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        name = fname[:-5]  # strip .json
+                        pig_count = len(data.get('pigs', [])) if isinstance(data, dict) else 0
+                        results.append({
+                            'name': name,
+                            'fileName': fname,
+                            'pigCount': pig_count,
+                            'data': data
+                        })
+                    except (json.JSONDecodeError, IOError):
+                        # Skip invalid files
+                        pass
+            except OSError:
+                pass
+            body = json.dumps(results, ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
 
         # Default: serve static files
