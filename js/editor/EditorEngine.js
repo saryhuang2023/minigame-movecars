@@ -98,7 +98,8 @@ class EditorEngine {
           Math.max(0, this.sheetDragStartScroll + dy)));
         return;
       }
-      if (this.gp.dragState) this.onDragMove(x, y);
+      // 预览模式需走阈值逻辑 → 无条件调 onDragMove（即使 dragState 为空）
+      if (this.gp.dragState || this.mode === 'preview') this.onDragMove(x, y);
     } else if (e.type === 'touchend') {
       if (this.gp.heightDragState) {
         this.gp.heightDragState = null;
@@ -110,7 +111,8 @@ class EditorEngine {
         this.sheetDrag = false;
         return;
       }
-      if (this.gp.dragState) this.onDragEnd(x, y);
+      // 预览模式或已有拖拽 → 无条件调 onDragEnd（统一处理轻点推出 & 拖拽结束）
+      if (this.gp.dragState || this._previewTouchState) this.onDragEnd(x, y);
     }
   }
 
