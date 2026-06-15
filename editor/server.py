@@ -71,6 +71,32 @@ class EditorHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(500, str(e))
             return
 
+        # /rename-level?old=level_0001.json&new=level_0002.json
+        if parsed.path == '/rename-level':
+            qs = urllib.parse.parse_qs(parsed.query)
+            old = qs.get('old', [None])[0]
+            new = qs.get('new', [None])[0]
+            if not old or not new:
+                self.send_error(400, 'Missing old/new parameters')
+                return
+            old = os.path.basename(old)
+            new = os.path.basename(new)
+            levels_dir = os.path.join(os.path.dirname(__file__), 'levels')
+            oldpath = os.path.join(levels_dir, old)
+            newpath = os.path.join(levels_dir, new)
+            if not os.path.exists(oldpath):
+                self.send_error(404, 'Source file not found')
+                return
+            try:
+                os.rename(oldpath, newpath)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+            except Exception as e:
+                self.send_error(500, str(e))
+            return
+
         self.send_error(404, 'Not found')
 
     def log_message(self, format, *args):

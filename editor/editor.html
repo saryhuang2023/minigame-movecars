@@ -62,6 +62,36 @@ body {
 }
 .info-row { font-size: 11px; color: #999; margin-top: 4px; }
 
+.grid-ctl { margin-bottom: 8px; }
+.grid-row {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+}
+.grid-label { font-size: 12px; color: #777; width: 20px; }
+.grid-btn {
+  width: 28px; height: 28px; border: 1px solid #ccc; border-radius: 5px;
+  font-size: 16px; line-height: 26px; cursor: pointer; background: #f5f5f5;
+  font-family: inherit; text-align: center; padding: 0;
+}
+.grid-btn:hover { background: #e8e8e8; }
+.grid-val {
+  font-size: 18px; font-weight: 600; min-width: 24px; text-align: center; color: #333;
+}
+.tiny-btn {
+  padding: 1px 6px; border: 1px solid #ccc; border-radius: 3px;
+  font-size: 10px; cursor: pointer; background: #f5f5f5; font-family: inherit;
+}
+.tiny-btn:hover { background: #e8e8e8; }
+
+.canvas-resize-handle {
+  position: absolute; bottom: -8px; left: 0; right: 0; height: 12px;
+  cursor: ns-resize; background: transparent; z-index: 10;
+}
+.canvas-resize-handle::after {
+  content: ''; position: absolute; bottom: 2px; left: 10%; right: 10%;
+  height: 2px; background: rgba(255,255,255,0.3); border-radius: 1px;
+}
+.canvas-resize-handle:hover::after { background: rgba(33,150,243,0.7); height: 3px; }
+
 .center {
   flex: 1; display: flex; align-items: center; justify-content: center;
   padding: 16px; background: #e8e6dd; overflow: auto;
@@ -82,20 +112,6 @@ body {
   padding: 16px; overflow-y: auto; flex-shrink: 0;
 }
 .panel-right h3 { font-size: 14px; font-weight: 500; margin-bottom: 12px; color: #555; }
-.panel-right h4 { font-size: 13px; font-weight: 500; margin-bottom: 8px; color: #666; }
-.pig-list { margin-bottom: 16px; }
-.pig-item {
-  display: flex; align-items: center; padding: 6px 10px; margin-bottom: 4px;
-  border-radius: 6px; cursor: pointer; font-size: 12px; gap: 8px;
-  border: 2px solid transparent;
-}
-.pig-item:hover { background: #f5f5f5; }
-.pig-item.selected { border-color: #2196F3; background: #E3F2FD; }
-.pig-item .swatch {
-  width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
-}
-.pig-item .info { flex: 1; }
-.pig-item .info .len { color: #999; }
 
 .pig-editor { margin-top: 8px; }
 .btn-row { display: flex; gap: 6px; margin-top: 8px; }
@@ -108,15 +124,6 @@ body {
 .btn-row button.warn:hover { background: #ffebee; }
 
 .level-section { margin-top: 8px; }
-.level-toolbar {
-  display: flex; gap: 6px; margin-bottom: 8px;
-}
-.level-toolbar button {
-  flex: 1; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
-  font-size: 11px; cursor: pointer; font-family: inherit; background: #f5f5f5;
-}
-.level-toolbar button:hover { background: #e8e8e8; }
-.level-section h3 { margin-bottom: 8px; }
 .level-list { max-height: 260px; overflow-y: auto; }
 .level-item {
   display: flex; align-items: center; padding: 5px 8px; margin-bottom: 2px;
@@ -145,6 +152,15 @@ body {
 .level-item.active .lv-publish { display: inline-block; }
 .level-item .lv-publish:hover { background: #FFE0B2; }
 
+.lv-add {
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px 8px; margin-top: 4px; cursor: pointer;
+  border: 1px dashed #ccc; border-radius: 5px;
+  color: #999; font-size: 16px; font-weight: 300;
+  transition: all 0.15s;
+}
+.lv-add:hover { border-color: #4CAF50; color: #4CAF50; background: #E8F5E9; }
+
 .toast {
   position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
   background: #333; color: #fff; padding: 8px 20px; border-radius: 6px;
@@ -168,50 +184,32 @@ canvas { cursor: crosshair; }
 
 <div class="main">
   <div class="panel-left">
-    <h3>棋盘参数</h3>
-    <div class="param-row">
-      <label>圆洞直径</label>
-      <input type="number" id="diameter" value="30" min="6" max="80" onchange="updateBoardParams()">
-      <span class="unit">px</span>
+    <h3>棋盘</h3>
+    <div class="grid-ctl">
+      <div class="grid-row">
+        <span class="grid-label">列</span>
+        <button class="grid-btn" onclick="adjCols(-1)">−</button>
+        <span class="grid-val" id="colsVal">5</span>
+        <button class="grid-btn" onclick="adjCols(1)">+</button>
+      </div>
+      <div class="grid-row">
+        <span class="grid-label">行</span>
+        <button class="grid-btn" onclick="adjRows(-1)">−</button>
+        <span class="grid-val" id="rowsVal">5</span>
+        <button class="grid-btn" onclick="adjRows(1)">+</button>
+      </div>
     </div>
-    <div class="param-row">
-      <label>横向个数</label>
-      <input type="number" id="cols" value="6" min="2" max="20" onchange="updateBoardParams()">
-      <span class="unit">个</span>
+    <div class="info-row" style="margin-top:8px;">
+      间距倍率 <b id="gapRatioVal">1.5</b>
+      <span style="margin-left:4px;">
+        <button class="tiny-btn" onclick="adjGapRatio(-0.1)">−</button>
+        <button class="tiny-btn" onclick="adjGapRatio(0.1)">+</button>
+      </span>
     </div>
-    <div class="param-row">
-      <label>横向边距</label>
-      <input type="number" id="hSpacing" value="40" min="0" max="200" onchange="updateBoardParams()">
-      <span class="unit">px</span>
-    </div>
-    <div class="param-row">
-      <label>纵向个数</label>
-      <input type="number" id="rows" value="12" min="2" max="25" onchange="updateBoardParams()">
-      <span class="unit">个</span>
-    </div>
-    <div class="param-row">
-      <label>纵向边距</label>
-      <input type="number" id="vSpacing" value="20" min="0" max="200" onchange="updateBoardParams()">
-      <span class="unit">px</span>
-    </div>
+    <div class="info-row">直径 <b id="diameterVal">—</b> px</div>
+    <div class="info-row">棋盘 <b id="boardSizeVal">—</b></div>
     <hr style="margin:12px 0; border:none; border-top:1px solid #e0e0e0;">
-    <div class="phone-size-select">
-      <label style="font-size:12px;color:#777;">手机尺寸</label>
-      <select id="phoneSize" onchange="updatePhoneSize()">
-        <option value="440x956">iPhone 17 Pro Max (440×956)</option>
-        <option value="426x950">Huawei Pura 80 Ultra (426×950)</option>
-      </select>
-    </div>
-    <div class="info-row" id="boardInfo"></div>
-    <hr style="margin:12px 0; border:none; border-top:1px solid #e0e0e0;">
-    <div class="level-toolbar">
-      <button onclick="newLevel()" title="新建空白关卡">新建</button>
-      <button onclick="refreshLevelList()" title="重新扫描 levels 目录">刷新</button>
-      <button onclick="publishAllLevels()" title="将所有关卡发布到游戏目录" style="background:#FFF3E0;color:#E65100;border:1px solid #FF9800;">发布所有</button>
-      <button onclick="openLevelsDir()" title="在资源管理器中打开 levels 目录">打开关卡目录</button>
-    </div>
     <div class="level-section">
-      <h3>关卡列表 <span id="storagePathLabel" style="font-size:10px;color:#999;"></span></h3>
       <div class="level-list" id="levelListContainer"></div>
     </div>
   </div>
@@ -224,8 +222,6 @@ canvas { cursor: crosshair; }
   </div>
 
   <div class="panel-right">
-    <h3>小猪列表</h3>
-    <div class="pig-list" id="pigList"></div>
     <div class="pig-editor" id="pigEditor" style="display:none;">
       <h4>选中小猪</h4>
       <div id="pigEditorInfo" style="font-size:12px;color:#666;line-height:1.8;"></div>
@@ -247,8 +243,9 @@ const PHONE_SIZES = {
   '426x950': { w: 426, h: 950, label: 'Huawei Pura 80 Ultra (426×950)' }
 };
 
-let phoneW = 440, phoneH = 956;
-let board = { diameter: 30, cols: 6, rows: 12, hSpacing: 40, vSpacing: 20 };
+let phoneW = 440;
+// phoneH is computed: phoneW × heightRatio
+let board = { cols: 3, rows: 5, heightRatio: 1.2, cellGapRatio: 1.5 };
 let pigs = [];
 let nextPigId = 0;
 let mode = 'edit';
@@ -276,42 +273,49 @@ let levelsDirHandle = null;   // FileSystemDirectoryHandle for editor levels/
 // ============================================================
 // BOARD COMPUTATIONS
 // ============================================================
+function getBoardDerived() {
+  const cols = board.cols, rows = board.rows;
+  const phoneH = Math.round(phoneW * board.heightRatio);
+  const hSpacing = Math.round(phoneW / cols);
+  const vSpacing = Math.round(phoneH / rows);
+  const diameter = Math.round(hSpacing / (1 + board.cellGapRatio));
+  return { cols, rows, diameter, hSpacing, vSpacing, phoneH };
+}
+
 function getTotalHoles() {
-  return board.rows * board.cols + (board.rows - 1) * (board.cols - 1);
+  const d = getBoardDerived();
+  return d.rows * d.cols + (d.rows - 1) * (d.cols - 1);
 }
 
 function getBoardSize() {
-  const hStep = board.diameter + board.hSpacing;
-  const vStep = board.diameter + board.vSpacing;
-  return {
-    width: (board.cols - 1) * hStep + board.diameter,
-    height: (board.rows - 1) * vStep + board.diameter
-  };
+  const d = getBoardDerived();
+  return { width: phoneW, height: d.phoneH };
 }
 
 function getBoardOffset() {
-  const size = getBoardSize();
-  return {
-    x: (phoneW - size.width) / 2,
-    y: (phoneH - size.height) / 2
-  };
+  return { x: 0, y: 0 };
 }
 
 function computeHoles() {
   holes = [];
-  const hStep = board.diameter + board.hSpacing;
-  const vStep = board.diameter + board.vSpacing;
-  const totalGrid = board.rows * board.cols;
-  for (let i = 0; i < totalGrid; i++) {
-    const row = Math.floor(i / board.cols);
-    const col = i % board.cols;
-    holes.push({ x: col * hStep, y: row * vStep, type: 'grid', row, col });
+  const d = getBoardDerived();
+  const hStep = d.hSpacing;
+  const vStep = d.vSpacing;
+  const marginX = hStep / 2;
+  const marginY = vStep / 2;
+
+  // Primary holes (even rows)
+  for (let r = 0; r < d.rows; r++) {
+    for (let c = 0; c < d.cols; c++) {
+      holes.push({ x: marginX + c * hStep, y: marginY + r * vStep, type: 'grid', row: r, col: c });
+    }
   }
-  for (let r = 0; r < board.rows - 1; r++) {
-    for (let c = 0; c < board.cols - 1; c++) {
+  // Diagonal holes (between rows, offset half step)
+  for (let r = 0; r < d.rows - 1; r++) {
+    for (let c = 0; c < d.cols - 1; c++) {
       holes.push({
-        x: c * hStep + hStep / 2,
-        y: r * vStep + vStep / 2,
+        x: marginX + hStep / 2 + c * hStep,
+        y: marginY + vStep / 2 + r * vStep,
         type: 'diag', row: r, col: c
       });
     }
@@ -475,7 +479,7 @@ function getHeadAtPoint(canvasX, canvasY) {
 function render() {
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, phoneW, phoneH);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const offset = getBoardOffset();
   const r = board.diameter / 2;
@@ -649,14 +653,16 @@ function render() {
 
   ctx.restore();
 
-  // Board bounds warning
-  const size = getBoardSize();
-  if (size.width > phoneW - 20 || size.height > phoneH - 20) {
-    ctx.strokeStyle = '#f44336';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 4]);
-    ctx.strokeRect(offset.x, offset.y, size.width, size.height);
-    ctx.setLineDash([]);
+  // Bottom drag handle (edit mode)
+  if (mode === 'edit') {
+    const isDragging = dragState && dragState.type === 'resize';
+    ctx.strokeStyle = isDragging ? '#2196F3' : 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = isDragging ? 3 : 2;
+    const hy = canvas.height - 4;
+    ctx.beginPath();
+    ctx.moveTo(20, hy);
+    ctx.lineTo(canvas.width - 20, hy);
+    ctx.stroke();
   }
 }
 
@@ -680,8 +686,9 @@ function roundRect(ctx, x, y, w, h, r) {
 function getCanvasPos(e) {
   const canvas = document.getElementById('gameCanvas');
   const rect = canvas.getBoundingClientRect();
+  const d = getBoardDerived();
   const scaleX = phoneW / rect.width;
-  const scaleY = phoneH / rect.height;
+  const scaleY = d.phoneH / rect.height;
   return {
     x: (e.clientX - rect.left) * scaleX,
     y: (e.clientY - rect.top) * scaleY
@@ -690,30 +697,65 @@ function getCanvasPos(e) {
 
 function onCanvasMouseDown(e) {
   const pos = getCanvasPos(e);
+  const d = getBoardDerived();
+
+  // Check if dragging the bottom edge to resize height
+  if (mode === 'edit' && pos.y >= d.phoneH - 12 && pos.y <= d.phoneH + 4) {
+    dragState = { type: 'resize', startY: e.clientY, startRatio: board.heightRatio };
+    document.getElementById('gameCanvas').style.cursor = 'ns-resize';
+    return;
+  }
+
   if (mode === 'edit') handleEditMouseDown(pos);
   else handlePreviewMouseDown(pos);
 }
 
 function onCanvasMouseMove(e) {
   const pos = getCanvasPos(e);
+
+  if (dragState && dragState.type === 'resize') {
+    const dy = e.clientY - dragState.startY;
+    const d = getBoardDerived();
+    const rect = document.getElementById('gameCanvas').getBoundingClientRect();
+    const scale = d.phoneH / rect.height;
+    const ratioDelta = (dy * scale) / phoneW;
+    board.heightRatio = Math.max(0.5, Math.min(5, dragState.startRatio + ratioDelta));
+    recomputeBoard();
+    return;
+  }
+
   if (dragState) {
     dragState.mouseX = pos.x;
     dragState.mouseY = pos.y;
     const cfg = findBestDragConfig(pos);
     if (cfg) {
-      // Always apply — pig rotates freely (including outside board)
       applyDragConfig(cfg);
-      // Only track as lastValid if inside board (for snap-back on release)
       if (cfg.inBounds) {
         dragState.lastValid = cfg;
       }
     }
-    dragState.currentCfg = cfg; // may be null (conflict) — pig stays at lastValid
+    dragState.currentCfg = cfg;
     render();
+  } else if (mode === 'edit') {
+    // Hover cursor: ns-resize near bottom edge, crosshair elsewhere
+    const d = getBoardDerived();
+    const canvas = document.getElementById('gameCanvas');
+    if (pos.y >= d.phoneH - 12 && pos.y <= d.phoneH + 4) {
+      canvas.style.cursor = 'ns-resize';
+    } else {
+      canvas.style.cursor = 'crosshair';
+    }
   }
 }
 
 function onCanvasMouseUp(e) {
+  if (dragState && dragState.type === 'resize') {
+    dragState = null;
+    document.getElementById('gameCanvas').style.cursor = '';
+    markCurrentDirty();
+    render();
+    return;
+  }
   if (dragState && dragState.previewMode) {
     handlePreviewMouseUp(getCanvasPos(e));
   } else if (mode === 'edit' && dragState) {
@@ -1018,7 +1060,8 @@ function canPushPig(pigId) {
   const stepSize = board.diameter;
 
   // Try up to a large number of steps (off-screen)
-  const maxSteps = Math.ceil(Math.max(phoneW, phoneH) / stepSize) + inst.length;
+  const d = getBoardDerived();
+  const maxSteps = Math.ceil(Math.max(phoneW, d.phoneH) / stepSize) + inst.length;
   for (let step = 1; step <= maxSteps; step++) {
     for (const cell of inst.cells) {
       const nx = cell.x + step * stepSize * dirX;
@@ -1154,21 +1197,7 @@ function deleteSelectedPig() {
 }
 
 function updatePigList() {
-  const container = document.getElementById('pigList');
-  if (pigs.length === 0) {
-    container.innerHTML = '<div style="font-size:12px;color:#999;">还没有放置小猪</div>';
-    return;
-  }
-
-  container.innerHTML = pigs.map(p => {
-    const inst = pigInstances.find(i => i.id === p.id);
-    const holeCount = inst ? inst.occupiedHoles.length : 0;
-    const sel = p.id === selectedPigId ? ' selected' : '';
-    return `<div class="pig-item${sel}" onclick="selectPig(${p.id})">
-      <span class="swatch" style="background:#FFD700"></span>
-      <span class="info">猪 #${p.id} <span class="len">${p.length}格 ${Math.round(p.angle)}° ${holeCount}孔</span></span>
-    </div>`;
-  }).join('');
+  // Pig list display removed
 }
 
 function selectPig(id) {
@@ -1183,12 +1212,20 @@ function selectPig(id) {
  * Cancel any ongoing drag — removes pending pig and resets dragState.
  */
 function cancelDrag() {
-  if (dragState && dragState.pendingPigId !== null) {
+  if (!dragState) return;
+
+  if (dragState.type === 'resize') {
+    dragState = null;
+    document.getElementById('gameCanvas').style.cursor = '';
+    return;
+  }
+
+  if (dragState.pendingPigId !== null) {
     pigs = pigs.filter(p => p.id !== dragState.pendingPigId);
     rebuildOccupancy();
   }
   // Restore original angle for preview mode drag (e.g. mouseleave, Escape)
-  if (dragState && dragState.previewMode) {
+  if (dragState.previewMode) {
     const pig = pigs.find(p => p.id === dragState.repositionPigId);
     if (pig && dragState.originalAngle !== undefined) {
       pig.angle = dragState.originalAngle;
@@ -1238,50 +1275,60 @@ function toggleMode() {
 // ============================================================
 // BOARD PARAMS UPDATE
 // ============================================================
-function updateBoardParams() {
-  board.diameter = parseInt(document.getElementById('diameter').value) || 30;
-  board.cols = parseInt(document.getElementById('cols').value) || 6;
-  board.rows = parseInt(document.getElementById('rows').value) || 12;
-  board.hSpacing = parseInt(document.getElementById('hSpacing').value) || 40;
-  board.vSpacing = parseInt(document.getElementById('vSpacing').value) || 20;
+function recomputeBoard() {
+  const d = getBoardDerived();
+  board.diameter = d.diameter;
+  board.hSpacing = d.hSpacing;
+  board.vSpacing = d.vSpacing;
 
   computeHoles();
   rebuildOccupancy();
-
-  const info = document.getElementById('boardInfo');
-  const size = getBoardSize();
-  const total = getTotalHoles();
-  const hC2C = board.diameter + board.hSpacing;
-  const vC2C = board.diameter + board.vSpacing;
-  info.innerHTML = `总孔数: ${total}<br>棋盘: ${size.width}×${size.height}px<br>孔心距: ${hC2C}×${vC2C}px<br>${size.width > phoneW - 20 || size.height > phoneH - 20 ? '<span style="color:#f44336;">⚠ 超出屏幕</span>' : '✓ 适配屏幕'}`;
-
+  recomputeBoardUi();
+  resizeCanvas();
   updatePigList();
   render();
   markCurrentDirty();
 }
 
-function updatePhoneSize() {
-  const sel = document.getElementById('phoneSize').value;
-  const sz = PHONE_SIZES[sel];
-  phoneW = sz.w;
-  phoneH = sz.h;
-  resizeCanvas();
-  updateBoardParams();
+function recomputeBoardUi() {
+  document.getElementById('colsVal').textContent = board.cols;
+  document.getElementById('rowsVal').textContent = board.rows;
+  document.getElementById('gapRatioVal').textContent = board.cellGapRatio.toFixed(1);
+  document.getElementById('diameterVal').textContent = board.diameter;
+  const d = getBoardDerived();
+  document.getElementById('boardSizeVal').textContent = phoneW + '×' + d.phoneH + 'px';
+}
+
+function adjCols(delta) {
+  board.cols = Math.max(2, Math.min(20, board.cols + delta));
+  recomputeBoard();
+}
+
+function adjRows(delta) {
+  board.rows = Math.max(2, Math.min(25, board.rows + delta));
+  recomputeBoard();
+}
+
+function adjGapRatio(delta) {
+  board.cellGapRatio = Math.round((board.cellGapRatio + delta) * 10) / 10;
+  board.cellGapRatio = Math.max(0.5, Math.min(5, board.cellGapRatio));
+  recomputeBoard();
 }
 
 function resizeCanvas() {
+  const d = getBoardDerived();
   const canvas = document.getElementById('gameCanvas');
   canvas.width = phoneW;
-  canvas.height = phoneH;
+  canvas.height = d.phoneH;
   const frame = document.getElementById('phoneFrame');
   const panelWidth = 220 + 220 + 48;
   const maxW = Math.min(phoneW, window.innerWidth - panelWidth);
   const maxH = window.innerHeight - 120;
-  const scale = Math.max(0.4, Math.min(maxW / phoneW, maxH / phoneH));
+  const scale = Math.max(0.4, Math.min(maxW / phoneW, maxH / d.phoneH));
   canvas.style.width = (phoneW * scale) + 'px';
-  canvas.style.height = (phoneH * scale) + 'px';
+  canvas.style.height = (d.phoneH * scale) + 'px';
   frame.style.width = (phoneW * scale) + 'px';
-  frame.style.height = (phoneH * scale) + 'px';
+  frame.style.height = (d.phoneH * scale) + 'px';
 }
 
 // ============================================================
@@ -1409,40 +1456,21 @@ async function getNextLevelNumber() {
 function pad4(n) { return String(n).padStart(4, '0'); }
 
 // ============================================================
-// OPEN LEVELS DIRECTORY
-// ============================================================
-async function openLevelsDir() {
-  try {
-    const resp = await fetch('/open-dir?path=' + encodeURIComponent(LEVELS_DIR));
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    showToast('已打开 levels 目录');
-  } catch (e) {
-    showToast('打开失败: ' + e.message);
-  }
-}
-
-// ============================================================
 // LEVEL DATA HELPERS
 // ============================================================
 function getLevelData() {
   return {
-    board: { diameter: board.diameter, cols: board.cols, rows: board.rows, hSpacing: board.hSpacing, vSpacing: board.vSpacing },
+    board: { cols: board.cols, rows: board.rows, heightRatio: board.heightRatio, cellGapRatio: board.cellGapRatio },
     pigs: pigs.map(p => ({ id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle }))
   };
 }
 
 function loadLevelData(data) {
   if (data.board) {
-    board.diameter = data.board.diameter || 30;
-    board.cols = data.board.cols || 6;
-    board.rows = data.board.rows || 12;
-    board.hSpacing = data.board.hSpacing || 40;
-    board.vSpacing = data.board.vSpacing || 20;
-    document.getElementById('diameter').value = board.diameter;
-    document.getElementById('cols').value = board.cols;
-    document.getElementById('rows').value = board.rows;
-    document.getElementById('hSpacing').value = board.hSpacing;
-    document.getElementById('vSpacing').value = board.vSpacing;
+    board.cols = data.board.cols || 3;
+    board.rows = data.board.rows || 5;
+    board.heightRatio = data.board.heightRatio || 1.2;
+    board.cellGapRatio = data.board.cellGapRatio || 1.5;
   }
   pigs = (data.pigs || []).map(p => ({ id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle }));
   nextPigId = pigs.length > 0 ? Math.max(...pigs.map(p => p.id)) + 1 : 0;
@@ -1457,7 +1485,8 @@ function loadLevelData(data) {
   rebuildOccupancy();
   updatePigEditor();
   updatePigList();
-  updateBoardParams();
+  recomputeBoardUi();
+  resizeCanvas();
   render();
 }
 
@@ -1491,20 +1520,19 @@ function updateLevelListUI() {
   const container = document.getElementById('levelListContainer');
   if (levelList.length === 0) {
     container.innerHTML = '<div style="font-size:11px;color:#999;padding:4px 8px;">暂无关卡</div>';
-    return;
+  } else {
+    container.innerHTML = levelList.map((lv, i) => {
+      const active = i === currentLevelIdx ? ' active' : '';
+      const dirty = lv.isDirty ? ' <span class="lv-dirty">*</span>' : '';
+      const fileInfo = lv.fileName ? lv.fileName : '未保存';
+      return `<div class="level-item${active}" onclick="switchToLevel(${i})" title="${lv.name} — ${fileInfo}">
+        <span class="lv-name" onclick="event.stopPropagation();renameLevel(${i})" title="点击改名">${lv.name}${dirty}</span>
+        <button class="lv-save" onclick="event.stopPropagation();saveLevel()" title="保存当前关卡草稿">存草稿</button>
+        <button class="lv-publish" onclick="event.stopPropagation();publishLevel(${i})" title="发布到游戏关卡目录">发布</button>
+      </div>`;
+    }).join('');
   }
-  container.innerHTML = levelList.map((lv, i) => {
-    const active = i === currentLevelIdx ? ' active' : '';
-    const dirty = lv.isDirty ? ' <span class="lv-dirty">*</span>' : '';
-    const pigCount = (lv.data && lv.data.pigs) ? lv.data.pigs.length : 0;
-    const fileInfo = lv.fileName ? lv.fileName : '未保存';
-    return `<div class="level-item${active}" onclick="switchToLevel(${i})" title="${lv.name} — ${fileInfo}">
-      <span class="lv-name">${lv.name}${dirty}</span>
-      <span class="lv-info">${pigCount}猪</span>
-      <button class="lv-save" onclick="event.stopPropagation();saveLevel()" title="保存当前关卡">保存</button>
-      <button class="lv-publish" onclick="event.stopPropagation();publishLevel(${i})" title="发布到游戏关卡目录">发布</button>
-    </div>`;
-  }).join('');
+  container.innerHTML += '<div class="lv-add" onclick="newLevel()" title="新建空白关卡">+</div>';
 }
 
 async function switchToLevel(idx) {
@@ -1529,7 +1557,7 @@ async function addLevelToList(name, fileName, data, fileHandle) {
 
 function getDefaultLevelData() {
   return {
-    board: { diameter: 30, cols: 6, rows: 12, hSpacing: 40, vSpacing: 20 },
+    board: { cols: 3, rows: 5, heightRatio: 1.2, cellGapRatio: 1.5 },
     pigs: []
   };
 }
@@ -1583,6 +1611,52 @@ async function saveLevel() {
   } catch (e) {
     showToast('保存失败: ' + e.message);
   }
+}
+
+// ============================================================
+// RENAME LEVEL
+// ============================================================
+async function renameLevel(idx) {
+  if (idx < 0 || idx >= levelList.length) return;
+  const entry = levelList[idx];
+
+  const input = prompt('输入新编号（纯数字，如 "3"）：');
+  if (input === null || input.trim() === '') return;
+
+  const num = parseInt(input.trim(), 10);
+  if (isNaN(num) || num <= 0) {
+    showToast('请输入有效的正整数');
+    return;
+  }
+
+  const newName = 'level_' + pad4(num);
+  const newFileName = newName + '.json';
+
+  // Check for duplicates
+  if (levelList.some((lv, i) => i !== idx && lv.fileName === newFileName)) {
+    showToast('文件名重复: ' + newFileName);
+    return;
+  }
+
+  // Rename file on disk if it exists
+  if (entry.fileName) {
+    try {
+      const resp = await fetch('/rename-level?old=' + encodeURIComponent(entry.fileName) + '&new=' + encodeURIComponent(newFileName));
+      if (!resp.ok) {
+        // If source doesn't exist yet (never saved), just update the planned name
+        if (resp.status !== 404) throw new Error('HTTP ' + resp.status);
+      }
+    } catch (e) {
+      showToast('文件重命名失败: ' + e.message);
+      return;
+    }
+  }
+
+  entry.name = newName;
+  entry.fileName = newFileName;
+  entry.isDirty = true;
+  updateLevelListUI();
+  showToast('已改名为: ' + newName);
 }
 
 // ============================================================
@@ -1681,59 +1755,6 @@ async function publishLevel(idx) {
 // ============================================================
 // PUBLISH ALL LEVELS
 // ============================================================
-async function publishAllLevels() {
-  // Sync current level data first
-  if (currentLevelIdx >= 0 && currentLevelIdx < levelList.length) {
-    levelList[currentLevelIdx].data = getLevelData();
-  }
-
-  // Validate: at least one level has pigs
-  const validLevels = levelList.filter(lv => lv.data && lv.data.pigs && lv.data.pigs.length > 0);
-  if (validLevels.length === 0) {
-    showToast('发布失败：没有包含小猪的关卡');
-    return;
-  }
-
-  // Get or request publish directory handle
-  if (!publishDirHandle) {
-    try {
-      const pickerOpts = { id: 'pig-editor-publish', mode: 'readwrite' };
-      const handle = await window.showDirectoryPicker(pickerOpts);
-      publishDirHandle = handle;
-      await persistPublishHandle(handle);
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-      showToast('选择目录失败: ' + e.message);
-      return;
-    }
-  }
-
-  let success = 0;
-  let fail = 0;
-  const skipped = levelList.length - validLevels.length;
-
-  for (const entry of validLevels) {
-    let fileName = entry.fileName;
-    if (!fileName) {
-      fileName = entry.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_') + '.json';
-    }
-    try {
-      const json = JSON.stringify(entry.data, null, 2);
-      const fileHandle = await publishDirHandle.getFileHandle(fileName, { create: true });
-      await writeFileToHandle(fileHandle, json);
-      success++;
-    } catch (e) {
-      fail++;
-      console.error('Publish failed:', fileName, e);
-    }
-  }
-
-  let msg = `发布完成：${success} 成功`;
-  if (fail > 0) msg += `, ${fail} 失败`;
-  if (skipped > 0) msg += `, ${skipped} 跳过(无小猪)`;
-  showToast(msg + ' → 游戏关卡目录');
-}
-
 // ============================================================
 // KEYBOARD SHORTCUTS
 // ============================================================
@@ -1839,15 +1860,8 @@ async function init() {
     }
   });
 
-  resizeCanvas();
-  computeHoles();
-  rebuildOccupancy();
-  updatePigList();
+  recomputeBoard();
   updateLevelListUI();
-  render();
-
-  // Set storage path label
-  document.getElementById('storagePathLabel').textContent = ' [levels/]';
 
   // Auto-scan levels directory via fetch on startup
   try {

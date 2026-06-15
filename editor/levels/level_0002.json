@@ -1,29 +1,22 @@
 {
   "board": {
-    "diameter": 30,
-    "cols": 6,
-    "rows": 12,
-    "hSpacing": 40,
-    "vSpacing": 20
+    "cols": 3,
+    "rows": 5,
+    "heightRatio": 1.2,
+    "cellGapRatio": 1.5
   },
   "pigs": [
     {
       "id": 0,
-      "tail": 26,
-      "length": 7,
-      "angle": 322
+      "tail": 4,
+      "length": 4,
+      "angle": 321
     },
     {
       "id": 1,
-      "tail": 118,
-      "length": 7,
-      "angle": 35
-    },
-    {
-      "id": 2,
-      "tail": 37,
+      "tail": 11,
       "length": 5,
-      "angle": 255
+      "angle": 168
     }
   ]
 }
