@@ -251,6 +251,7 @@ let nextPigId = 0;
 let mode = 'edit';
 let selectedPigId = null;
 let dragState = null;
+let resizeRafId = null; // rAF throttle for resize drag
 let backupPigs = null;
 let animations = [];
 let ghostAnimations = []; // edit-mode push preview ghosts
@@ -700,8 +701,9 @@ function onCanvasMouseDown(e) {
   const d = getBoardDerived();
 
   // Check if dragging the bottom edge to resize height
-  if (mode === 'edit' && pos.y >= d.phoneH - 12 && pos.y <= d.phoneH + 4) {
-    dragState = { type: 'resize', startY: e.clientY, startRatio: board.heightRatio };
+  if (mode === 'edit' && pos.y >= d.phoneH - 24 && pos.y <= d.phoneH + 12) {
+    const rect = document.getElementById('gameCanvas').getBoundingClientRect();
+    dragState = { type: 'resize', startY: e.clientY, startRatio: board.heightRatio, resizeScale: d.phoneH / rect.height };
     document.getElementById('gameCanvas').style.cursor = 'ns-resize';
     return;
   }
@@ -715,12 +717,15 @@ function onCanvasMouseMove(e) {
 
   if (dragState && dragState.type === 'resize') {
     const dy = e.clientY - dragState.startY;
-    const d = getBoardDerived();
-    const rect = document.getElementById('gameCanvas').getBoundingClientRect();
-    const scale = d.phoneH / rect.height;
-    const ratioDelta = (dy * scale) / phoneW;
+    const ratioDelta = (dy * dragState.resizeScale) / phoneW;
     board.heightRatio = Math.max(0.5, Math.min(5, dragState.startRatio + ratioDelta));
-    recomputeBoard();
+    // Throttle heavy recompute via rAF so mousemove never gets dropped
+    if (resizeRafId === null) {
+      resizeRafId = requestAnimationFrame(() => {
+        resizeRafId = null;
+        recomputeBoard();
+      });
+    }
     return;
   }
 
@@ -740,7 +745,7 @@ function onCanvasMouseMove(e) {
     // Hover cursor: ns-resize near bottom edge, crosshair elsewhere
     const d = getBoardDerived();
     const canvas = document.getElementById('gameCanvas');
-    if (pos.y >= d.phoneH - 12 && pos.y <= d.phoneH + 4) {
+    if (pos.y >= d.phoneH - 24 && pos.y <= d.phoneH + 12) {
       canvas.style.cursor = 'ns-resize';
     } else {
       canvas.style.cursor = 'crosshair';
@@ -751,9 +756,12 @@ function onCanvasMouseMove(e) {
 function onCanvasMouseUp(e) {
   if (dragState && dragState.type === 'resize') {
     dragState = null;
+    if (resizeRafId !== null) {
+      cancelAnimationFrame(resizeRafId);
+      resizeRafId = null;
+    }
+    recomputeBoard();
     document.getElementById('gameCanvas').style.cursor = '';
-    markCurrentDirty();
-    render();
     return;
   }
   if (dragState && dragState.previewMode) {
@@ -1215,7 +1223,13 @@ function cancelDrag() {
   if (!dragState) return;
 
   if (dragState.type === 'resize') {
+    if (resizeRafId !== null) {
+      cancelAnimationFrame(resizeRafId);
+      resizeRafId = null;
+    }
+    board.heightRatio = dragState.startRatio;
     dragState = null;
+    recomputeBoard();
     document.getElementById('gameCanvas').style.cursor = '';
     return;
   }
@@ -1845,6 +1859,10 @@ async function init() {
   // Catch mouseup outside canvas (e.g. mouse released outside browser viewport)
   document.addEventListener('mouseup', (e) => {
     if (!dragState) return;
+    if (dragState.type === 'resize') {
+      onCanvasMouseUp(e);
+      return;
+    }
     if (dragState.previewMode) {
       handlePreviewMouseUp(null);
     } else if (mode === 'edit') {
