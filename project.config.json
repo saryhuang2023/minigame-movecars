@@ -28,6 +28,7 @@
   },
   "compileType": "game",
   "libVersion": "latest",
+  "cloudfunctionRoot": "cloudfunctions/",
   "appid": "wxe02448bcf0540ff0",
   "projectname": "猪了个猪呀",
   "condition": {

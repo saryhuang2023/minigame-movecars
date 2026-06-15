@@ -170,12 +170,143 @@ body {
 .toast.show { opacity: 1; }
 
 canvas { cursor: crosshair; }
+
+/* ============================================================
+   MOBILE ADAPTATION (≤768px)
+   ============================================================ */
+@media (max-width: 768px) {
+  body { overflow: hidden; }
+
+  .toolbar {
+    padding: 5px 8px; gap: 4px; flex-wrap: wrap; min-height: 40px;
+  }
+  .toolbar .version { font-size: 9px; padding: 0 4px; }
+  .toolbar .title { font-size: 12px; margin-right: 0; }
+  .toolbar button { padding: 3px 8px; font-size: 11px; border-radius: 4px; }
+  .toolbar .sep { display: none; }
+  .toolbar .mode-label { font-size: 10px; padding: 2px 6px; margin-left: 4px; }
+
+  .main { flex-direction: column; }
+
+  .panel-left, .panel-right { display: none; }
+
+  .center {
+    flex: 1; padding: 6px; align-items: flex-start; overflow: hidden;
+    background: #e8e6dd;
+  }
+
+  .phone-frame {
+    border-radius: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    margin: 0 auto;
+  }
+  .phone-frame .hint { font-size: 9px; bottom: 6px; }
+  .canvas-resize-handle { bottom: -4px; height: 16px; }
+
+  /* Mobile board strip (always visible below canvas) */
+  .mobile-board-strip {
+    display: flex; flex-shrink: 0; align-items: center; gap: 4px;
+    background: #fff; border-top: 1px solid #e0e0e0; padding: 4px 8px;
+    flex-wrap: wrap; justify-content: center;
+  }
+  .mobile-board-strip .mbs-label { font-size: 11px; color: #999; }
+  .mobile-board-strip .mbs-val { font-size: 14px; font-weight: 600; min-width: 18px; text-align: center; }
+  .mobile-board-strip .mbs-sp { width: 1px; height: 16px; background: #ddd; margin: 0 4px; }
+  .mobile-strip-btn {
+    width: 30px; height: 30px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 18px; cursor: pointer; background: #f5f5f5; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
+    -webkit-tap-highlight-color: transparent; user-select: none; padding: 0;
+  }
+  .mobile-strip-btn:active { background: #ddd; }
+  .mobile-strip-btn.acts { background: #4CAF50; color: #fff; border-color: #4CAF50; font-size: 11px; width: auto; padding: 0 8px; }
+  .mobile-strip-btn.pigs { background: #FF9800; color: #fff; border-color: #FF9800; font-size: 11px; width: auto; padding: 0 6px; }
+
+  /* Bottom sheet */
+  .mobile-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 49;
+    display: none;
+  }
+  .mobile-backdrop.show { display: block; }
+
+  .mobile-sheet {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #fff; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+    transform: translateY(100%); transition: transform 0.25s ease;
+    z-index: 50; max-height: 55vh; display: flex; flex-direction: column;
+  }
+  .mobile-sheet.open { transform: translateY(0); }
+
+  .mobile-sheet-handle {
+    width: 36px; height: 4px; background: #ddd; border-radius: 2px;
+    margin: 10px auto 8px; flex-shrink: 0;
+  }
+
+  .mobile-sheet-content {
+    overflow-y: auto; padding: 0 16px 20px; flex: 1;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-sheet-content h3 { font-size: 14px; margin: 4px 0 10px; color: #555; }
+
+  .mobile-grid-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  }
+  .mobile-grid-row label { font-size: 13px; width: 20px; color: #777; text-align: center; }
+  .mobile-grid-btn {
+    width: 44px; height: 44px; border: 1px solid #ccc; border-radius: 10px;
+    font-size: 22px; cursor: pointer; background: #f5f5f5; font-family: inherit;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  .mobile-grid-btn:active { background: #ddd; }
+  .mobile-grid-val { font-size: 22px; font-weight: 600; min-width: 28px; text-align: center; }
+
+  .mobile-info-row {
+    font-size: 12px; color: #777; margin: 6px 0; line-height: 1.6;
+  }
+
+  .mobile-inline-btn {
+    padding: 2px 10px; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 11px; cursor: pointer; background: #f5f5f5; font-family: inherit;
+    margin-left: 6px; -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-inline-btn:active { background: #ddd; }
+
+  .mobile-level-item {
+    display: flex; align-items: center; padding: 10px 12px; margin-bottom: 3px;
+    border-radius: 8px; cursor: pointer; font-size: 13px; gap: 6px;
+    border: 1px solid #e8e8e8; -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-level-item:active { background: #f5f5f5; }
+  .mobile-level-item.active { border-color: #4CAF50; background: #E8F5E9; }
+  .mobile-level-item .mlv-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-level-item .mlv-info { color: #999; font-size: 11px; flex-shrink: 0; }
+  .mobile-level-item .mlv-dirty { color: #f44336; font-size: 10px; }
+
+  .mobile-btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .mobile-btn {
+    padding: 8px 14px; border: 1px solid #ccc; border-radius: 8px;
+    font-size: 13px; cursor: pointer; background: #f5f5f5; font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-btn:active { background: #ddd; }
+  .mobile-btn.primary { background: #4CAF50; color: #fff; border-color: #4CAF50; }
+  .mobile-btn.primary:active { background: #43A047; }
+  .mobile-btn.danger { background: #f44336; color: #fff; border-color: #f44336; }
+  .mobile-btn.danger:active { background: #e53935; }
+  .mobile-btn.accent { background: #2196F3; color: #fff; border-color: #2196F3; }
+  .mobile-btn.accent:active { background: #1E88E5; }
+
+  .mobile-pig-info { font-size: 13px; color: #555; line-height: 1.8; }
+  .mobile-pig-empty { font-size: 13px; color: #aaa; padding: 12px 0; }
+}
 </style>
 </head>
 <body>
 
 <div class="toolbar">
-  <span class="version" id="verDisplay">v2</span>
+  <span class="version" id="verDisplay">v7</span>
   <span class="title">小猪推推乐 - 关卡编辑器</span>
   <span class="sep"></span>
   <button id="btnMode" class="accent" onclick="toggleMode()">关卡试玩</button>
@@ -230,6 +361,27 @@ canvas { cursor: crosshair; }
       </div>
     </div>
   </div>
+</div>
+
+<!-- Mobile-only UI -->
+<div class="mobile-board-strip" id="mobileBoardStrip">
+  <span class="mbs-label">列</span>
+  <button class="mobile-strip-btn" onclick="adjCols(-1)">−</button>
+  <span class="mbs-val" id="mbsCols">5</span>
+  <button class="mobile-strip-btn" onclick="adjCols(1)">+</button>
+  <span class="mbs-sp"></span>
+  <span class="mbs-label">行</span>
+  <button class="mobile-strip-btn" onclick="adjRows(-1)">−</button>
+  <span class="mbs-val" id="mbsRows">5</span>
+  <button class="mobile-strip-btn" onclick="adjRows(1)">+</button>
+  <span class="mbs-sp"></span>
+  <button class="mobile-strip-btn acts" onclick="openLevelsSheet()" id="mbsLevelBtn">关卡</button>
+  <button class="mobile-strip-btn pigs" onclick="openPigSheet()" id="mbsPigBtn" style="display:none;">小猪</button>
+</div>
+<div class="mobile-backdrop" id="mobileBackdrop" onclick="closeMobileSheet()"></div>
+<div class="mobile-sheet" id="mobileSheet">
+  <div class="mobile-sheet-handle"></div>
+  <div class="mobile-sheet-content" id="mobileSheetContent"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -480,7 +632,16 @@ function getHeadAtPoint(canvasX, canvasY) {
 function render() {
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Ensure board.diameter is computed (robustness)
+  if (!board.diameter || board.diameter <= 0) {
+    const d = getBoardDerived();
+    board.diameter = d.diameter;
+  }
+
+  // Fill canvas background (dark, mobile-visible)
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const offset = getBoardOffset();
   const r = board.diameter / 2;
@@ -499,9 +660,9 @@ function render() {
     if (occ >= 0) {
       ctx.fillStyle = '#FFB6C1';
     } else {
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = 0.5;
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 0.8;
       ctx.stroke();
     }
     ctx.fill();
@@ -690,9 +851,12 @@ function getCanvasPos(e) {
   const d = getBoardDerived();
   const scaleX = phoneW / rect.width;
   const scaleY = d.phoneH / rect.height;
+  const tp = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+  const cx = tp ? tp.clientX : e.clientX;
+  const cy = tp ? tp.clientY : e.clientY;
   return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY
+    x: (cx - rect.left) * scaleX,
+    y: (cy - rect.top) * scaleY
   };
 }
 
@@ -703,7 +867,8 @@ function onCanvasMouseDown(e) {
   // Check if dragging the bottom edge to resize height
   if (mode === 'edit' && pos.y >= d.phoneH - 24 && pos.y <= d.phoneH + 12) {
     const rect = document.getElementById('gameCanvas').getBoundingClientRect();
-    dragState = { type: 'resize', startY: e.clientY, startRatio: board.heightRatio, resizeScale: d.phoneH / rect.height };
+    const clientY = tp ? tp.clientY : e.clientY;
+    dragState = { type: 'resize', startY: clientY, startRatio: board.heightRatio, resizeScale: d.phoneH / rect.height };
     document.getElementById('gameCanvas').style.cursor = 'ns-resize';
     return;
   }
@@ -716,7 +881,9 @@ function onCanvasMouseMove(e) {
   const pos = getCanvasPos(e);
 
   if (dragState && dragState.type === 'resize') {
-    const dy = e.clientY - dragState.startY;
+    const t2 = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+    const clientY = t2 ? t2.clientY : e.clientY;
+    const dy = clientY - dragState.startY;
     const ratioDelta = (dy * dragState.resizeScale) / phoneW;
     board.heightRatio = Math.max(0.5, Math.min(5, dragState.startRatio + ratioDelta));
     // Throttle heavy recompute via rAF so mousemove never gets dropped
@@ -1191,6 +1358,7 @@ function updatePigEditor() {
     }
   }
   editor.style.display = 'none';
+  maybeRefreshMobileSheet();
 }
 
 function deleteSelectedPig() {
@@ -1311,6 +1479,111 @@ function recomputeBoardUi() {
   document.getElementById('diameterVal').textContent = board.diameter;
   const d = getBoardDerived();
   document.getElementById('boardSizeVal').textContent = phoneW + '×' + d.phoneH + 'px';
+  updateMobileBoardStrip();
+}
+
+// ============================================================
+// MOBILE HELPERS
+// ============================================================
+let activeMobileSheet = null; // 'levels' | 'pig' | null
+
+function isMobile() { return window.innerWidth <= 768; }
+
+function updateMobileBoardStrip() {
+  if (!isMobile()) return;
+  document.getElementById('mbsCols').textContent = board.cols;
+  document.getElementById('mbsRows').textContent = board.rows;
+  const pigBtn = document.getElementById('mbsPigBtn');
+  pigBtn.style.display = selectedPigId >= 0 ? '' : 'none';
+}
+
+function openLevelsSheet() {
+  renderLevelsSheet();
+  openMobileSheet();
+}
+
+function openPigSheet() {
+  renderPigSheet();
+  openMobileSheet();
+}
+
+function openMobileSheet() {
+  document.getElementById('mobileSheet').classList.add('open');
+  document.getElementById('mobileBackdrop').classList.add('show');
+}
+
+function closeMobileSheet() {
+  document.getElementById('mobileSheet').classList.remove('open');
+  document.getElementById('mobileBackdrop').classList.remove('show');
+}
+
+function renderLevelsSheet() {
+  activeMobileSheet = 'levels';
+  const c = document.getElementById('mobileSheetContent');
+  if (levelList.length === 0) {
+    c.innerHTML = `<h3>关卡列表</h3><div class="mobile-pig-empty">暂无关卡</div>
+      <div class="mobile-btn-row">
+        <button class="mobile-btn primary" onclick="newLevel();closeMobileSheet()">+ 新建关卡</button>
+      </div>`;
+    return;
+  }
+  let html = '<h3>关卡列表</h3>';
+  for (let i = 0; i < levelList.length; i++) {
+    const lv = levelList[i];
+    const active = i === currentLevelIdx ? ' active' : '';
+    const dirty = lv.isDirty ? ' <span class="mlv-dirty">*</span>' : '';
+    const info = lv.fileName || '未保存';
+    html += `<div class="mobile-level-item${active}" onclick="switchToLevel(${i});closeMobileSheet()">
+      <span class="mlv-name">${lv.name}${dirty}</span>
+      <span class="mlv-info">${info}</span>
+    </div>`;
+  }
+  html += `<div class="mobile-btn-row">
+    <button class="mobile-btn primary" onclick="newLevel();closeMobileSheet()">+ 新建</button>
+    <button class="mobile-btn danger" onclick="deleteLevel(${currentLevelIdx});closeMobileSheet()">删除</button>
+  </div>`;
+  c.innerHTML = html;
+}
+
+function renderPigSheet() {
+  activeMobileSheet = 'pig';
+  const c = document.getElementById('mobileSheetContent');
+  if (selectedPigId >= 0) {
+    const pig = pigs.find(p => p.id === selectedPigId);
+    if (pig) {
+      c.innerHTML = `<h3>选中小猪</h3>
+        <div class="mobile-pig-info">
+          编号: #${pig.id}<br>
+          长度: ${pig.length} 格<br>
+          角度: ${Math.round(pig.angle)}°<br>
+          尾部孔: #${pig.tailIndex}
+        </div>
+        <div class="mobile-btn-row">
+          <button class="mobile-btn danger" onclick="deleteSelectedPig();closeMobileSheet()">删除</button>
+        </div>`;
+      return;
+    }
+  }
+  c.innerHTML = `<h3>选中小猪</h3><div class="mobile-pig-empty">未选中小猪<br><small>在画布上点击小猪即可选中</small></div>`;
+}
+
+function deleteLevel(idx) {
+  if (idx < 0 || idx >= levelList.length) return;
+  const name = levelList[idx].name;
+  levelList.splice(idx, 1);
+  if (levelList.length === 0) {
+    currentLevelIdx = -1;
+    loadLevelData(getDefaultLevelData());
+  } else if (currentLevelIdx >= levelList.length) {
+    currentLevelIdx = levelList.length - 1;
+    loadLevelData(levelList[currentLevelIdx].data);
+  } else if (currentLevelIdx === idx) {
+    currentLevelIdx = Math.min(idx, levelList.length - 1);
+    loadLevelData(levelList[currentLevelIdx].data);
+  }
+  updateLevelListUI();
+  updateMobileBoardStrip();
+  showToast('已删除: ' + name);
 }
 
 function adjCols(delta) {
@@ -1335,10 +1608,17 @@ function resizeCanvas() {
   canvas.width = phoneW;
   canvas.height = d.phoneH;
   const frame = document.getElementById('phoneFrame');
-  const panelWidth = 220 + 220 + 48;
-  const maxW = Math.min(phoneW, window.innerWidth - panelWidth);
-  const maxH = window.innerHeight - 120;
-  const scale = Math.max(0.4, Math.min(maxW / phoneW, maxH / d.phoneH));
+
+  let maxW, maxH;
+  if (isMobile()) {
+    maxW = window.innerWidth - 12;
+    maxH = window.innerHeight - 120;
+  } else {
+    const panelWidth = 220 + 220 + 48;
+    maxW = Math.min(phoneW, window.innerWidth - panelWidth);
+    maxH = window.innerHeight - 120;
+  }
+  const scale = Math.max(0.35, Math.min(maxW / phoneW, maxH / d.phoneH));
   canvas.style.width = (phoneW * scale) + 'px';
   canvas.style.height = (d.phoneH * scale) + 'px';
   frame.style.width = (phoneW * scale) + 'px';
@@ -1487,6 +1767,10 @@ function loadLevelData(data) {
   dragState = null;
   flashingPigs = {};
 
+  // Ensure board.diameter is always computed
+  const derived = getBoardDerived();
+  board.diameter = derived.diameter;
+
   computeHoles();
   rebuildOccupancy();
   updatePigEditor();
@@ -1533,12 +1817,12 @@ function updateLevelListUI() {
       const fileInfo = lv.fileName ? lv.fileName : '未保存';
       return `<div class="level-item${active}" onclick="switchToLevel(${i})" title="${lv.name} — ${fileInfo}">
         <span class="lv-name" onclick="event.stopPropagation();renameLevel(${i})" title="点击改名">${lv.name}${dirty}</span>
-        <button class="lv-save" onclick="event.stopPropagation();saveLevel()" title="保存当前关卡草稿">存草稿</button>
-        <button class="lv-publish" onclick="event.stopPropagation();publishLevel(${i})" title="发布到游戏关卡目录">发布</button>
+        <button class="lv-save" onclick="event.stopPropagation();saveLevel()" title="下载关卡文件到本地">存草稿</button>
       </div>`;
     }).join('');
   }
   container.innerHTML += '<div class="lv-add" onclick="newLevel()" title="新建空白关卡">+</div>';
+  maybeRefreshMobileSheet();
 }
 
 async function switchToLevel(idx) {
@@ -1856,6 +2140,23 @@ async function init() {
     if (dragState) { cancelDrag(); render(); }
   });
 
+  // Touch event handlers (mobile)
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    onCanvasMouseDown(e);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    onCanvasMouseMove(e);
+  }, { passive: false });
+  canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    onCanvasMouseUp(e);
+  }, { passive: false });
+  canvas.addEventListener('touchcancel', (e) => {
+    if (dragState) { cancelDrag(); render(); }
+  });
+
   // Catch mouseup outside canvas (e.g. mouse released outside browser viewport)
   document.addEventListener('mouseup', (e) => {
     if (!dragState) return;
@@ -1876,29 +2177,17 @@ async function init() {
     onCanvasMouseMove(e);
   });
 
+  // Catch touchend outside canvas (mobile)
+  document.addEventListener('touchend', (e) => {
+    if (!dragState) return;
+    onCanvasMouseUp(e);
+  });
+
   recomputeBoard();
   updateLevelListUI();
 
-  // Auto-scan levels directory via fetch on startup
-  try {
-    const defaultLevels = await scanDefaultLevels();
-    if (defaultLevels.length > 0) {
-      levelList = defaultLevels;
-      currentLevelIdx = 0;
-      loadLevelData(levelList[0].data);
-      updateLevelListUI();
-    }
-  } catch (e) {
-    console.log('Level scan skipped:', e.message);
-  }
-
-  // Restore publish directory handle
-  publishDirHandle = await restorePublishHandle();
-
-  // If no levels at all, create a default one
-  if (levelList.length === 0) {
-    addLevelToList('level_0001', null, getDefaultLevelData(), null);
-  }
+  // Init: always start with a fresh default level (cloud mode — no local file access)
+  addLevelToList('level_0001', null, getDefaultLevelData(), null);
 
   // Animation loop
   function loop() {
