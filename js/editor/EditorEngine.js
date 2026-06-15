@@ -1,4 +1,4 @@
-// 关卡编辑器引擎（v24 — 模块化：组合 GameplayEngine 核心）
+// 关卡编辑器引擎（v26 — 组合 GameplayEngine，编辑/试玩一键切换）
 // 纯 Canvas 2D 渲染，无 DOM 依赖
 // require/module.exports，wx API，InputManager 事件路由
 
@@ -7,6 +7,7 @@ const databus = require('../databus.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 
 const BG_COLOR = '#1a1a2e';
+const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
 
 class EditorEngine {
   constructor(inputManager) {
@@ -42,6 +43,7 @@ class EditorEngine {
   // ============================================================
   activate() {
     this.gp.recomputeBoard();
+    this.gp.recenterBoard();
     this.loadLevelList();
     this.input.on('editor', (e) => this.handleEvent(e));
   }
@@ -100,6 +102,7 @@ class EditorEngine {
     } else if (e.type === 'touchend') {
       if (this.gp.heightDragState) {
         this.gp.heightDragState = null;
+        this.gp.recenterBoard();
         this.markCurrentDirty();
         return;
       }
@@ -192,17 +195,14 @@ class EditorEngine {
     if (pigInfo) {
       const pig = this.gp.pigs.find(p => p.id === pigInfo.id);
       if (!pig) return;
-      this.gp.selectedPigId = pigInfo.id;
-      this.gp.dragState = {
-        type: 'rotate',
+      // 记录触控起点，不立即创建 dragState（等移动超阈值再激活拖拽）
+      this._previewTouchState = {
+        startX: x,
+        startY: y,
+        pigId: pig.id,
         tailIndex: pig.tailIndex,
-        pigId: pigInfo.id,
-        displayAngle: pig.angle,
-        targetAngle: pig.angle,
-        currentChaseStep: GameplayEngine.CHASE_SPEED,
-        lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
-        previewMode: true,
-        headHoleIdx: -1
+        length: pig.length,
+        angle: pig.angle
       };
     }
   }
@@ -215,13 +215,33 @@ class EditorEngine {
     if (now - this.gp.lastDragTime < 33) return;
     this.gp.lastDragTime = now;
 
-    if (this.gp.dragState.type === 'rotate') {
+    // 预览模式：尚未激活拖拽时检查移动距离阈值
+    if (this._previewTouchState && !this.gp.dragState) {
+      const dx = x - this._previewTouchState.startX;
+      const dy = y - this._previewTouchState.startY;
+      if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+        const pts = this._previewTouchState;
+        this.gp.dragState = {
+          type: 'rotate',
+          tailIndex: pts.tailIndex,
+          pigId: pts.pigId,
+          displayAngle: pts.angle,
+          targetAngle: pts.angle,
+          currentChaseStep: GameplayEngine.CHASE_SPEED,
+          lastValid: { tailIndex: pts.tailIndex, length: pts.length, angle: pts.angle },
+          previewMode: true,
+          headHoleIdx: -1
+        };
+      }
+    }
+
+    if (this.gp.dragState && this.gp.dragState.type === 'rotate') {
       this.gp.handleRotateDrag(x, y);
-    } else if (this.gp.dragState.type === 'adjustLength') {
+    } else if (this.gp.dragState && this.gp.dragState.type === 'adjustLength') {
       this.handleAdjustLengthDrag(x, y);
-    } else if (this.gp.dragState.type === 'adjustAngle') {
+    } else if (this.gp.dragState && this.gp.dragState.type === 'adjustAngle') {
       this.gp.handleRotateDrag(x, y, this.gp.dragState.pendingId);
-    } else {
+    } else if (this.gp.dragState) {
       this.handlePlaceDrag(x, y);
     }
   }
@@ -250,17 +270,22 @@ class EditorEngine {
     if (!tail) return;
 
     const dx = x - tail.x;
-    const dy = y - this.gp.topBarH - tail.y;
+    const dy = y - this.gp.topBarH - this.gp.boardOffsetY - tail.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     let len = Math.max(2, Math.min(20, Math.floor(dist / this.gp.diameter) + 1));
+
+    // 长度没变 → 跳过（避免无谓的占用重建）
+    if (ds._lastLen === len) return;
+    ds._lastLen = len;
 
     const excludeId = ds.pendingId;
     const check = this.gp.checkAngleValid(ds.tailIndex, len, excludeId, ds.lockedAngle, false);
     if (check.valid) {
       const headHoleIdx = this.gp.findHeadHole(ds.tailIndex, len, ds.lockedAngle);
       if (headHoleIdx >= 0) {
-        this.gp.pigs = this.gp.pigs.filter(p => p.id !== excludeId);
-        this.gp.pigs.push({ id: ds.pendingId, tailIndex: ds.tailIndex, length: len, angle: ds.lockedAngle });
+        // 原地更新临时猪，避免 filter+push
+        const tempPig = this.gp.pigs.find(p => p.id === excludeId);
+        if (tempPig) tempPig.length = len;
         this.gp.updatePigOccupancy(excludeId, ds.tailIndex, len, ds.lockedAngle);
         ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: ds.lockedAngle };
         ds.headHoleIdx = headHoleIdx;
@@ -269,9 +294,11 @@ class EditorEngine {
       } else {
         ds.isValidNow = false;
         ds.headHoleIdx = -1;
+        // 还原到上一个合法长度
         if (ds.lastValid) {
-          this.gp.pigs = this.gp.pigs.filter(p => p.id !== excludeId);
-          this.gp.pigs.push({ id: ds.pendingId, tailIndex: ds.tailIndex, length: ds.lastValid.length, angle: ds.lockedAngle });
+          const tempPig = this.gp.pigs.find(p => p.id === excludeId);
+          if (tempPig) tempPig.length = ds.lastValid.length;
+          this.gp.updatePigOccupancy(excludeId, ds.tailIndex, ds.lastValid.length, ds.lockedAngle);
         }
       }
     } else {
@@ -283,9 +310,11 @@ class EditorEngine {
         this.gp.triggerCollisionEffect(check.collidedId);
         ds.lastCollidedId = check.collidedId;
       }
+      // 还原到上一个合法长度
       if (ds.lastValid) {
-        this.gp.pigs = this.gp.pigs.filter(p => p.id !== excludeId);
-        this.gp.pigs.push({ id: ds.pendingId, tailIndex: ds.tailIndex, length: ds.lastValid.length, angle: ds.lockedAngle });
+        const tempPig = this.gp.pigs.find(p => p.id === excludeId);
+        if (tempPig) tempPig.length = ds.lastValid.length;
+        this.gp.updatePigOccupancy(excludeId, ds.tailIndex, ds.lastValid.length, ds.lockedAngle);
       }
     }
   }
@@ -296,7 +325,7 @@ class EditorEngine {
     if (!tail) return { cfg: null };
 
     const dx = x - tail.x;
-    const dy = y - this.gp.topBarH - tail.y;
+    const dy = y - this.gp.topBarH - this.gp.boardOffsetY - tail.y;
     let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (angle < 0) angle += 360;
     angle = Math.round(angle);
@@ -329,6 +358,15 @@ class EditorEngine {
   // 拖拽结束
   // ============================================================
   onDragEnd(x, y) {
+    // 预览模式轻点（未超拖拽阈值）→ 直接推出
+    if (this._previewTouchState && !this.gp.dragState) {
+      const pigId = this._previewTouchState.pigId;
+      this._previewTouchState = null;
+      this.tryPushDirect(pigId);
+      return;
+    }
+    this._previewTouchState = null;
+
     if (!this.gp.dragState) return;
 
     if (this.gp.dragState.previewMode) {
@@ -419,6 +457,7 @@ class EditorEngine {
     }
 
     this.gp.dragState = null;
+    this.gp.recenterBoard();
   }
 
   handlePreviewMouseUp(x, y) {
@@ -462,6 +501,34 @@ class EditorEngine {
   // ============================================================
   // 推出机制（编辑器包装）
   // ============================================================
+  tryPushDirect(pigId) {
+    const pig = this.gp.pigs.find(p => p.id === pigId);
+    if (!pig) return;
+    const result = this.gp.canPushPig(pigId);
+    if (!result.canPush) {
+      if (result.collidedPigId !== undefined) {
+        this.gp.triggerCollisionEffect(result.collidedPigId);
+        this.showToast(`碰到了猪 #${result.collidedPigId}!`);
+      } else {
+        this.showToast(result.reason || '路径受阻');
+      }
+    } else {
+      this.showToast(`猪 #${pigId} 被推出!`);
+      const anim = {
+        pigId, dirX: result.dirX, dirY: result.dirY,
+        totalDist: result.totalDist, currentDx: 0, currentDy: 0,
+        startTime: Date.now(), duration: 6400,
+        tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle
+      };
+      this.gp.animations.push(anim);
+      this.gp.pigs = this.gp.pigs.filter(p => p.id !== pigId);
+      this.gp.clearPigOccupancy(pigId);
+      setTimeout(() => {
+        this.gp.animations = this.gp.animations.filter(a => a.pigId !== pigId);
+      }, 6500);
+    }
+  }
+
   tryGhostPush(pigId) {
     const result = this.gp.canPushPig(pigId);
     if (result.canPush) {
@@ -488,7 +555,7 @@ class EditorEngine {
       this.backupPigs = this.gp.pigs.map(p => ({ ...p }));
       this.gp.selectedPigId = null;
       this.gp.dragState = null;
-      this.showToast('预览模式 — 拖动小猪旋转后松手推出');
+      this.showToast('试玩中 — 拖动小猪旋转后松手推出');
     } else {
       this.mode = 'edit';
       if (this.backupPigs) {
@@ -532,6 +599,7 @@ class EditorEngine {
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
     this.gp.recomputeBoard();
+    this.gp.recenterBoard();
   }
 
   // ============================================================
@@ -559,13 +627,17 @@ class EditorEngine {
         this.newLevel();
       }
     } catch (e) {
+      this.currentLevelIdx = -1;
       this.newLevel();
     }
   }
 
   saveLevel() {
-    if (this.currentLevelIdx < 0) { this.showToast('无关卡可保存'); return; }
+    if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
+      this.showToast('无关卡可保存'); return;
+    }
     const entry = this.levelList[this.currentLevelIdx];
+    if (!entry) { this.showToast('无关卡可保存'); return; }
     entry.data = this.getLevelData();
     entry.isDirty = false;
 
@@ -577,16 +649,16 @@ class EditorEngine {
   }
 
   newLevel() {
-    if (this.currentLevelIdx >= 0) {
+    if (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length) {
       this.levelList[this.currentLevelIdx].data = this.getLevelData();
     }
     let maxNum = 0;
     for (const lv of this.levelList) {
-      const m = lv.name.match(/^level_(\d{4})$/);
+      const m = lv.name.match(/^(\d{4})$/);
       if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
     }
     const num = maxNum + 1;
-    const name = 'level_' + String(num).padStart(4, '0');
+    const name = String(num).padStart(4, '0');
     const fileName = name + '.json';
     this.levelList.push({ name, fileName, data: this.getDefaultLevelData(), isDirty: true });
     this.currentLevelIdx = this.levelList.length - 1;
@@ -723,63 +795,43 @@ class EditorEngine {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, SCREEN_WIDTH, topBarH);
 
-    const verX = 8, verY = 8, verW = 30, verH = 22;
-    ctx.strokeStyle = '#ddd';
-    ctx.lineWidth = 1;
-    this.roundRect(verX, verY, verW, verH, 4);
-    ctx.stroke();
-    ctx.fillStyle = '#aaa';
-    ctx.font = '11px monospace';
+    // 返回按钮（左上角）
+    const backW = 32, backH = 28;
+    const backX = 4, backY = (topBarH - backH) / 2;
+    ctx.fillStyle = '#f0f0f0';
+    this.roundRect(backX, backY, backW, backH, 5);
+    ctx.fill();
+    ctx.fillStyle = '#666';
+    ctx.font = 'bold 16px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('v24', verX + verW / 2, verY + verH / 2);
+    ctx.fillText('←', backX + backW / 2, backY + backH / 2);
+
+    const titleX = backX + backW + 6;
 
     ctx.fillStyle = '#333';
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('小猪推推乐 - 关卡编辑器', verX + verW + 6, topBarH / 2);
+    ctx.fillText('小猪推推乐 - 关卡编辑器', titleX, topBarH / 2);
 
     const rightBase = SCREEN_WIDTH - 8;
 
-    const btnW = 72, btnH = 30;
-    const btnX = rightBase - btnW - 60, btnY = (topBarH - btnH) / 2;
-    if (this.mode === 'edit') {
-      ctx.fillStyle = '#2196F3';
-      this.roundRect(btnX, btnY, btnW, btnH, 5);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('关卡试玩', btnX + btnW / 2, btnY + btnH / 2);
-    } else {
-      ctx.fillStyle = '#f44336';
-      this.roundRect(btnX, btnY, btnW, btnH, 5);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('返回编辑', btnX + btnW / 2, btnY + btnH / 2);
-    }
-
-    const labelW = 62, labelH = 22;
-    const labelX = rightBase - labelW, labelY = (topBarH - labelH) / 2;
-    if (this.mode === 'edit') {
-      ctx.fillStyle = '#E3F2FD';
-    } else {
-      ctx.fillStyle = '#FFF3E0';
-    }
-    this.roundRect(labelX, labelY, labelW, labelH, 4);
+    // 编辑/试玩切换按钮（合并为一个）
+    const btnW = 58, btnH = 30;
+    const btnX = rightBase - btnW, btnY = (topBarH - btnH) / 2;
+    const isEdit = this.mode === 'edit';
+    ctx.fillStyle = isEdit ? '#2196F3' : '#f44336';
+    this.roundRect(btnX, btnY, btnW, btnH, 5);
     ctx.fill();
-    ctx.fillStyle = this.mode === 'edit' ? '#1565C0' : '#E65100';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(this.mode === 'edit' ? '编辑模式' : '预览模式', labelX + labelW / 2, labelY + labelH / 2);
+    ctx.fillText(isEdit ? '试玩' : '编辑', btnX + btnW / 2, btnY + btnH / 2);
 
     this.topBtns = [
+      { x: backX, y: backY, w: backW, h: backH, action: 'back' },
       { x: btnX, y: btnY, w: btnW, h: btnH, action: 'toggleMode' }
     ];
   }
@@ -788,6 +840,7 @@ class EditorEngine {
     for (const btn of this.topBtns) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         if (btn.action === 'toggleMode') this.toggleMode();
+        if (btn.action === 'back') databus.gameState = 'menu';
         return true;
       }
     }

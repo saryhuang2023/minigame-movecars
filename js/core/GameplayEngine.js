@@ -32,6 +32,7 @@ class GameplayEngine {
     // ===== 动态计算 =====
     this.boardW = SCREEN_WIDTH;
     this.boardH = 0;
+    this.boardOffsetY = 0;
     this.diameter = 0;
     this.hSpacing = 0;
     this.vSpacing = 0;
@@ -82,7 +83,7 @@ class GameplayEngine {
   }
 
   isInHeightHandle(x, y) {
-    const handleCenterY = this.topBarH + this.boardH;
+    const handleCenterY = this.topBarH + this.boardOffsetY + this.boardH;
     const hh = this.handleZoneH;
     return y >= handleCenterY - hh / 2 && y <= handleCenterY + hh / 2;
   }
@@ -114,6 +115,18 @@ class GameplayEngine {
           type: 'diag', row: r, col: c
         });
       }
+    }
+  }
+
+  // ============================================================
+  // 棋盘居中对齐
+  // ============================================================
+  recenterBoard() {
+    const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
+    if (this.boardH < availH) {
+      this.boardOffsetY = Math.round((availH - this.boardH) / 2);
+    } else {
+      this.boardOffsetY = 0;
     }
   }
 
@@ -209,7 +222,7 @@ class GameplayEngine {
 
   getHoleAtPoint(x, y, margin) {
     const r = this.diameter / 2 + (margin || 0);
-    const offY = this.topBarH;
+    const offY = this.topBarH + this.boardOffsetY;
     for (let i = 0; i < this.holes.length; i++) {
       const hx = this.holes[i].x;
       const hy = offY + this.holes[i].y;
@@ -220,7 +233,7 @@ class GameplayEngine {
   }
 
   getPigAtPoint(x, y) {
-    const offY = this.topBarH;
+    const offY = this.topBarH + this.boardOffsetY;
     for (const pig of this.pigs) {
       const cells = this.getPigCells(pig.tailIndex, pig.length, pig.angle);
       for (let ci = 0; ci < cells.length; ci++) {
@@ -314,7 +327,7 @@ class GameplayEngine {
     if (!tail) return;
 
     const dx = x - tail.x;
-    const dy = y - this.topBarH - tail.y;
+    const dy = y - this.topBarH - this.boardOffsetY - tail.y;
     let fingerAngle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (fingerAngle < 0) fingerAngle += 360;
     fingerAngle = Math.round(fingerAngle);
@@ -448,7 +461,7 @@ class GameplayEngine {
   // options: { hintText, drawHint }
   renderBoard(ctx, options = {}) {
     const r = this.diameter / 2;
-    const offY = this.topBarH;
+    const offY = this.topBarH + this.boardOffsetY;
 
     // 孔位
     for (let i = 0; i < this.holes.length; i++) {
@@ -529,7 +542,7 @@ class GameplayEngine {
 
     // 底部提示文字
     if (options.hintText !== undefined) {
-      const hintY = Math.min(SCREEN_HEIGHT - this.bottomStripH - 12, this.topBarH + this.boardH + 8);
+      const hintY = Math.min(SCREEN_HEIGHT - this.bottomStripH - 12, this.topBarH + this.boardOffsetY + this.boardH + 8);
       ctx.fillStyle = 'rgba(255,255,255,0.45)';
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
@@ -568,7 +581,7 @@ class GameplayEngine {
     if (!tail) return;
     const totalLen = pig.length * this.diameter;
     const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX + offDx;
-    const cy = this.topBarH + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
+    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -600,7 +613,7 @@ class GameplayEngine {
     if (!tail) return;
     const totalLen = pig.length * this.diameter;
     const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX;
-    const cy = this.topBarH + tail.y + (pig.length - 1) / 2 * this.diameter * dirY;
+    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY;
 
     const flashAlpha = 0.7 * (1 - t) * (1 - t);
 
@@ -628,7 +641,7 @@ class GameplayEngine {
     if (!tail) return;
     const totalLen = pig.length * this.diameter;
     const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX + offDx;
-    const cy = this.topBarH + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
+    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
@@ -647,7 +660,7 @@ class GameplayEngine {
     if (!tail) return;
     const totalLen = anim.length * this.diameter;
     const cx = tail.x + (anim.length - 1) / 2 * this.diameter * dirX + anim.currentDx;
-    const cy = this.topBarH + tail.y + (anim.length - 1) / 2 * this.diameter * dirY + anim.currentDy;
+    const cy = this.topBarH + this.boardOffsetY + tail.y + (anim.length - 1) / 2 * this.diameter * dirY + anim.currentDy;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
@@ -669,7 +682,7 @@ class GameplayEngine {
     if (!tail) return;
     const totalLen = pig.length * this.diameter;
     const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX;
-    const cy = this.topBarH + tail.y + (pig.length - 1) / 2 * this.diameter * dirY;
+    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
@@ -723,7 +736,7 @@ class GameplayEngine {
       ctx.lineTo(x + r, y + h);
       ctx.arcTo(x, y + h, x, y + h - r, r);
       ctx.lineTo(x, y + r);
-      ctx.arcTo(x, y, x + r, y);
+      ctx.arcTo(x, y, x + r, y, r);
     }
     ctx.closePath();
   }

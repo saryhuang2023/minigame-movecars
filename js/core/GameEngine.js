@@ -4,11 +4,15 @@ const databus = require('../databus.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
+const LevelSelectEngine = require('../game/LevelSelectEngine.js');
+const PlayingEngine = require('../game/PlayingEngine.js');
 
 class GameEngine {
   constructor() {
     this.input = new InputManager();
     this.editor = new EditorEngine(this.input);
+    this.levelSelect = new LevelSelectEngine(this.input);
+    this.playing = new PlayingEngine(this.input);
 
     // 菜单按钮
     this.menuButtons = [];
@@ -69,12 +73,11 @@ class GameEngine {
     const startX = (SCREEN_WIDTH - btnW) / 2;
 
     this.addMenuBtn(startX, SCREEN_HEIGHT * 0.50, btnW, btnH, '开始游戏', '#4CAF50', () => {
-      databus.gameState = 'playing';
+      databus.gameState = 'levelSelect';
     });
 
     this.addMenuBtn(startX, SCREEN_HEIGHT * 0.50 + 64, btnW, btnH, '关卡编辑器', '#FF9800', () => {
       databus.gameState = 'editor';
-      this.editor.activate();
     });
 
     // 渲染按钮
@@ -97,23 +100,44 @@ class GameEngine {
     this.menuButtons.push({ x, y, w, h, text, color, action });
   }
 
-  // ========== 游戏 ==========
-  renderPlaying() {
-    ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    ctx.fillStyle = '#2d8cf0';
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 32px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('游戏中...', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-  }
-
   // ========== 主循环 ==========
   update() {
     databus.frame++;
+
+    // 状态切换（在事件处理之前，确保引擎已激活）
+    this.checkStateTransition();
+
     this.input.handlePendingEvents();
+
+    // 游玩状态更新动画
+    if (databus.gameState === 'playing') {
+      this.playing.gp.update();
+    }
+    if (databus.gameState === 'editor') {
+      this.editor.gp.update();
+    }
+  }
+
+  // 跟踪上一个状态，自动管理 activate/deactivate
+  checkStateTransition() {
+    const curr = databus.gameState;
+    if (curr === this._prevState) return;
+
+    // 反激活旧状态
+    switch (this._prevState) {
+      case 'editor':      this.editor.deactivate();        break;
+      case 'levelSelect': this.levelSelect.deactivate();   break;
+      case 'playing':     this.playing.deactivate();       break;
+    }
+
+    // 激活新状态（menu 的输入在 setupMenuInput 已注册）
+    switch (curr) {
+      case 'editor':      this.editor.activate();          break;
+      case 'levelSelect': this.levelSelect.activate();     break;
+      case 'playing':     this.playing.activate();         break;
+    }
+
+    this._prevState = curr;
   }
 
   render() {
@@ -121,8 +145,11 @@ class GameEngine {
       case 'menu':
         this.renderMenu();
         break;
+      case 'levelSelect':
+        this.levelSelect.render();
+        break;
       case 'playing':
-        this.renderPlaying();
+        this.playing.render();
         break;
       case 'editor':
         this.editor.render();
