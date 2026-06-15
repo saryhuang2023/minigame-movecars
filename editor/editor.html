@@ -306,7 +306,7 @@ canvas { cursor: crosshair; }
 <body>
 
 <div class="toolbar">
-  <span class="version" id="verDisplay">v7</span>
+  <span class="version" id="verDisplay">v8</span>
   <span class="title">小猪推推乐 - 关卡编辑器</span>
   <span class="sep"></span>
   <button id="btnMode" class="accent" onclick="toggleMode()">关卡试玩</button>
@@ -1358,7 +1358,7 @@ function updatePigEditor() {
     }
   }
   editor.style.display = 'none';
-  maybeRefreshMobileSheet();
+  updateMobileBoardStrip();
 }
 
 function deleteSelectedPig() {
@@ -1822,7 +1822,7 @@ function updateLevelListUI() {
     }).join('');
   }
   container.innerHTML += '<div class="lv-add" onclick="newLevel()" title="新建空白关卡">+</div>';
-  maybeRefreshMobileSheet();
+  updateMobileBoardStrip();
 }
 
 async function switchToLevel(idx) {
