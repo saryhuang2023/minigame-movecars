@@ -6,10 +6,7 @@ const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
 const LevelSelectEngine = require('../game/LevelSelectEngine.js');
 const PlayingEngine = require('../game/PlayingEngine.js');
-
-// 加载小猪动画帧数据
-const fs = wx.getFileSystemManager();
-const pigSpriteData = JSON.parse(fs.readFileSync('assets/animals/roles/pig/pigs.json', 'utf8'));
+const { drawComposedPig, getComposedPigSize } = require('../render/PigRenderer.js');
 
 class GameEngine {
   constructor() {
@@ -20,15 +17,6 @@ class GameEngine {
 
     // 菜单按钮
     this.menuButtons = [];
-
-    // 小猪动画
-    this.pigFrames = pigSpriteData.frames;
-    this.pigImg = wx.createImage();
-    this.pigImg.src = 'assets/animals/roles/pig/pigs.png';
-    this.pigImgLoaded = false;
-    this.pigImg.onload = () => { this.pigImgLoaded = true; };
-    this.pigAnimFrame = 0;
-    this.pigAnimTimer = 0;
 
     this.start();
   }
@@ -75,23 +63,21 @@ class GameEngine {
     ctx.textBaseline = 'middle';
     ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.10);
 
-    // 小猪动画 — 屏幕正中央，等比例缩放至屏宽 65%
-    const scale = SCREEN_WIDTH * 0.65 / 432;
-    const animW = 432 * scale;
-    const animH = 133 * scale;
-    const animX = (SCREEN_WIDTH - animW) / 2;
-    const animY = (SCREEN_HEIGHT - animH) / 2;
-
-    if (this.pigImgLoaded) {
-      const frame = this.pigFrames[this.pigAnimFrame];
-      if (frame) {
-        const f = frame.frame;
-        ctx.drawImage(this.pigImg, f.x, f.y, f.w, f.h, animX, animY, animW, animH);
-      }
+    // 三图拼接小猪 — 屏幕正中央，等比例缩放至屏宽 65%
+    const pigSize = getComposedPigSize();
+    let pigX = 0, pigY = 0, pigDrawH = 0;
+    if (pigSize) {
+      const scale = (SCREEN_WIDTH * 0.65) / pigSize.naturalW;
+      const pigW = pigSize.naturalW * scale;
+      pigDrawH = pigSize.naturalH * scale;
+      pigX = (SCREEN_WIDTH - pigW) / 2;
+      pigY = (SCREEN_HEIGHT - pigDrawH) / 2;
+      drawComposedPig(ctx, pigX, pigY, scale);
     }
 
     // 副标题 — 紧跟动画底部
-    const subtitleY = animY + animH + 12;
+    if (pigDrawH === 0) pigDrawH = 60;
+    const subtitleY = pigY + pigDrawH + 12;
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.font = '14px sans-serif';
     ctx.fillText('小猪推推乐', SCREEN_WIDTH / 2, subtitleY);
@@ -133,15 +119,6 @@ class GameEngine {
   // ========== 主循环 ==========
   update() {
     databus.frame++;
-
-    // 小猪动画帧切换（菜单状态）
-    if (databus.gameState === 'menu') {
-      this.pigAnimTimer++;
-      if (this.pigAnimTimer >= 10) {
-        this.pigAnimTimer = 0;
-        this.pigAnimFrame = (this.pigAnimFrame + 1) % this.pigFrames.length;
-      }
-    }
 
     // 状态切换（在事件处理之前，确保引擎已激活）
     this.checkStateTransition();

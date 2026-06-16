@@ -141,7 +141,10 @@ class EditorEngine {
       const isHead = pigInfo.cellIndex >= pigInfo.totalLen - GameplayEngine.HEAD_CELLS;
 
       if (isHead) {
+        // 从 pigs 中移除原始猪，推入 temp 猪，重建占用表避免自碰撞
+        this.gp.pigs = this.gp.pigs.filter(p => p.id !== pigInfo.id);
         this.gp.pigs.push({ id: tempId, tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle });
+        this.gp.rebuildOccupancy();
         this.gp.dragState = {
           type: 'adjustHead',
           tailIndex: pig.tailIndex,
@@ -154,7 +157,10 @@ class EditorEngine {
           isValidNow: true
         };
       } else {
+        // 从 pigs 中移除原始猪，推入 temp 猪，重建占用表避免自碰撞
+        this.gp.pigs = this.gp.pigs.filter(p => p.id !== pigInfo.id);
         this.gp.pigs.push({ id: tempId, tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle });
+        this.gp.rebuildOccupancy();
         this.gp.dragState = {
           type: 'adjustAngle',
           tailIndex: pig.tailIndex,
@@ -285,7 +291,7 @@ class EditorEngine {
     angle = Math.round(angle);
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.cellLength) + 1));
+    const len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.segmentLength) + 1));
 
     // 长度和角度都没变 → 跳过
     if (ds._lastLen === len && ds._lastAngle === angle) return;
@@ -294,29 +300,37 @@ class EditorEngine {
 
     const excludeId = ds.pendingId;
     // 拖拽中不强制头部落孔（仅碰撞检查）
-    const cells = this.gp.getPigCells(ds.tailIndex, len, angle);
-    const check = this.gp.checkAngleValid(ds.tailIndex, len, excludeId, angle, false, cells);
+    const check = this.gp.checkAngleValid(ds.tailIndex, len, excludeId, angle, false);
     if (check.valid) {
       // 原地更新 temp 猪
       const tempPig = this.gp.pigs.find(p => p.id === excludeId);
       if (tempPig) { tempPig.length = len; tempPig.angle = angle; }
-      this.gp.updatePigOccupancy(excludeId, ds.tailIndex, len, angle, cells);
-      ds.headHoleIdx = this.gp.findHeadHole(ds.tailIndex, len, angle, cells);
+      this.gp.updatePigOccupancy(excludeId, ds.tailIndex, len, angle);
+      ds.headHoleIdx = this.gp.findHeadHole(ds.tailIndex, len, angle);
       ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle };
       ds.lastCollidedId = null;
       ds.isValidNow = true;
     } else {
-      ds.isValidNow = false;
-      ds.headHoleIdx = -1;
       if (check.collidedId !== undefined && check.collidedId !== ds.lastCollidedId) {
         this.gp.triggerCollisionEffect(check.collidedId);
         ds.lastCollidedId = check.collidedId;
       }
-      // 还原到上一个合法状态
+      ds.headHoleIdx = -1;
+      ds.isValidNow = false;
+      // 碰撞 → 二分查找长度边界，一帧贴紧
       if (ds.lastValid) {
+        let lo = ds.lastValid.length;
+        let hi = len;
+        for (let i = 0; i < 10; i++) {
+          const mid = Math.floor((lo + hi) / 2);
+          if (mid <= lo || mid >= hi) break;
+          const mc = this.gp.checkAngleValid(ds.tailIndex, mid, excludeId, angle, false);
+          if (mc.valid) { lo = mid; } else { hi = mid; }
+        }
         const tempPig = this.gp.pigs.find(p => p.id === excludeId);
-        if (tempPig) { tempPig.length = ds.lastValid.length; tempPig.angle = ds.lastValid.angle; }
-        this.gp.updatePigOccupancy(excludeId, ds.tailIndex, ds.lastValid.length, ds.lastValid.angle);
+        if (tempPig) { tempPig.length = lo; tempPig.angle = angle; }
+        this.gp.updatePigOccupancy(excludeId, ds.tailIndex, lo, angle);
+        ds.lastValid = { tailIndex: ds.tailIndex, length: lo, angle };
       }
     }
   }
@@ -333,7 +347,7 @@ class EditorEngine {
     angle = Math.round(angle);
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.cellLength) + 1));
+    const len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.segmentLength) + 1));
 
     const pig = this.gp.dragState.pigId != null ? this.gp.pigs.find(p => p.id === this.gp.dragState.pigId) : null;
 

@@ -5,7 +5,7 @@
 const PIG_COLOR = '#FFD700';
 const PIG_STROKE = '#FFB300';
 const SELECTED_COLOR = '#2196F3';
-const HEAD_CELLS = 2;  // 头部占用 cell 数量
+const HEAD_CELLS = 2;  // 头部占用段数
 
 // ============================================================
 // === canvas 工具 ===
@@ -62,7 +62,7 @@ class PigRenderer {
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
     const tail = this.e.holes[pig.tailIndex];
     if (!tail) return null;
-    const cl = this.e.cellLength;
+    const cl = this.e.segmentLength;
     const totalLen = pig.length * cl;
     const cx = tail.x + (pig.length - 1) / 2 * cl * dirX + offDx;
     const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * cl * dirY + offDy;
@@ -85,7 +85,7 @@ class PigRenderer {
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    const eyeX = c.totalLen / 2 - this.e.cellLength * 0.35;
+    const eyeX = c.totalLen / 2 - this.e.segmentLength * 0.35;
     const eyeY = -bh * 0.45;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
@@ -104,9 +104,9 @@ class PigRenderer {
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
     const tail = this.e.holes[pig.tailIndex];
     if (!tail) return;
-    const totalLen = pig.length * this.e.cellLength;
-    const cx = tail.x + (pig.length - 1) / 2 * this.e.cellLength * dirX;
-    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.e.cellLength * dirY;
+    const totalLen = pig.length * this.e.segmentLength;
+    const cx = tail.x + (pig.length - 1) / 2 * this.e.segmentLength * dirX;
+    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.e.segmentLength * dirY;
     const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
     const flashAlpha = 0.7 * (1 - t) * (1 - t);
 
@@ -148,9 +148,9 @@ class PigRenderer {
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
     const tail = this.e.holes[anim.tailIndex];
     if (!tail) return;
-    const totalLen = anim.length * this.e.cellLength;
-    const cx = tail.x + (anim.length - 1) / 2 * this.e.cellLength * dirX + anim.currentDx;
-    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (anim.length - 1) / 2 * this.e.cellLength * dirY + anim.currentDy;
+    const totalLen = anim.length * this.e.segmentLength;
+    const cx = tail.x + (anim.length - 1) / 2 * this.e.segmentLength * dirX + anim.currentDx;
+    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (anim.length - 1) / 2 * this.e.segmentLength * dirY + anim.currentDy;
     const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
     ctx.save();
     ctx.translate(cx, cy);
@@ -166,14 +166,14 @@ class PigRenderer {
     ctx.restore();
   }
 
-  // ---- 头部红色半透明遮罩（80%透明度，覆盖最后 HEAD_CELLS 个 cell） ----
+  // ---- 头部红色半透明遮罩（80%透明度，覆盖最后 HEAD_CELLS 段） ----
   drawHeadOverlay(ctx, pig) {
     const rad = pig.angle * Math.PI / 180;
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
     const tail = this.e.holes[pig.tailIndex];
     if (!tail) return;
-    const cl = this.e.cellLength;
-    // 头部中心 = 最后 HEAD_CELLS 个 cell 的中心点
+    const cl = this.e.segmentLength;
+    // 头部中心 = 最后 HEAD_CELLS 段的中心点
     const headMid = pig.length - HEAD_CELLS / 2;
     const headCx = tail.x + headMid * cl * dirX;
     const headCy = this.e.topBarH + this.e.boardOffsetY + tail.y + headMid * cl * dirY;
@@ -190,15 +190,30 @@ class PigRenderer {
     ctx.restore();
   }
 
+  // ---- 碰撞区蓝色半透明遮罩（80%透明度，显示 OBB 碰撞矩形） ----
+  drawCollisionOverlay(ctx, pig) {
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r) return;
+    const offY = this.e.topBarH + this.e.boardOffsetY;
+    ctx.save();
+    ctx.translate(r.cx, offY + r.cy);
+    ctx.rotate(-r.rad);
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = '#2196F3';
+    ctx.fillRect(-r.hw, -r.hh, r.hw * 2, r.hh * 2);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // ---- 选中高亮虚线框 ----
   drawSelection(ctx, pig) {
     const rad = pig.angle * Math.PI / 180;
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
     const tail = this.e.holes[pig.tailIndex];
     if (!tail) return;
-    const totalLen = pig.length * this.e.cellLength;
-    const cx = tail.x + (pig.length - 1) / 2 * this.e.cellLength * dirX;
-    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.e.cellLength * dirY;
+    const totalLen = pig.length * this.e.segmentLength;
+    const cx = tail.x + (pig.length - 1) / 2 * this.e.segmentLength * dirX;
+    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.e.segmentLength * dirY;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
@@ -211,4 +226,86 @@ class PigRenderer {
   }
 }
 
-module.exports = { PigRenderer, roundRect, PIG_COLOR, PIG_STROKE, SELECTED_COLOR };
+// ============================================================
+// === 三图拼接小猪绘制（主界面等场景复用）===
+// ============================================================
+// 尾(tail) + 中段(mid, 拉伸2倍宽) + 头(head)，左中右拼接
+// 三张图等高，垂直居中对齐，总宽 = tail.w + mid.w*2 + head.w
+
+let _pigParts = null;
+
+function _loadPigParts() {
+  if (_pigParts) return _pigParts;
+  const parts = {
+    tailImg: wx.createImage(), midImg: wx.createImage(), headImg: wx.createImage(),
+    _loaded: [false, false, false],
+    tailW: 0, midW: 0, headW: 0, height: 0
+  };
+  Object.defineProperty(parts, 'allLoaded', {
+    get() { return this._loaded[0] && this._loaded[1] && this._loaded[2]; }
+  });
+
+  const base = 'assets/animals/roles/pig/';
+  parts.tailImg.src = base + 'pig_tail.png';
+  parts.midImg.src  = base + 'pig_mid.png';
+  parts.headImg.src = base + 'pig_head.png';
+
+  parts.tailImg.onload = () => { parts._loaded[0] = true; parts.tailW = parts.tailImg.width;  parts.height = Math.max(parts.height, parts.tailImg.height); };
+  parts.midImg.onload  = () => { parts._loaded[1] = true; parts.midW  = parts.midImg.width;   parts.height = Math.max(parts.height, parts.midImg.height);  };
+  parts.headImg.onload = () => { parts._loaded[2] = true; parts.headW = parts.headImg.width;  parts.height = Math.max(parts.height, parts.headImg.height); };
+
+  _pigParts = parts;
+  return parts;
+}
+
+/**
+ * 获取拼接小猪的自然尺寸（加载中返回 null）
+ * @returns {{ naturalW: number, naturalH: number } | null}
+ */
+function getComposedPigSize() {
+  const parts = _loadPigParts();
+  if (!parts.allLoaded) return null;
+  // 三段间各重叠 1px，总宽减去 2 个重叠像素
+  return {
+    naturalW: parts.tailW + parts.midW * 2 + parts.headW - 2,
+    naturalH: parts.height
+  };
+}
+
+/**
+ * 绘制三图拼接小猪
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} x - 左上角 X
+ * @param {number} y - 左上角 Y
+ * @param {number} [scale=1] - 整体缩放比例
+ * @returns {number} 绘制总宽度（scale 后）
+ */
+function drawComposedPig(ctx, x, y, scale = 1) {
+  const parts = _loadPigParts();
+  if (!parts.allLoaded) return 0;
+
+  const tw = parts.tailW, mw = parts.midW * 2, hw = parts.headW;
+  const drawH = parts.height * scale;
+  const overlap = 1 * scale; // 三段间各重叠 1 个原始像素
+
+  // 尾 — 左
+  ctx.drawImage(parts.tailImg, x, y, tw * scale, drawH);
+  let curX = x + tw * scale - overlap;
+
+  // 中段 — 拉伸2倍（与尾重叠 1px）
+  ctx.drawImage(parts.midImg, curX, y, mw * scale, drawH);
+  curX += mw * scale - overlap;
+
+  // 头 — 右（与中段重叠 1px）
+  ctx.drawImage(parts.headImg, curX, y, hw * scale, drawH);
+
+  return (tw + mw + hw - 2) * scale;
+}
+
+module.exports.PigRenderer = PigRenderer;
+module.exports.roundRect = roundRect;
+module.exports.PIG_COLOR = PIG_COLOR;
+module.exports.PIG_STROKE = PIG_STROKE;
+module.exports.SELECTED_COLOR = SELECTED_COLOR;
+module.exports.drawComposedPig = drawComposedPig;
+module.exports.getComposedPigSize = getComposedPigSize;

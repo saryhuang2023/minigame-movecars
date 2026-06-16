@@ -13,7 +13,7 @@ const BG_COLOR = '#1a1a2e';
 const FLASH_DURATION = 500;
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
-const HEAD_CELLS = 2;  // 头部占用 cell 数量
+const HEAD_CELLS = 2;  // 头部触摸区段数
 
 class GameplayEngine {
   constructor() {
@@ -83,8 +83,11 @@ class GameplayEngine {
     this.rebuildOccupancy();
   }
 
-  // 每段 cell 长度 = 孔位半径（diameter/2）
-  get cellLength() { return this.diameter / 2; }
+  // 每段长度 = 孔位半径（diameter/2）
+  get segmentLength() { return this.diameter / 2; }
+
+  // 猪身体宽度 = 渲染对齐，碰撞也用这个值
+  get pigBodyWidth() { return this.diameter * 2 / 3; }
 
   isInHeightHandle(x, y) {
     const handleCenterY = this.topBarH + this.boardOffsetY + this.boardH;
@@ -149,11 +152,11 @@ class GameplayEngine {
     }
   }
 
-  updatePigOccupancy(pigId, tailIdx, length, angle, _cells) {
+  updatePigOccupancy(pigId, tailIdx, length, angle) {
     for (let i = 0; i < this.holeOccupied.length; i++) {
       if (this.holeOccupied[i] === pigId) this.holeOccupied[i] = -1;
     }
-    const occ = this.getPigOccupiedHoles(tailIdx, length, angle, _cells);
+    const occ = this.getPigOccupiedHoles(tailIdx, length, angle);
     for (const hi of occ) {
       if (hi >= 0 && hi < this.holeOccupied.length) {
         if (this.holeOccupied[hi] === -1 || this.holeOccupied[hi] === pigId) {
@@ -170,58 +173,109 @@ class GameplayEngine {
   }
 
   // ============================================================
-  // 小猪几何计算
+  // 小猪几何计算（v30 改为矩形 OBB 模型）
   // ============================================================
-  getPigCells(tailIndex, length, angle) {
-    if (tailIndex < 0 || tailIndex >= this.holes.length) return [];
+
+  // ---- OBB 矩形几何 ----
+  // 返回 { cx, cy, hw, hh, cosL, sinL, cosP, sinP, rad }
+  // hw = 半长（沿方向）, hh = 半宽（垂直方向）
+  getPigRect(tailIndex, length, angle) {
     const tail = this.holes[tailIndex];
+    if (!tail) return null;
     const rad = angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const cells = [];
-    for (let i = 0; i < length; i++) {
-      cells.push({ x: tail.x + i * this.cellLength * dirX, y: tail.y + i * this.cellLength * dirY });
+    const cosL = Math.cos(rad);
+    const sinL = -Math.sin(rad);       // canvas y-flip
+    const totalLen = length * this.segmentLength;
+    const hw = totalLen / 2;
+    const hh = this.pigBodyWidth / 2;
+    const cx = tail.x + hw * cosL;
+    const cy = tail.y + hw * sinL;
+    // 垂直轴
+    const cosP = Math.sin(rad);
+    const sinP = Math.cos(rad);
+    return { cx, cy, hw, hh, cosL, sinL, cosP, sinP, rad };
+  }
+
+  // 矩形头端中心点（用于落孔判定）
+  // 头部正方形碰撞区中心（对角线交点）
+  // B = OBB前端边缘中点 - R * 头部方向（往回R进入正方形中心）
+  _headSquareCenter(rect) {
+    const R = this.diameter / 2;
+    return {
+      x: rect.cx + (rect.hw - R) * rect.cosL,
+      y: rect.cy + (rect.hw - R) * rect.sinL
+    };
+  }
+
+  // ---- OBB 碰撞（分离轴定理） ----
+  obbIntersect(a, b) {
+    const proj = (cx, cy, hw, hh, cosL, sinL, cosP, sinP, ax, ay) => {
+      const cp = cx * ax + cy * ay;
+      const r = Math.abs(hw * (cosL * ax + sinL * ay)) + Math.abs(hh * (cosP * ax + sinP * ay));
+      return [cp - r, cp + r];
+    };
+    const axes = [
+      [a.cosL, a.sinL], [a.cosP, a.sinP],
+      [b.cosL, b.sinL], [b.cosP, b.sinP],
+    ];
+    for (const [ax, ay] of axes) {
+      const [minA, maxA] = proj(a.cx, a.cy, a.hw, a.hh, a.cosL, a.sinL, a.cosP, a.sinP, ax, ay);
+      const [minB, maxB] = proj(b.cx, b.cy, b.hw, b.hh, b.cosL, b.sinL, b.cosP, b.sinP, ax, ay);
+      if (maxA < minB || maxB < minA) return false;
     }
-    return cells;
+    return true;
   }
 
-  cellOverlapsHole(cellX, cellY, holeX, holeY) {
-    const holeR = this.diameter / 2;
-    const cellHalf = this.cellLength / 2;
-    const maxDist = holeR + cellHalf * 0.7;
-    const dx = cellX - holeX, dy = cellY - holeY;
-    return dx * dx + dy * dy <= maxDist * maxDist;
+  // ---- OBB 位移后的碰撞检测 ----
+  _shiftedObbCollision(rect, dx, dy, excludeId) {
+    const moved = { ...rect, cx: rect.cx + dx, cy: rect.cy + dy };
+    for (const other of this.pigs) {
+      if (other.id === excludeId) continue;
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+      if (!ob) continue;
+      if (this.obbIntersect(moved, ob)) return other.id;
+    }
+    return -1;
   }
 
-  getPigOccupiedHoles(tailIndex, length, angle, cells) {
-    if (!cells) cells = this.getPigCells(tailIndex, length, angle);
+  // ---- 孔位占用（矩形版） ----
+  getPigOccupiedHoles(tailIndex, length, angle) {
+    const r = this.getPigRect(tailIndex, length, angle);
+    if (!r) return [];
     const occupied = [];
     for (let hi = 0; hi < this.holes.length; hi++) {
-      for (const cell of cells) {
-        if (this.cellOverlapsHole(cell.x, cell.y, this.holes[hi].x, this.holes[hi].y)) {
-          occupied.push(hi);
-          break;
-        }
+      const h = this.holes[hi];
+      const dx = h.x - r.cx;
+      const dy = h.y - r.cy;
+      // 逆变换到矩形局部坐标
+      const lx = dx * Math.cos(r.rad) - dy * Math.sin(r.rad);
+      const ly = dx * Math.sin(r.rad) + dy * Math.cos(r.rad);
+      if (Math.abs(lx) <= r.hw + 2 && Math.abs(ly) <= r.hh + 2) {
+        occupied.push(hi);
       }
     }
     return occupied;
   }
 
-  findCellCollision(cells, excludeId) {
-    const minDist = this.cellLength * 0.85;
-    for (const otherPig of this.pigs) {
-      if (otherPig.id === excludeId) continue;
-      const otherCells = this.getPigCells(otherPig.tailIndex, otherPig.length, otherPig.angle);
-      for (const c1 of cells) {
-        for (const c2 of otherCells) {
-          const dx = c1.x - c2.x;
-          const dy = c1.y - c2.y;
-          if (dx * dx + dy * dy < minDist * minDist) {
-            return otherPig.id;
-          }
-        }
+  // ---- 命中检测（矩形版） ----
+  getPigAtPoint(x, y) {
+    const offY = this.topBarH + this.boardOffsetY;
+    for (const pig of this.pigs) {
+      const r = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+      if (!r) continue;
+      const px = x - r.cx;
+      const py = (y - offY) - r.cy;
+      // 逆变换到矩形局部坐标
+      const lx = px * Math.cos(r.rad) - py * Math.sin(r.rad);
+      const ly = px * Math.sin(r.rad) + py * Math.cos(r.rad);
+      if (Math.abs(lx) <= r.hw + 4 && Math.abs(ly) <= r.hh + 4) {
+        // 沿长度方向线性映射段索引
+        const cellIndex = Math.round((lx / r.hw) * (pig.length - 1) / 2 + (pig.length - 1) / 2);
+        const ci = Math.max(0, Math.min(pig.length - 1, cellIndex));
+        return { id: pig.id, cellIndex: ci, totalLen: pig.length };
       }
     }
-    return -1;
+    return null;
   }
 
   getHoleAtPoint(x, y, margin) {
@@ -236,53 +290,47 @@ class GameplayEngine {
     return -1;
   }
 
-  getPigAtPoint(x, y) {
-    const offY = this.topBarH + this.boardOffsetY;
-    for (const pig of this.pigs) {
-      const cells = this.getPigCells(pig.tailIndex, pig.length, pig.angle);
-      for (let ci = 0; ci < cells.length; ci++) {
-        const cell = cells[ci];
-        const cx = cell.x, cy = offY + cell.y;
-        const half = this.cellLength / 2 + 2;
-        if (x >= cx - half && x <= cx + half && y >= cy - half && y <= cy + half) {
-          return { id: pig.id, cellIndex: ci, totalLen: pig.length };
-        }
-      }
-    }
-    return null;
-  }
-
   // ============================================================
   // 碰撞检测 & snap
   // ============================================================
-  checkAngleValid(tailIdx, len, excludeId, angle, requireHeadOnHole = true, _cells) {
-    const cells = _cells || this.getPigCells(tailIdx, len, angle);
-    const occupied = this.getPigOccupiedHoles(tailIdx, len, angle, cells);
+  // 碰撞检测（OBB 矩形版）
+  checkAngleValid(tailIdx, len, excludeId, angle, requireHeadOnHole = true) {
+    const r = this.getPigRect(tailIdx, len, angle);
+    if (!r) return { valid: false };
+    // ① 孔位占用
+    const occupied = this.getPigOccupiedHoles(tailIdx, len, angle);
     for (const hi of occupied) {
       if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== excludeId) {
         return { valid: false, collidedId: this.holeOccupied[hi] };
       }
     }
-    const cellCollidedId = this.findCellCollision(cells, excludeId);
-    if (cellCollidedId >= 0) return { valid: false, collidedId: cellCollidedId };
+    // ② OBB 碰撞
+    for (const other of this.pigs) {
+      if (other.id === excludeId) continue;
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+      if (!ob) continue;
+      if (this.obbIntersect(r, ob)) return { valid: false, collidedId: other.id };
+    }
     if (!requireHeadOnHole) return { valid: true };
-    // 头部 = 尖端 cell（最后一个），单次判定
-    return { valid: this.findHeadHole(tailIdx, len, angle, cells) >= 0 };
+    // ③ 头部落孔
+    return { valid: this.findHeadHole(tailIdx, len, angle) >= 0 };
   }
 
   snapAngleToHoles(tailIndex, length, rawAngle) {
     const tailHole = this.holes[tailIndex];
     if (!tailHole) return rawAngle;
-    const cells = this.getPigCells(tailIndex, length, rawAngle);
-    // 以头部尖端 (最后一个 cell) 为吸附锚点
-    const tipCell = cells[length - 1];
+    const r = this.getPigRect(tailIndex, length, rawAngle);
+    if (!r) return rawAngle;
+    const center = this._headSquareCenter(r);
+    const thresh = this.diameter / 4;  // R/2
+    const thresh2 = thresh * thresh;
     let bestHole = null;
     let bestDist = Infinity;
     for (const hole of this.holes) {
-      const dx = hole.x - tipCell.x;
-      const dy = hole.y - tipCell.y;
+      const dx = hole.x - center.x;
+      const dy = hole.y - center.y;
       const dist = dx * dx + dy * dy;
-      if (dist < bestDist && this.cellOverlapsHole(tipCell.x, tipCell.y, hole.x, hole.y)) {
+      if (dist < bestDist && dist <= thresh2) {
         bestDist = dist;
         bestHole = hole;
       }
@@ -292,19 +340,22 @@ class GameplayEngine {
     const dy = bestHole.y - tailHole.y;
     let snapAngle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (snapAngle < 0) snapAngle += 360;
-    // 验证吸附后头部尖端落孔
     if (this.findHeadHole(tailIndex, length, snapAngle) < 0) return null;
     return snapAngle;
   }
 
-  // 落孔判定：仅检查尖端 cell（最后一个 cell），与身体占孔同源
-  findHeadHole(tailIndex, length, angle, _cells) {
-    if (angle == null && !_cells) return -1;
-    const cells = _cells || this.getPigCells(tailIndex, length, angle);
-    // 仅尖端 cell
-    const tip = cells[length - 1];
+  // ============================================================
+  findHeadHole(tailIndex, length, angle) {
+    if (angle == null) return -1;
+    const r = this.getPigRect(tailIndex, length, angle);
+    if (!r) return -1;
+    const center = this._headSquareCenter(r);
+    const thresh = this.diameter / 4;  // R/2
+    const thresh2 = thresh * thresh;
     for (let i = 0; i < this.holes.length; i++) {
-      if (this.cellOverlapsHole(tip.x, tip.y, this.holes[i].x, this.holes[i].y)) return i;
+      const dx = center.x - this.holes[i].x;
+      const dy = center.y - this.holes[i].y;
+      if (dx * dx + dy * dy <= thresh2) return i;
     }
     return -1;
   }
@@ -323,8 +374,7 @@ class GameplayEngine {
     for (let i = 0; i < 12; i++) {
       const mid = ((lo + hi) / 2);
       const midNorm = ((mid % 360) + 360) % 360;
-      const cells = this.getPigCells(tailIndex, length, midNorm);
-      const check = this.checkAngleValid(tailIndex, length, excludeId, midNorm, false, cells);
+      const check = this.checkAngleValid(tailIndex, length, excludeId, midNorm, false);
       if (check.valid) {
         lo = mid;
       } else {
@@ -373,13 +423,11 @@ class GameplayEngine {
     newAngle = ((newAngle % 360) + 360) % 360;
     newAngle = Math.round(newAngle);
 
-    // 一次计算 cells，复用于 checkAngleValid + findHeadHole + updatePigOccupancy
-    const cells = this.getPigCells(ds.tailIndex, len, newAngle);
-    const check = this.checkAngleValid(ds.tailIndex, len, targetId, newAngle, false, cells);
+    const check = this.checkAngleValid(ds.tailIndex, len, targetId, newAngle, false);
 
     if (check.valid) {
       ds.displayAngle = newAngle;
-      const headHoleIdx = this.findHeadHole(ds.tailIndex, len, newAngle, cells);
+      const headHoleIdx = this.findHeadHole(ds.tailIndex, len, newAngle);
       if (headHoleIdx >= 0) {
         if (pendingId) {
           // 原地更新，避免 filter+push 重建数组
@@ -390,7 +438,7 @@ class GameplayEngine {
         } else {
           pig.angle = newAngle;
         }
-        this.updatePigOccupancy(targetId, ds.tailIndex, len, newAngle, cells);
+        this.updatePigOccupancy(targetId, ds.tailIndex, len, newAngle);
         ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: newAngle };
         ds.headHoleIdx = headHoleIdx;
         ds.lastCollidedId = null;
@@ -417,10 +465,9 @@ class GameplayEngine {
       } else {
         pig.angle = boundary;
       }
-      const boundaryCells = this.getPigCells(ds.tailIndex, len, boundary);
-      this.updatePigOccupancy(targetId, ds.tailIndex, len, boundary, boundaryCells);
+      this.updatePigOccupancy(targetId, ds.tailIndex, len, boundary);
       ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: boundary };
-      ds.headHoleIdx = this.findHeadHole(ds.tailIndex, len, boundary, boundaryCells);
+      ds.headHoleIdx = this.findHeadHole(ds.tailIndex, len, boundary);
       if (check.collidedId !== ds.lastCollidedId) {
         this.triggerCollisionEffect(check.collidedId);
         ds.lastCollidedId = check.collidedId;
@@ -441,37 +488,44 @@ class GameplayEngine {
   // ============================================================
   // 推出检测
   // ============================================================
+  // 推出检测（OBB 矩形版）
   canPushPig(pigId) {
     const pig = this.pigs.find(p => p.id === pigId);
     if (!pig) return { canPush: false, reason: '猪不存在' };
 
-    const cells = this.getPigCells(pig.tailIndex, pig.length, pig.angle);
-    if (cells.length === 0) return { canPush: false, reason: '无有效位置' };
+    const r0 = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r0) return { canPush: false, reason: '无有效位置' };
 
     const rad = pig.angle * Math.PI / 180;
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const stepSize = this.cellLength;
+    const stepSize = this.segmentLength;
     const maxSteps = 100;
 
     for (let step = 1; step <= maxSteps; step++) {
-      const movedCells = cells.map(c => ({
-        x: c.x + step * stepSize * dirX,
-        y: c.y + step * stepSize * dirY
-      }));
-
-      for (const mc of movedCells) {
-        for (let hi = 0; hi < this.holes.length; hi++) {
-          if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== pigId) {
-            if (this.cellOverlapsHole(mc.x, mc.y, this.holes[hi].x, this.holes[hi].y)) {
-              return { canPush: false, reason: `碰到猪 #${this.holeOccupied[hi]}`, collidedPigId: this.holeOccupied[hi] };
-            }
+      const dx = step * stepSize * dirX;
+      const dy = step * stepSize * dirY;
+      // 孔位碰撞
+      const moved = {
+        cx: r0.cx + dx, cy: r0.cy + dy,
+        hw: r0.hw, hh: r0.hh,
+        cosL: r0.cosL, sinL: r0.sinL, cosP: r0.cosP, sinP: r0.sinP
+      };
+      for (let hi = 0; hi < this.holes.length; hi++) {
+        if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== pigId) {
+          const h = this.holes[hi];
+          const ldx = h.x - moved.cx;
+          const ldy = h.y - moved.cy;
+          const lx = ldx * Math.cos(r0.rad) - ldy * Math.sin(r0.rad);
+          const ly = ldx * Math.sin(r0.rad) + ldy * Math.cos(r0.rad);
+          if (Math.abs(lx) <= r0.hw + 2 && Math.abs(ly) <= r0.hh + 2) {
+            return { canPush: false, reason: `碰到猪 #${this.holeOccupied[hi]}`, collidedPigId: this.holeOccupied[hi] };
           }
         }
       }
-
-      const cellCollidedId = this.findCellCollision(movedCells, pigId);
-      if (cellCollidedId >= 0) {
-        return { canPush: false, reason: `碰到猪 #${cellCollidedId}`, collidedPigId: cellCollidedId };
+      // OBB 碰撞
+      const cid = this._shiftedObbCollision(r0, dx, dy, pigId);
+      if (cid >= 0) {
+        return { canPush: false, reason: `碰到猪 #${cid}`, collidedPigId: cid };
       }
     }
     return { canPush: true, dirX, dirY, totalDist: maxSteps * stepSize };
@@ -589,6 +643,7 @@ class GameplayEngine {
     if (options.showSelection && this.selectedPigId != null && !this.dragState) {
       const pig = this.pigs.find(p => p.id === this.selectedPigId);
       if (pig) {
+        pr.drawCollisionOverlay(ctx, pig);
         pr.drawHeadOverlay(ctx, pig);
         pr.drawSelection(ctx, pig);
       }
