@@ -51,7 +51,7 @@ class PigRenderer {
     const ds = this.e.dragState;
     if (!ds || ds.displayAngle == null) return pig.angle;
     if (ds.type === 'rotate' && pig.id === ds.pigId) return ds.displayAngle;
-    if ((ds.type === 'adjustAngle' || ds.type === 'adjustLength') && pig.id === ds.pendingId) return ds.displayAngle;
+    if (ds.type === 'adjustAngle' && pig.id === ds.pendingId) return ds.displayAngle;
     return pig.angle;
   }
 

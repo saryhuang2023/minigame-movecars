@@ -118,7 +118,6 @@ class PlayingEngine {
           tailIndex: this._touchState.tailIndex,
           displayAngle: this._touchState.angle,
           targetAngle: this._touchState.angle,
-          currentChaseStep: GameplayEngine.CHASE_SPEED,
           lastValid: { tailIndex: this._touchState.tailIndex, length: this._touchState.length, angle: this._touchState.angle },
           headHoleIdx: -1,
           lastCollidedId: null,

@@ -13,14 +13,13 @@ const BG_COLOR = '#1a1a2e';
 const FLASH_DURATION = 500;
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
-const CHASE_SPEED_MIN = 1;
 const HEAD_CELLS = 2;  // 头部占用 cell 数量
 
 class GameplayEngine {
   constructor() {
     // ===== 布局常量 =====
     this.topBarH = 48;
-    this.bottomStripH = 78;
+    this.bottomStripH = 120;
 
     // ===== 棋盘参数 =====
     this.cols = 5;
@@ -267,7 +266,7 @@ class GameplayEngine {
     const cellCollidedId = this.findCellCollision(cells, excludeId);
     if (cellCollidedId >= 0) return { valid: false, collidedId: cellCollidedId };
     if (!requireHeadOnHole) return { valid: true };
-    // 头部 = 最后 HEAD_CELLS 个 cell 的中点，单次判定
+    // 头部 = 尖端 cell（最后一个），单次判定
     return { valid: this.findHeadHole(tailIdx, len, angle, cells) >= 0 };
   }
 
@@ -298,24 +297,41 @@ class GameplayEngine {
     return snapAngle;
   }
 
-  // 落孔判定：优先以尖端 cell 调 cellOverlapsHole（与身体占孔同源），
-  // 尖端点到的孔就是落孔。尖端未命中则退取倒数第 2 个 cell。
+  // 落孔判定：仅检查尖端 cell（最后一个 cell），与身体占孔同源
   findHeadHole(tailIndex, length, angle, _cells) {
     if (angle == null && !_cells) return -1;
     const cells = _cells || this.getPigCells(tailIndex, length, angle);
-    // 优先尖端 cell
+    // 仅尖端 cell
     const tip = cells[length - 1];
     for (let i = 0; i < this.holes.length; i++) {
       if (this.cellOverlapsHole(tip.x, tip.y, this.holes[i].x, this.holes[i].y)) return i;
     }
-    // 退取倒数第 2 个 cell
-    if (length >= 2) {
-      const sub = cells[length - 2];
-      for (let i = 0; i < this.holes.length; i++) {
-        if (this.cellOverlapsHole(sub.x, sub.y, this.holes[i].x, this.holes[i].y)) return i;
+    return -1;
+  }
+
+  // ============================================================
+  // 二分查找碰撞边界：在 goodAngle(合法) ↔ badAngle(碰撞) 之间找最大合法角度
+  // 仅碰撞帧调用，12 轮二分，精度 <0.01°
+  // ============================================================
+  findAngleBoundary(goodAngle, badAngle, tailIndex, length, excludeId) {
+    let lo = goodAngle;
+    let hi = badAngle;
+    let diff = hi - lo;
+    if (diff > 180) { lo += 360; }
+    if (diff < -180) { hi += 360; }
+
+    for (let i = 0; i < 12; i++) {
+      const mid = ((lo + hi) / 2);
+      const midNorm = ((mid % 360) + 360) % 360;
+      const cells = this.getPigCells(tailIndex, length, midNorm);
+      const check = this.checkAngleValid(tailIndex, length, excludeId, midNorm, false, cells);
+      if (check.valid) {
+        lo = mid;
+      } else {
+        hi = mid;
       }
     }
-    return -1;
+    return ((lo % 360) + 360) % 360;
   }
 
   // ============================================================
@@ -327,7 +343,7 @@ class GameplayEngine {
 
   // ============================================================
   // 旋转追逐（核心玩法：三模式共享）
-  // 小猪逐步向手指方向旋转，碰壁即停，自适应步长减半
+  // 小猪逐步向手指方向旋转，碰壁时一帧二分查找边界瞬间贴紧
   // ============================================================
   // pendingId 可选：编辑模式下 adjustAngle 传入临时猪 ID
   handleRotateDrag(x, y, pendingId) {
@@ -352,7 +368,7 @@ class GameplayEngine {
     if (diff < -180) diff += 360;
     if (Math.abs(diff) < 0.5) return;
 
-    const step = Math.max(-ds.currentChaseStep, Math.min(ds.currentChaseStep, diff));
+    const step = Math.max(-CHASE_SPEED, Math.min(CHASE_SPEED, diff));
     let newAngle = ds.displayAngle + step;
     newAngle = ((newAngle % 360) + 360) % 360;
     newAngle = Math.round(newAngle);
@@ -362,7 +378,6 @@ class GameplayEngine {
     const check = this.checkAngleValid(ds.tailIndex, len, targetId, newAngle, false, cells);
 
     if (check.valid) {
-      ds.currentChaseStep = CHASE_SPEED;
       ds.displayAngle = newAngle;
       const headHoleIdx = this.findHeadHole(ds.tailIndex, len, newAngle, cells);
       if (headHoleIdx >= 0) {
@@ -391,7 +406,21 @@ class GameplayEngine {
         }
       }
     } else if (check.collidedId !== undefined) {
-      ds.currentChaseStep = Math.max(CHASE_SPEED_MIN, Math.floor(ds.currentChaseStep / 2));
+      // 碰撞 → 一帧二分查找边界，瞬间贴紧
+      const boundary = this.findAngleBoundary(ds.displayAngle, newAngle, ds.tailIndex, len, targetId);
+      ds.displayAngle = boundary;
+      if (pendingId) {
+        const idx = this.pigs.findIndex(p => p.id === pendingId);
+        if (idx >= 0) {
+          this.pigs[idx] = { id: pendingId, tailIndex: ds.tailIndex, length: len, angle: boundary };
+        }
+      } else {
+        pig.angle = boundary;
+      }
+      const boundaryCells = this.getPigCells(ds.tailIndex, len, boundary);
+      this.updatePigOccupancy(targetId, ds.tailIndex, len, boundary, boundaryCells);
+      ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: boundary };
+      ds.headHoleIdx = this.findHeadHole(ds.tailIndex, len, boundary, boundaryCells);
       if (check.collidedId !== ds.lastCollidedId) {
         this.triggerCollisionEffect(check.collidedId);
         ds.lastCollidedId = check.collidedId;
@@ -598,7 +627,6 @@ class GameplayEngine {
 }
 
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
-GameplayEngine.CHASE_SPEED_MIN = CHASE_SPEED_MIN;
 GameplayEngine.HEAD_CELLS = HEAD_CELLS;
 
 module.exports = GameplayEngine;

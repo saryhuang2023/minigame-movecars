@@ -138,17 +138,16 @@ class EditorEngine {
       this.gp.selectedPigId = pigInfo.id;
 
       const tempId = -999;
-      const isHead = pigInfo.cellIndex === pigInfo.totalLen - 1;
+      const isHead = pigInfo.cellIndex >= pigInfo.totalLen - GameplayEngine.HEAD_CELLS;
 
       if (isHead) {
         this.gp.pigs.push({ id: tempId, tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle });
         this.gp.dragState = {
-          type: 'adjustLength',
+          type: 'adjustHead',
           tailIndex: pig.tailIndex,
           pigId: pigInfo.id,
           originalPig: pig,
           pendingId: tempId,
-          lockedAngle: pig.angle,
           lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
           headHoleIdx: -1,
           lastCollidedId: null,
@@ -165,7 +164,6 @@ class EditorEngine {
           lockedLength: pig.length,
           displayAngle: pig.angle,
           targetAngle: pig.angle,
-          currentChaseStep: GameplayEngine.CHASE_SPEED,
           lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
           headHoleIdx: -1,
           lastCollidedId: null,
@@ -232,7 +230,6 @@ class EditorEngine {
           pigId: pts.pigId,
           displayAngle: pts.angle,
           targetAngle: pts.angle,
-          currentChaseStep: GameplayEngine.CHASE_SPEED,
           lastValid: { tailIndex: pts.tailIndex, length: pts.length, angle: pts.angle },
           previewMode: true,
           headHoleIdx: -1,
@@ -244,8 +241,8 @@ class EditorEngine {
 
     if (this.gp.dragState && this.gp.dragState.type === 'rotate') {
       this.gp.handleRotateDrag(x, y);
-    } else if (this.gp.dragState && this.gp.dragState.type === 'adjustLength') {
-      this.handleAdjustLengthDrag(x, y);
+    } else if (this.gp.dragState && this.gp.dragState.type === 'adjustHead') {
+      this.handleAdjustHeadDrag(x, y);
     } else if (this.gp.dragState && this.gp.dragState.type === 'adjustAngle') {
       this.gp.handleRotateDrag(x, y, this.gp.dragState.pendingId);
     } else if (this.gp.dragState) {
@@ -261,8 +258,13 @@ class EditorEngine {
       this.gp.dragState.lastValid = result.cfg;
       this.gp.dragState.lastCollidedId = null;
       this.gp.dragState.isValidNow = true;
+      // 头部红圈：计算 headHoleIdx 使 renderBoard 绘制红色高亮环
+      this.gp.dragState.headHoleIdx = this.gp.findHeadHole(
+        result.cfg.tailIndex, result.cfg.length, result.cfg.angle
+      );
     } else {
       this.gp.dragState.isValidNow = false;
+      this.gp.dragState.headHoleIdx = -1;
       if (result.collidedId != null && result.collidedId !== this.gp.dragState.lastCollidedId) {
         this.gp.triggerCollisionEffect(result.collidedId);
         this.gp.dragState.lastCollidedId = result.collidedId;
@@ -270,43 +272,51 @@ class EditorEngine {
     }
   }
 
-  // 调整长度拖拽（按住头部）：角度锁定，仅改长度
-  handleAdjustLengthDrag(x, y) {
+  // 头部拖拽（角度+长度同时跟随手指）
+  handleAdjustHeadDrag(x, y) {
     const ds = this.gp.dragState;
     const tail = this.gp.holes[ds.tailIndex];
     if (!tail) return;
 
     const dx = x - tail.x;
     const dy = y - this.gp.topBarH - this.gp.boardOffsetY - tail.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    let len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.cellLength) + 1));
+    let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+    if (angle < 0) angle += 360;
+    angle = Math.round(angle);
 
-    // 长度没变 → 跳过（避免无谓的占用重建）
-    if (ds._lastLen === len) return;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.cellLength) + 1));
+
+    // 长度和角度都没变 → 跳过
+    if (ds._lastLen === len && ds._lastAngle === angle) return;
     ds._lastLen = len;
+    ds._lastAngle = angle;
 
     const excludeId = ds.pendingId;
-    // 调整长度拖拽只检查碰撞（requireHeadOnHole=false），不强制头部落孔
-    const check = this.gp.checkAngleValid(ds.tailIndex, len, excludeId, ds.lockedAngle, false);
+    // 拖拽中不强制头部落孔（仅碰撞检查）
+    const cells = this.gp.getPigCells(ds.tailIndex, len, angle);
+    const check = this.gp.checkAngleValid(ds.tailIndex, len, excludeId, angle, false, cells);
     if (check.valid) {
-      // 原地更新临时猪，避免 filter+push
+      // 原地更新 temp 猪
       const tempPig = this.gp.pigs.find(p => p.id === excludeId);
-      if (tempPig) tempPig.length = len;
-      this.gp.updatePigOccupancy(excludeId, ds.tailIndex, len, ds.lockedAngle);
-      ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: ds.lockedAngle };
+      if (tempPig) { tempPig.length = len; tempPig.angle = angle; }
+      this.gp.updatePigOccupancy(excludeId, ds.tailIndex, len, angle, cells);
+      ds.headHoleIdx = this.gp.findHeadHole(ds.tailIndex, len, angle, cells);
+      ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle };
       ds.lastCollidedId = null;
       ds.isValidNow = true;
     } else {
       ds.isValidNow = false;
+      ds.headHoleIdx = -1;
       if (check.collidedId !== undefined && check.collidedId !== ds.lastCollidedId) {
         this.gp.triggerCollisionEffect(check.collidedId);
         ds.lastCollidedId = check.collidedId;
       }
-      // 还原到上一个合法长度
+      // 还原到上一个合法状态
       if (ds.lastValid) {
         const tempPig = this.gp.pigs.find(p => p.id === excludeId);
-        if (tempPig) tempPig.length = ds.lastValid.length;
-        this.gp.updatePigOccupancy(excludeId, ds.tailIndex, ds.lastValid.length, ds.lockedAngle);
+        if (tempPig) { tempPig.length = ds.lastValid.length; tempPig.angle = ds.lastValid.angle; }
+        this.gp.updatePigOccupancy(excludeId, ds.tailIndex, ds.lastValid.length, ds.lastValid.angle);
       }
     }
   }
@@ -329,7 +339,7 @@ class EditorEngine {
 
     const excludeId = this.gp.dragState.pendingId != null ? this.gp.dragState.pendingId
       : (pig ? pig.id : -1);
-    // 放置拖拽中不强制头部落孔（与 adjustLength 行为对齐）
+    // 放置拖拽中不强制头部落孔（与 adjustHead 行为对齐）
     const check = this.gp.checkAngleValid(tailIdx, len, excludeId, angle, false);
     if (!check.valid) return { cfg: null, collidedId: check.collidedId };
     return { cfg: { tailIndex: tailIdx, length: len, angle, inBounds: true } };
@@ -390,27 +400,32 @@ class EditorEngine {
       } else if (pig) {
         this.gp.updatePigOccupancy(pig.id, this.gp.dragState.tailIndex, pig.length, pig.angle);
       }
-    } else if (this.gp.dragState.type === 'adjustLength') {
+    } else if (this.gp.dragState.type === 'adjustHead') {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
-      if (lv && verifyHeadOnHole(lv.tailIndex, lv.length, lv.angle)) {
-        const realId = this.gp.dragState.pigId;
-        this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: lv.angle });
-        this.gp.selectedPigId = realId;
-        for (let i = 0; i < this.gp.holeOccupied.length; i++) {
-          if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
+      if (lv) {
+        const snappedAngle = lv.angle != null ? this.gp.snapAngleToHoles(lv.tailIndex, lv.length, lv.angle) : null;
+        if (snappedAngle != null && verifyHeadOnHole(lv.tailIndex, lv.length, snappedAngle)) {
+          const realId = this.gp.dragState.pigId;
+          this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: snappedAngle });
+          this.gp.selectedPigId = realId;
+          for (let i = 0; i < this.gp.holeOccupied.length; i++) {
+            if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
+          }
+          this.gp.updatePigOccupancy(realId, lv.tailIndex, lv.length, snappedAngle);
+          this.showToast(`小猪 #${realId} → ${lv.length}格 ${snappedAngle}°`);
+          this.markCurrentDirty();
+          this.tryGhostPush(realId);
+        } else if (this.gp.dragState.originalPig) {
+          this.gp.pigs.push(this.gp.dragState.originalPig);
+          this.gp.selectedPigId = this.gp.dragState.originalPig.id;
+          this.gp.rebuildOccupancy();
+          this.showToast('头部未落孔，已恢复');
         }
-        this.gp.updatePigOccupancy(realId, lv.tailIndex, lv.length, lv.angle);
-        this.showToast(`小猪 #${realId} 长度 → ${lv.length}格`);
-        this.markCurrentDirty();
-        this.tryGhostPush(realId);
       } else if (this.gp.dragState.originalPig) {
-        // 头部未落孔 → 恢复原状态
         this.gp.pigs.push(this.gp.dragState.originalPig);
         this.gp.selectedPigId = this.gp.dragState.originalPig.id;
         this.gp.rebuildOccupancy();
-        this.showToast('头部未落孔，已恢复');
       }
-      // 没有 originalPig 的新建场景 → 猪已被过滤删除
     } else if (this.gp.dragState.type === 'adjustAngle') {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
       if (lv) {
@@ -827,37 +842,37 @@ class EditorEngine {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, SCREEN_WIDTH, topBarH);
 
-    // 返回按钮（左上角）
-    const backW = 32, backH = 28;
-    const backX = 4, backY = (topBarH - backH) / 2;
+    // 返回按钮（左上角）— 手指友好
+    const backW = 44, backH = 36;
+    const backX = 6, backY = (topBarH - backH) / 2;
     ctx.fillStyle = '#f0f0f0';
-    roundRect(ctx,backX, backY, backW, backH, 5);
+    roundRect(ctx,backX, backY, backW, backH, 6);
     ctx.fill();
     ctx.fillStyle = '#666';
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 18px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('←', backX + backW / 2, backY + backH / 2);
 
-    const titleX = backX + backW + 6;
+    const titleX = backX + backW + 8;
 
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('小猪推推乐 - 关卡编辑器', titleX, topBarH / 2);
 
-    const rightBase = SCREEN_WIDTH - 8;
+    const rightBase = SCREEN_WIDTH - 10;
 
-    // 编辑/试玩切换按钮（合并为一个）
-    const btnW = 58, btnH = 30;
+    // 编辑/试玩切换按钮 — 手指友好
+    const btnW = 72, btnH = 36;
     const btnX = rightBase - btnW, btnY = (topBarH - btnH) / 2;
     const isEdit = this.mode === 'edit';
     ctx.fillStyle = isEdit ? '#2196F3' : '#f44336';
-    roundRect(ctx,btnX, btnY, btnW, btnH, 5);
+    roundRect(ctx,btnX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(isEdit ? '试玩' : '编辑', btnX + btnW / 2, btnY + btnH / 2);
@@ -900,47 +915,58 @@ class EditorEngine {
     this.bottomBtns = [];
     this.levelBtns = [];
 
-    const row1H = 34;
-    const row1Y = baseY + 2;
-    const row2H = 34;
-    const row2Y = baseY + row1H + 2;
+    const row1H = 50;
+    const row1Y = baseY + 4;
+    const row2H = 50;
+    const row2Y = baseY + row1H + 4;
 
     // ============================
     // 第一行：棋盘尺寸 + 小猪按钮
     // ============================
-    const btnH = 26;
+    const btnH = 40;
     const btnY1 = row1Y + (row1H - btnH) / 2;
     const midY1 = row1Y + row1H / 2;
 
-    let x = 4;
+    let x = 12;
 
-    // 列控制
-    this._drawCompactStepper(x, btnY1, btnH, '列', this.gp.cols, 2, 20,
-      (v) => { this.gp.cols = v; this.gp.recomputeBoard(); this.markCurrentDirty(); });
-    x += 58;
+    // 列控制 — 手指友好
+    x = this._drawCompactStepper(x, btnY1, btnH, '列', this.gp.cols, 2, 20,
+      (v) => {
+        if (this.gp.pigs.length > 0) {
+          this.showToast('空棋盘才能被调整!');
+          return;
+        }
+        this.gp.cols = v; this.gp.recomputeBoard(); this.markCurrentDirty();
+      });
+    x += 16;
 
     // 行控制
-    this._drawCompactStepper(x, btnY1, btnH, '行', this.gp.rows, 2, 20,
-      (v) => { this.gp.rows = v; this.gp.recomputeBoard(); this.markCurrentDirty(); });
-    x += 58;
+    x = this._drawCompactStepper(x, btnY1, btnH, '行', this.gp.rows, 2, 20,
+      (v) => {
+        if (this.gp.pigs.length > 0) {
+          this.showToast('空棋盘才能被调整!');
+          return;
+        }
+        this.gp.rows = v; this.gp.recomputeBoard(); this.markCurrentDirty();
+      });
+    x += 16;
 
     // 分隔线
-    x += 4;
     ctx.strokeStyle = '#ddd';
     ctx.beginPath();
-    ctx.moveTo(x, row1Y + 4);
-    ctx.lineTo(x, row1Y + row1H - 4);
+    ctx.moveTo(x, row1Y + 6);
+    ctx.lineTo(x, row1Y + row1H - 6);
     ctx.stroke();
-    x += 6;
+    x += 14;
 
-    // 小猪按钮
-    const pigW = 26;
+    // 小猪按钮 — 手指友好
+    const pigW = 56;
     const pigLabel = this.gp.selectedPigId != null ? '#' + this.gp.selectedPigId : '猪';
     ctx.fillStyle = '#FF9800';
-    roundRect(ctx, x, btnY1, pigW, btnH, 4);
+    roundRect(ctx, x, btnY1, pigW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 10px sans-serif';
+    ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(pigLabel, x + pigW / 2, midY1);
@@ -957,7 +983,7 @@ class EditorEngine {
     // ============================
     const btnY2 = row2Y + (row2H - btnH) / 2;
     const midY2 = row2Y + row2H / 2;
-    x = 4;
+    x = 12;
 
     // 分隔线（顶边）
     ctx.strokeStyle = '#ddd';
@@ -966,30 +992,30 @@ class EditorEngine {
     ctx.lineTo(SCREEN_WIDTH, row2Y - 1);
     ctx.stroke();
 
-    // 关卡选择按钮 [0002 ▼]
+    // 关卡选择按钮 [0002 ▼] — 手指友好
     const hasLevels = this.levelList.length > 0;
     const curName = hasLevels && this.currentLevelIdx >= 0
       ? this.levelList[this.currentLevelIdx].name : '---';
     const isDirty = hasLevels && this.currentLevelIdx >= 0
       && this.levelList[this.currentLevelIdx].isDirty;
 
-    const lvlBtnW = 58;
+    const lvlBtnW = 80;
     ctx.fillStyle = '#f5f5f5';
     ctx.strokeStyle = '#ccc';
     ctx.lineWidth = 1;
-    roundRect(ctx, x, btnY2, lvlBtnW, btnH, 4);
+    roundRect(ctx, x, btnY2, lvlBtnW, btnH, 6);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = isDirty ? '#E65100' : '#333';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const lvlLabel = (isDirty ? '*' : '') + curName + ' ▼';
     ctx.fillText(lvlLabel, x + lvlBtnW / 2, midY2);
     this.levelBtns.push({ x, y: btnY2, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
-    x += lvlBtnW + 4;
+    x += lvlBtnW + 8;
 
-    // 操作按钮：新建 / 保存 / 删除 / 清空 / 重置
+    // 操作按钮：新建 / 保存 / 删除 / 清空 / 重置 — 手指友好
     const opBtns = [
       { label: '新建', color: '#4CAF50', action: 'newLevel' },
       { label: '保存', color: '#2196F3', action: 'saveLevel' },
@@ -998,62 +1024,67 @@ class EditorEngine {
       { label: '重置', color: '#9C27B0', action: 'resetLevel' },
     ];
 
-    const opW = 30;
+    const opW = 44;
     for (const b of opBtns) {
       ctx.fillStyle = b.color;
-      roundRect(ctx, x, btnY2, opW, btnH, 4);
+      roundRect(ctx, x, btnY2, opW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px sans-serif';
+      ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(b.label, x + opW / 2, midY2);
       this.levelBtns.push({ x, y: btnY2, w: opW, h: btnH, action: b.action });
-      x += opW + 3;
+      x += opW + 8;
     }
   }
 
-  // ---- 紧凑步进器：label [- value +] ----
+  // ---- 紧凑步进器：label [- value +] — 手指友好 ----
+  // 返回绘制后的 x 位置，供调用方精确控制间距
   _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange) {
     const midY = btnY + btnH / 2;
-    const btnW = 18;
+    const btnW = 24;
+    const valW = 24;
 
     // 标签
     ctx.fillStyle = '#999';
-    ctx.font = '10px sans-serif';
+    ctx.font = '13px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x, midY);
-    x += 12;
+    x += 18;
 
     // 减号
     ctx.strokeStyle = '#ccc';
-    ctx.lineWidth = 1;
-    roundRect(ctx, x, btnY, btnW, btnH, 4);
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, x, btnY, btnW, btnH, 5);
     ctx.stroke();
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = 'bold 16px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x + btnW / 2, midY);
     this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.max(min, value - 1)) });
-    x += btnW + 2;
+    x += btnW + 6;
 
-    // 数值
+    // 数值（居中在固定宽度内）
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(value), x + 6, midY);
-    x += 12;
+    ctx.fillText(String(value), x + valW / 2, midY);
+    x += valW + 6;
 
     // 加号
     ctx.strokeStyle = '#ccc';
-    roundRect(ctx, x, btnY, btnW, btnH, 4);
+    roundRect(ctx, x, btnY, btnW, btnH, 5);
     ctx.stroke();
     ctx.fillStyle = '#333';
     ctx.fillText('+', x + btnW / 2, midY);
     this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.min(max, value + 1)) });
+    x += btnW;
+
+    return x;
   }
 
   addBottomBtn(x, y, w, h, text, onClick) {
@@ -1137,7 +1168,7 @@ class EditorEngine {
   // === 渲染 — 小猪信息底部弹出面板 ===
   // ============================================================
   renderPigSheet() {
-    const sheetH = 180;
+    const sheetH = 200;
     const sheetY = SCREEN_HEIGHT - sheetH;
 
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
@@ -1152,51 +1183,51 @@ class EditorEngine {
     ctx.fill();
 
     ctx.fillStyle = '#555';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText('选中小猪', 16, sheetY + 22);
+    ctx.fillText('选中小猪', 20, sheetY + 24);
 
-    const closeX = SCREEN_WIDTH - 40;
+    const closeX = SCREEN_WIDTH - 50;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.font = '16px sans-serif';
+    ctx.font = '20px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('✕', closeX + 12, sheetY + 20);
+    ctx.fillText('✕', closeX + 16, sheetY + 22);
 
     const pig = this.gp.pigs.find(p => p.id === this.gp.selectedPigId);
     if (pig) {
       ctx.fillStyle = '#555';
-      ctx.font = '13px sans-serif';
+      ctx.font = '14px sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      const infoY = sheetY + 52;
-      ctx.fillText(`编号: #${pig.id}`, 24, infoY);
+      const infoY = sheetY + 56;
+      ctx.fillText(`编号: #${pig.id}`, 28, infoY);
       ctx.fillText(`长度: ${pig.length} 格`, 180, infoY);
-      ctx.fillText(`角度: ${Math.round(pig.angle)}°`, 24, infoY + 22);
-      ctx.fillText(`尾部孔: #${pig.tailIndex}`, 180, infoY + 22);
+      ctx.fillText(`角度: ${Math.round(pig.angle)}°`, 28, infoY + 26);
+      ctx.fillText(`尾部孔: #${pig.tailIndex}`, 180, infoY + 26);
 
-      const delBtnX = SCREEN_WIDTH - 100;
-      const delBtnY = sheetY + sheetH - 48;
+      const delBtnX = SCREEN_WIDTH - 120;
+      const delBtnY = sheetY + sheetH - 56;
       ctx.fillStyle = '#f44336';
-      roundRect(ctx,delBtnX, delBtnY, 84, 34, 6);
+      roundRect(ctx,delBtnX, delBtnY, 104, 40, 8);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 13px sans-serif';
+      ctx.font = 'bold 15px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('删除', delBtnX + 42, delBtnY + 17);
+      ctx.fillText('删除', delBtnX + 52, delBtnY + 20);
 
-      this.sheetPigDeleteRect = { x: delBtnX, y: delBtnY, w: 84, h: 34 };
+      this.sheetPigDeleteRect = { x: delBtnX, y: delBtnY, w: 104, h: 40 };
     } else {
       ctx.fillStyle = '#aaa';
-      ctx.font = '13px sans-serif';
+      ctx.font = '14px sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText('未选中小猪', 24, sheetY + 52);
+      ctx.fillText('未选中小猪', 28, sheetY + 56);
     }
 
     this.sheetPigRect = { x: 0, y: sheetY, w: SCREEN_WIDTH, h: sheetH };
-    this.sheetPigCloseRect = { x: closeX, y: sheetY + 16, w: 32, h: 32 };
+    this.sheetPigCloseRect = { x: closeX, y: sheetY + 16, w: 40, h: 40 };
   }
 
   // ============================================================
@@ -1230,7 +1261,7 @@ class EditorEngine {
   // === 关卡选择子页面 ===
   // ============================================================
   renderLevelSheet() {
-    const sheetH = Math.min(SCREEN_HEIGHT * 0.65, this.levelList.length * 36 + 60);
+    const sheetH = Math.min(SCREEN_HEIGHT * 0.65, this.levelList.length * 48 + 70);
     const sheetY = SCREEN_HEIGHT - sheetH;
 
     // 半透明遮罩
@@ -1249,21 +1280,21 @@ class EditorEngine {
 
     // 标题
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText('选择关卡', 16, sheetY + 22);
+    ctx.fillText('选择关卡', 20, sheetY + 24);
 
-    // 关闭按钮
-    const closeX = SCREEN_WIDTH - 40;
+    // 关闭按钮 — 手指友好
+    const closeX = SCREEN_WIDTH - 50;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.font = '16px sans-serif';
+    ctx.font = '20px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('✕', closeX + 12, sheetY + 20);
+    ctx.fillText('✕', closeX + 16, sheetY + 22);
 
-    // 关卡列表
-    const listY = sheetY + 48;
-    const itemH = 32;
+    // 关卡列表 — 手指友好
+    const listY = sheetY + 52;
+    const itemH = 44;
     this.levelSheetItems = [];
 
     for (let i = 0; i < this.levelList.length; i++) {
@@ -1282,18 +1313,18 @@ class EditorEngine {
       // 选中指示器
       if (isActive) {
         ctx.fillStyle = '#2196F3';
-        ctx.font = 'bold 12px sans-serif';
+        ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText('▶', 20, itemY + itemH / 2);
+        ctx.fillText('▶', 24, itemY + itemH / 2);
       }
 
       // 关卡名称
       ctx.fillStyle = isActive ? '#1565C0' : '#333';
-      ctx.font = (isActive ? 'bold ' : '') + '13px sans-serif';
+      ctx.font = (isActive ? 'bold ' : '') + '15px sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const nameX = isActive ? 38 : 20;
+      const nameX = isActive ? 44 : 24;
       const dirtyMark = lv.isDirty ? ' *' : '';
       ctx.fillText(lv.name + dirtyMark, nameX, itemY + itemH / 2);
 
@@ -1310,7 +1341,7 @@ class EditorEngine {
     }
 
     this.sheetLevelRect = { x: 0, y: sheetY, w: SCREEN_WIDTH, h: sheetH };
-    this.sheetLevelCloseRect = { x: closeX, y: sheetY + 16, w: 32, h: 32 };
+    this.sheetLevelCloseRect = { x: closeX, y: sheetY + 16, w: 40, h: 40 };
   }
 
   checkLevelSheetButtons(x, y) {
