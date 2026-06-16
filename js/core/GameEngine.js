@@ -7,6 +7,10 @@ const EditorEngine = require('../editor/EditorEngine.js');
 const LevelSelectEngine = require('../game/LevelSelectEngine.js');
 const PlayingEngine = require('../game/PlayingEngine.js');
 
+// 加载小猪动画帧数据
+const fs = wx.getFileSystemManager();
+const pigSpriteData = JSON.parse(fs.readFileSync('assets/animals/roles/pig/pigs.json', 'utf8'));
+
 class GameEngine {
   constructor() {
     this.input = new InputManager();
@@ -16,6 +20,15 @@ class GameEngine {
 
     // 菜单按钮
     this.menuButtons = [];
+
+    // 小猪动画
+    this.pigFrames = pigSpriteData.frames;
+    this.pigImg = wx.createImage();
+    this.pigImg.src = 'assets/animals/roles/pig/pigs.png';
+    this.pigImgLoaded = false;
+    this.pigImg.onload = () => { this.pigImgLoaded = true; };
+    this.pigAnimFrame = 0;
+    this.pigAnimTimer = 0;
 
     this.start();
   }
@@ -60,23 +73,40 @@ class GameEngine {
     ctx.font = 'bold 40px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.28);
+    ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.10);
 
-    // 副标题
+    // 小猪动画 — 屏幕正中央，等比例缩放至屏宽 65%
+    const scale = SCREEN_WIDTH * 0.65 / 432;
+    const animW = 432 * scale;
+    const animH = 133 * scale;
+    const animX = (SCREEN_WIDTH - animW) / 2;
+    const animY = (SCREEN_HEIGHT - animH) / 2;
+
+    if (this.pigImgLoaded) {
+      const frame = this.pigFrames[this.pigAnimFrame];
+      if (frame) {
+        const f = frame.frame;
+        ctx.drawImage(this.pigImg, f.x, f.y, f.w, f.h, animX, animY, animW, animH);
+      }
+    }
+
+    // 副标题 — 紧跟动画底部
+    const subtitleY = animY + animH + 12;
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.font = '14px sans-serif';
-    ctx.fillText('小猪推推乐', SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.28 + 38);
+    ctx.fillText('小猪推推乐', SCREEN_WIDTH / 2, subtitleY);
 
-    // 按钮
+    // 按钮 — 底部区域
     this.menuButtons = [];
     const btnW = 200, btnH = 52;
     const startX = (SCREEN_WIDTH - btnW) / 2;
+    const btnBaseY = SCREEN_HEIGHT * 0.78;
 
-    this.addMenuBtn(startX, SCREEN_HEIGHT * 0.50, btnW, btnH, '开始游戏', '#4CAF50', () => {
+    this.addMenuBtn(startX, btnBaseY, btnW, btnH, '开始游戏', '#4CAF50', () => {
       databus.gameState = 'levelSelect';
     });
 
-    this.addMenuBtn(startX, SCREEN_HEIGHT * 0.50 + 64, btnW, btnH, '关卡编辑器', '#FF9800', () => {
+    this.addMenuBtn(startX, btnBaseY + 64, btnW, btnH, '关卡编辑器', '#FF9800', () => {
       databus.gameState = 'editor';
     });
 
@@ -103,6 +133,15 @@ class GameEngine {
   // ========== 主循环 ==========
   update() {
     databus.frame++;
+
+    // 小猪动画帧切换（菜单状态）
+    if (databus.gameState === 'menu') {
+      this.pigAnimTimer++;
+      if (this.pigAnimTimer >= 10) {
+        this.pigAnimTimer = 0;
+        this.pigAnimFrame = (this.pigAnimFrame + 1) % this.pigFrames.length;
+      }
+    }
 
     // 状态切换（在事件处理之前，确保引擎已激活）
     this.checkStateTransition();

@@ -573,6 +573,9 @@ class GameplayEngine {
   // ============================================================
   // === 渲染 — 小猪绘制 ===
   // ============================================================
+  get pigBodyWidth() { return this.diameter * 2 / 3; }
+  get pigBodyHalf()  { return this.pigBodyWidth / 2; }
+
   drawPig(ctx, pig, offDx, offDy) {
     const angle = this.getPigDisplayAngle(pig);
     const rad = angle * Math.PI / 180;
@@ -582,19 +585,20 @@ class GameplayEngine {
     const totalLen = pig.length * this.diameter;
     const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX + offDx;
     const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
+    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
     ctx.fillStyle = PIG_COLOR;
-    this.roundRect(ctx, -totalLen / 2, -this.diameter / 2, totalLen, this.diameter, 6);
+    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
     ctx.fill();
     ctx.strokeStyle = PIG_STROKE;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     const eyeX = totalLen / 2 - this.diameter * 0.35;
-    const eyeY = -this.diameter * 0.15;
+    const eyeY = -bh * 0.45;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(eyeX, eyeY, this.diameter * 0.22, 0, Math.PI * 2);
@@ -614,6 +618,7 @@ class GameplayEngine {
     const totalLen = pig.length * this.diameter;
     const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX;
     const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY;
+    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
 
     const flashAlpha = 0.7 * (1 - t) * (1 - t);
 
@@ -622,12 +627,12 @@ class GameplayEngine {
     ctx.rotate(-rad);
 
     ctx.beginPath();
-    this.roundRect(ctx, -totalLen / 2, -this.diameter / 2, totalLen, this.diameter, 6);
+    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
     ctx.clip();
 
     ctx.globalAlpha = flashAlpha;
     ctx.fillStyle = '#FFF8E7';
-    ctx.fillRect(-totalLen / 2, -this.diameter / 2, totalLen, this.diameter);
+    ctx.fillRect(-totalLen / 2, -bh, totalLen, bw);
 
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -642,12 +647,13 @@ class GameplayEngine {
     const totalLen = pig.length * this.diameter;
     const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX + offDx;
     const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
+    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = '#FF4444';
-    this.roundRect(ctx, -totalLen / 2, -this.diameter / 2, totalLen, this.diameter, 6);
+    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -661,12 +667,13 @@ class GameplayEngine {
     const totalLen = anim.length * this.diameter;
     const cx = tail.x + (anim.length - 1) / 2 * this.diameter * dirX + anim.currentDx;
     const cy = this.topBarH + this.boardOffsetY + tail.y + (anim.length - 1) / 2 * this.diameter * dirY + anim.currentDy;
+    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-rad);
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = PIG_COLOR;
-    this.roundRect(ctx, -totalLen / 2, -this.diameter / 2, totalLen, this.diameter, 6);
+    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
     ctx.fill();
     ctx.strokeStyle = PIG_STROKE;
     ctx.lineWidth = 1.5;
