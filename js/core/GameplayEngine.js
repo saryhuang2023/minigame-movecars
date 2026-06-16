@@ -20,7 +20,7 @@ class GameplayEngine {
   constructor() {
     // ===== 布局常量 =====
     this.topBarH = 48;
-    this.bottomStripH = 44;
+    this.bottomStripH = 78;
 
     // ===== 棋盘参数 =====
     this.cols = 5;
@@ -150,11 +150,11 @@ class GameplayEngine {
     }
   }
 
-  updatePigOccupancy(pigId, tailIdx, length, angle) {
+  updatePigOccupancy(pigId, tailIdx, length, angle, _cells) {
     for (let i = 0; i < this.holeOccupied.length; i++) {
       if (this.holeOccupied[i] === pigId) this.holeOccupied[i] = -1;
     }
-    const occ = this.getPigOccupiedHoles(tailIdx, length, angle);
+    const occ = this.getPigOccupiedHoles(tailIdx, length, angle, _cells);
     for (const hi of occ) {
       if (hi >= 0 && hi < this.holeOccupied.length) {
         if (this.holeOccupied[hi] === -1 || this.holeOccupied[hi] === pigId) {
@@ -193,8 +193,8 @@ class GameplayEngine {
     return dx * dx + dy * dy <= maxDist * maxDist;
   }
 
-  getPigOccupiedHoles(tailIndex, length, angle) {
-    const cells = this.getPigCells(tailIndex, length, angle);
+  getPigOccupiedHoles(tailIndex, length, angle, cells) {
+    if (!cells) cells = this.getPigCells(tailIndex, length, angle);
     const occupied = [];
     for (let hi = 0; hi < this.holes.length; hi++) {
       for (const cell of cells) {
@@ -256,19 +256,19 @@ class GameplayEngine {
   // ============================================================
   // 碰撞检测 & snap
   // ============================================================
-  checkAngleValid(tailIdx, len, excludeId, angle, requireHeadOnHole = true) {
-    const occupied = this.getPigOccupiedHoles(tailIdx, len, angle);
+  checkAngleValid(tailIdx, len, excludeId, angle, requireHeadOnHole = true, _cells) {
+    const cells = _cells || this.getPigCells(tailIdx, len, angle);
+    const occupied = this.getPigOccupiedHoles(tailIdx, len, angle, cells);
     for (const hi of occupied) {
       if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== excludeId) {
         return { valid: false, collidedId: this.holeOccupied[hi] };
       }
     }
-    const cells = this.getPigCells(tailIdx, len, angle);
     const cellCollidedId = this.findCellCollision(cells, excludeId);
     if (cellCollidedId >= 0) return { valid: false, collidedId: cellCollidedId };
     if (!requireHeadOnHole) return { valid: true };
     // 头部 = 最后 HEAD_CELLS 个 cell 的中点，单次判定
-    return { valid: this.findHeadHole(tailIdx, len, angle) >= 0 };
+    return { valid: this.findHeadHole(tailIdx, len, angle, cells) >= 0 };
   }
 
   snapAngleToHoles(tailIndex, length, rawAngle) {
@@ -288,34 +288,32 @@ class GameplayEngine {
         bestHole = hole;
       }
     }
-    if (!bestHole) return rawAngle;
+    if (!bestHole) return null;
     const dx = bestHole.x - tailHole.x;
     const dy = bestHole.y - tailHole.y;
     let snapAngle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (snapAngle < 0) snapAngle += 360;
-    snapAngle = Math.round(snapAngle);
-    // 验证头部中点落在孔位上
-    if (this.findHeadHole(tailIndex, length, snapAngle) < 0) return rawAngle;
+    // 验证吸附后头部尖端落孔
+    if (this.findHeadHole(tailIndex, length, snapAngle) < 0) return null;
     return snapAngle;
   }
 
-  // 以头部中点（最后 HEAD_CELLS 个 cell 的中心）做单次落孔判定
-  // 返回落孔的孔位索引，-1 表示未命中
-  findHeadHole(tailIndex, length, angle) {
-    const cells = this.getPigCells(tailIndex, length, angle);
-    // 头部中点
-    let sumX = 0, sumY = 0;
-    for (let hi = length - HEAD_CELLS; hi < length; hi++) {
-      sumX += cells[hi].x;
-      sumY += cells[hi].y;
-    }
-    const mx = sumX / HEAD_CELLS, my = sumY / HEAD_CELLS;
-    const r = this.diameter / 2;  // 孔半径
-    const r2 = r * r;
+  // 落孔判定：优先以尖端 cell 调 cellOverlapsHole（与身体占孔同源），
+  // 尖端点到的孔就是落孔。尖端未命中则退取倒数第 2 个 cell。
+  findHeadHole(tailIndex, length, angle, _cells) {
+    if (angle == null && !_cells) return -1;
+    const cells = _cells || this.getPigCells(tailIndex, length, angle);
+    // 优先尖端 cell
+    const tip = cells[length - 1];
     for (let i = 0; i < this.holes.length; i++) {
-      const dx = mx - this.holes[i].x;
-      const dy = my - this.holes[i].y;
-      if (dx * dx + dy * dy <= r2) return i;
+      if (this.cellOverlapsHole(tip.x, tip.y, this.holes[i].x, this.holes[i].y)) return i;
+    }
+    // 退取倒数第 2 个 cell
+    if (length >= 2) {
+      const sub = cells[length - 2];
+      for (let i = 0; i < this.holes.length; i++) {
+        if (this.cellOverlapsHole(sub.x, sub.y, this.holes[i].x, this.holes[i].y)) return i;
+      }
     }
     return -1;
   }
@@ -359,20 +357,25 @@ class GameplayEngine {
     newAngle = ((newAngle % 360) + 360) % 360;
     newAngle = Math.round(newAngle);
 
-    const check = this.checkAngleValid(ds.tailIndex, len, targetId, newAngle, false);
+    // 一次计算 cells，复用于 checkAngleValid + findHeadHole + updatePigOccupancy
+    const cells = this.getPigCells(ds.tailIndex, len, newAngle);
+    const check = this.checkAngleValid(ds.tailIndex, len, targetId, newAngle, false, cells);
 
     if (check.valid) {
       ds.currentChaseStep = CHASE_SPEED;
       ds.displayAngle = newAngle;
-      const headHoleIdx = this.findHeadHole(ds.tailIndex, len, newAngle);
+      const headHoleIdx = this.findHeadHole(ds.tailIndex, len, newAngle, cells);
       if (headHoleIdx >= 0) {
         if (pendingId) {
-          this.pigs = this.pigs.filter(p => p.id !== pendingId);
-          this.pigs.push({ id: pendingId, tailIndex: ds.tailIndex, length: len, angle: newAngle });
+          // 原地更新，避免 filter+push 重建数组
+          const idx = this.pigs.findIndex(p => p.id === pendingId);
+          if (idx >= 0) {
+            this.pigs[idx] = { id: pendingId, tailIndex: ds.tailIndex, length: len, angle: newAngle };
+          }
         } else {
           pig.angle = newAngle;
         }
-        this.updatePigOccupancy(targetId, ds.tailIndex, len, newAngle);
+        this.updatePigOccupancy(targetId, ds.tailIndex, len, newAngle, cells);
         ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: newAngle };
         ds.headHoleIdx = headHoleIdx;
         ds.lastCollidedId = null;
@@ -381,8 +384,10 @@ class GameplayEngine {
         ds.headHoleIdx = -1;
         ds.isValidNow = false;
         if (pendingId && ds.lastValid) {
-          this.pigs = this.pigs.filter(p => p.id !== pendingId);
-          this.pigs.push({ id: pendingId, tailIndex: ds.tailIndex, length: len, angle: ds.lastValid.angle });
+          const idx = this.pigs.findIndex(p => p.id === pendingId);
+          if (idx >= 0) {
+            this.pigs[idx] = { id: pendingId, tailIndex: ds.tailIndex, length: len, angle: ds.lastValid.angle };
+          }
         }
       }
     } else if (check.collidedId !== undefined) {
@@ -396,8 +401,10 @@ class GameplayEngine {
       ds.isValidNow = false;
       ds.headHoleIdx = -1;
       if (pendingId && ds.lastValid) {
-        this.pigs = this.pigs.filter(p => p.id !== pendingId);
-        this.pigs.push({ id: pendingId, tailIndex: ds.tailIndex, length: len, angle: ds.lastValid.angle });
+        const idx = this.pigs.findIndex(p => p.id === pendingId);
+        if (idx >= 0) {
+          this.pigs[idx] = { id: pendingId, tailIndex: ds.tailIndex, length: len, angle: ds.lastValid.angle };
+        }
       }
     }
   }
