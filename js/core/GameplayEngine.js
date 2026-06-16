@@ -3,19 +3,18 @@
 // 被 EditorEngine / TestEngine / RealGameEngine 共同组合使用
 
 const { ctx, canvas, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
+const { PigRenderer, roundRect } = require('../render/PigRenderer.js');
 
 // ========== 常量 ==========
-const PIG_COLOR = '#FFD700';
-const PIG_STROKE = '#FFB300';
 const HOLE_EMPTY = 'rgba(255,255,255,0.22)';
 const HOLE_OCCUPIED = 'rgba(255,182,193,0.55)';
 const HOLE_STROKE = 'rgba(255,255,255,0.45)';
-const SELECTED_COLOR = '#2196F3';
 const BG_COLOR = '#1a1a2e';
 const FLASH_DURATION = 500;
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
 const CHASE_SPEED_MIN = 1;
+const HEAD_CELLS = 2;  // 头部占用 cell 数量
 
 class GameplayEngine {
   constructor() {
@@ -56,6 +55,9 @@ class GameplayEngine {
     this.animations = [];
     this.ghostAnimations = [];
     this.flashingPigs = {};
+
+    // ===== 渲染 =====
+    this.pigRenderer = new PigRenderer(this);
   }
 
   // ============================================================
@@ -81,6 +83,9 @@ class GameplayEngine {
     this.computeHoles();
     this.rebuildOccupancy();
   }
+
+  // 每段 cell 长度 = 孔位半径（diameter/2）
+  get cellLength() { return this.diameter / 2; }
 
   isInHeightHandle(x, y) {
     const handleCenterY = this.topBarH + this.boardOffsetY + this.boardH;
@@ -175,14 +180,14 @@ class GameplayEngine {
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
     const cells = [];
     for (let i = 0; i < length; i++) {
-      cells.push({ x: tail.x + i * this.diameter * dirX, y: tail.y + i * this.diameter * dirY });
+      cells.push({ x: tail.x + i * this.cellLength * dirX, y: tail.y + i * this.cellLength * dirY });
     }
     return cells;
   }
 
   cellOverlapsHole(cellX, cellY, holeX, holeY) {
     const holeR = this.diameter / 2;
-    const cellHalf = this.diameter / 2;
+    const cellHalf = this.cellLength / 2;
     const maxDist = holeR + cellHalf * 0.7;
     const dx = cellX - holeX, dy = cellY - holeY;
     return dx * dx + dy * dy <= maxDist * maxDist;
@@ -203,7 +208,7 @@ class GameplayEngine {
   }
 
   findCellCollision(cells, excludeId) {
-    const minDist = this.diameter * 0.85;
+    const minDist = this.cellLength * 0.85;
     for (const otherPig of this.pigs) {
       if (otherPig.id === excludeId) continue;
       const otherCells = this.getPigCells(otherPig.tailIndex, otherPig.length, otherPig.angle);
@@ -239,7 +244,7 @@ class GameplayEngine {
       for (let ci = 0; ci < cells.length; ci++) {
         const cell = cells[ci];
         const cx = cell.x, cy = offY + cell.y;
-        const half = this.diameter / 2 + 2;
+        const half = this.cellLength / 2 + 2;
         if (x >= cx - half && x <= cx + half && y >= cy - half && y <= cy + half) {
           return { id: pig.id, cellIndex: ci, totalLen: pig.length };
         }
@@ -262,27 +267,23 @@ class GameplayEngine {
     const cellCollidedId = this.findCellCollision(cells, excludeId);
     if (cellCollidedId >= 0) return { valid: false, collidedId: cellCollidedId };
     if (!requireHeadOnHole) return { valid: true };
-    const headCell = cells[len - 1];
-    for (const hole of this.holes) {
-      if (this.cellOverlapsHole(headCell.x, headCell.y, hole.x, hole.y)) {
-        return { valid: true };
-      }
-    }
-    return { valid: false };
+    // 头部 = 最后 HEAD_CELLS 个 cell 的中点，单次判定
+    return { valid: this.findHeadHole(tailIdx, len, angle) >= 0 };
   }
 
   snapAngleToHoles(tailIndex, length, rawAngle) {
     const tailHole = this.holes[tailIndex];
     if (!tailHole) return rawAngle;
     const cells = this.getPigCells(tailIndex, length, rawAngle);
-    const headCell = cells[length - 1];
+    // 以头部尖端 (最后一个 cell) 为吸附锚点
+    const tipCell = cells[length - 1];
     let bestHole = null;
     let bestDist = Infinity;
     for (const hole of this.holes) {
-      const dx = hole.x - headCell.x;
-      const dy = hole.y - headCell.y;
+      const dx = hole.x - tipCell.x;
+      const dy = hole.y - tipCell.y;
       const dist = dx * dx + dy * dy;
-      if (dist < bestDist && this.cellOverlapsHole(headCell.x, headCell.y, hole.x, hole.y)) {
+      if (dist < bestDist && this.cellOverlapsHole(tipCell.x, tipCell.y, hole.x, hole.y)) {
         bestDist = dist;
         bestHole = hole;
       }
@@ -292,16 +293,29 @@ class GameplayEngine {
     const dy = bestHole.y - tailHole.y;
     let snapAngle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (snapAngle < 0) snapAngle += 360;
-    return Math.round(snapAngle);
+    snapAngle = Math.round(snapAngle);
+    // 验证头部中点落在孔位上
+    if (this.findHeadHole(tailIndex, length, snapAngle) < 0) return rawAngle;
+    return snapAngle;
   }
 
+  // 以头部中点（最后 HEAD_CELLS 个 cell 的中心）做单次落孔判定
+  // 返回落孔的孔位索引，-1 表示未命中
   findHeadHole(tailIndex, length, angle) {
     const cells = this.getPigCells(tailIndex, length, angle);
-    const headCell = cells[length - 1];
+    // 头部中点
+    let sumX = 0, sumY = 0;
+    for (let hi = length - HEAD_CELLS; hi < length; hi++) {
+      sumX += cells[hi].x;
+      sumY += cells[hi].y;
+    }
+    const mx = sumX / HEAD_CELLS, my = sumY / HEAD_CELLS;
+    const r = this.diameter / 2;  // 孔半径
+    const r2 = r * r;
     for (let i = 0; i < this.holes.length; i++) {
-      if (this.cellOverlapsHole(headCell.x, headCell.y, this.holes[i].x, this.holes[i].y)) {
-        return i;
-      }
+      const dx = mx - this.holes[i].x;
+      const dy = my - this.holes[i].y;
+      if (dx * dx + dy * dy <= r2) return i;
     }
     return -1;
   }
@@ -400,8 +414,8 @@ class GameplayEngine {
 
     const rad = pig.angle * Math.PI / 180;
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const stepSize = this.diameter;
-    const maxSteps = 50;
+    const stepSize = this.cellLength;
+    const maxSteps = 100;
 
     for (let step = 1; step <= maxSteps; step++) {
       const movedCells = cells.map(c => ({
@@ -493,6 +507,7 @@ class GameplayEngine {
     }
 
     // 小猪（含动画偏移）
+    const pr = this.pigRenderer;
     const animOffs = {};
     for (const a of this.animations) animOffs[a.pigId] = { dx: a.currentDx, dy: a.currentDy };
 
@@ -502,17 +517,17 @@ class GameplayEngine {
         this.dragState.pigId === pig.id || pig.id === this.dragState.pendingId
       );
       const isInvalidDrag = isDragPig && this.dragState.isValidNow === false;
-      this.drawPig(ctx, pig, off.dx, off.dy);
+      pr.draw(ctx, pig, off.dx, off.dy);
 
       if (isInvalidDrag) {
-        this.drawPigInvalidOverlay(ctx, pig, off.dx, off.dy);
+        pr.drawInvalidOverlay(ctx, pig, off.dx, off.dy);
       }
 
       if (this.flashingPigs[pig.id]) {
         const elapsed = Date.now() - this.flashingPigs[pig.id];
         const t = elapsed / FLASH_DURATION;
         if (t < 1) {
-          this.drawPigFlash(ctx, pig, t);
+          pr.drawFlash(ctx, pig, t);
         }
       }
     }
@@ -522,7 +537,7 @@ class GameplayEngine {
       const pig = this.pigs.find(p => p.id === g.pigId);
       if (pig) {
         ctx.globalAlpha = 0.25;
-        this.drawPig(ctx, pig, g.currentDx, g.currentDy);
+        pr.draw(ctx, pig, g.currentDx, g.currentDy);
         ctx.globalAlpha = 1;
       }
     }
@@ -530,14 +545,17 @@ class GameplayEngine {
     // 孤儿动画猪
     for (const a of this.animations) {
       if (!this.pigs.find(p => p.id === a.pigId) && a.tailIndex !== undefined) {
-        this.drawOrphanPig(ctx, a);
+        pr.drawOrphan(ctx, a);
       }
     }
 
     // 选中高亮（无拖拽时）
     if (options.showSelection && this.selectedPigId != null && !this.dragState) {
       const pig = this.pigs.find(p => p.id === this.selectedPigId);
-      if (pig) this.drawSelectionOutline(ctx, pig);
+      if (pig) {
+        pr.drawHeadOverlay(ctx, pig);
+        pr.drawSelection(ctx, pig);
+      }
     }
 
     // 底部提示文字
@@ -566,190 +584,14 @@ class GameplayEngine {
     const barX = SCREEN_WIDTH / 2 - barW / 2;
     const barY = handleY - barH / 2;
     ctx.fillStyle = isDragging ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.25)';
-    this.roundRect(ctx, barX, barY, barW, barH, barR);
+    roundRect(ctx, barX, barY, barW, barH, barR);
     ctx.fill();
   }
 
-  // ============================================================
-  // === 渲染 — 小猪绘制 ===
-  // ============================================================
-  get pigBodyWidth() { return this.diameter * 2 / 3; }
-  get pigBodyHalf()  { return this.pigBodyWidth / 2; }
-
-  drawPig(ctx, pig, offDx, offDy) {
-    const angle = this.getPigDisplayAngle(pig);
-    const rad = angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.holes[pig.tailIndex];
-    if (!tail) return;
-    const totalLen = pig.length * this.diameter;
-    const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX + offDx;
-    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-rad);
-    ctx.fillStyle = PIG_COLOR;
-    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
-    ctx.fill();
-    ctx.strokeStyle = PIG_STROKE;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    const eyeX = totalLen / 2 - this.diameter * 0.35;
-    const eyeY = -bh * 0.45;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(eyeX, eyeY, this.diameter * 0.22, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#333';
-    ctx.beginPath();
-    ctx.arc(eyeX + 1, eyeY, this.diameter * 0.11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  drawPigFlash(ctx, pig, t) {
-    const rad = pig.angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.holes[pig.tailIndex];
-    if (!tail) return;
-    const totalLen = pig.length * this.diameter;
-    const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX;
-    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
-
-    const flashAlpha = 0.7 * (1 - t) * (1 - t);
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-rad);
-
-    ctx.beginPath();
-    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
-    ctx.clip();
-
-    ctx.globalAlpha = flashAlpha;
-    ctx.fillStyle = '#FFF8E7';
-    ctx.fillRect(-totalLen / 2, -bh, totalLen, bw);
-
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  drawPigInvalidOverlay(ctx, pig, offDx, offDy) {
-    const angle = this.getPigDisplayAngle(pig);
-    const rad = angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.holes[pig.tailIndex];
-    if (!tail) return;
-    const totalLen = pig.length * this.diameter;
-    const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX + offDx;
-    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY + offDy;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-rad);
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#FF4444';
-    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  drawOrphanPig(ctx, anim) {
-    const rad = anim.angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.holes[anim.tailIndex];
-    if (!tail) return;
-    const totalLen = anim.length * this.diameter;
-    const cx = tail.x + (anim.length - 1) / 2 * this.diameter * dirX + anim.currentDx;
-    const cy = this.topBarH + this.boardOffsetY + tail.y + (anim.length - 1) / 2 * this.diameter * dirY + anim.currentDy;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-rad);
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = PIG_COLOR;
-    this.roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
-    ctx.fill();
-    ctx.strokeStyle = PIG_STROKE;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  drawSelectionOutline(ctx, pig) {
-    const rad = pig.angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.holes[pig.tailIndex];
-    if (!tail) return;
-    const totalLen = pig.length * this.diameter;
-    const cx = tail.x + (pig.length - 1) / 2 * this.diameter * dirX;
-    const cy = this.topBarH + this.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.diameter * dirY;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-rad);
-    ctx.strokeStyle = SELECTED_COLOR;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 3]);
-    ctx.strokeRect(-totalLen / 2 - 3, -this.diameter / 2 - 3, totalLen + 6, this.diameter + 6);
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  // ============================================================
-  // === 工具方法 ===
-  // ============================================================
-  // ============================================================
-  // === 渲染辅助 — 获取小猪当前显示角度 ===
-  // ============================================================
-  getPigDisplayAngle(pig) {
-    if (!this.dragState || this.dragState.displayAngle == null) {
-      return pig.angle;
-    }
-    const ds = this.dragState;
-    if (ds.type === 'rotate' && pig.id === ds.pigId) {
-      return ds.displayAngle;
-    }
-    if ((ds.type === 'adjustAngle' || ds.type === 'adjustLength') && pig.id === ds.pendingId) {
-      return ds.displayAngle;
-    }
-    return pig.angle;
-  }
-
-  // ============================================================
-  // === 工具方法 ===
-  // ============================================================
-  roundRect(ctx, x, y, w, h, r, topOnly) {
-    ctx.beginPath();
-    if (topOnly) {
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.arcTo(x + w, y, x + w, y + r, r);
-      ctx.lineTo(x + w, y + h);
-      ctx.lineTo(x, y + h);
-      ctx.lineTo(x, y + r);
-      ctx.arcTo(x, y, x, y + r, r);
-    } else {
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.arcTo(x + w, y, x + w, y + r, r);
-      ctx.lineTo(x + w, y + h - r);
-      ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-      ctx.lineTo(x + r, y + h);
-      ctx.arcTo(x, y + h, x, y + h - r, r);
-      ctx.lineTo(x, y + r);
-      ctx.arcTo(x, y, x + r, y, r);
-    }
-    ctx.closePath();
-  }
 }
 
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
 GameplayEngine.CHASE_SPEED_MIN = CHASE_SPEED_MIN;
+GameplayEngine.HEAD_CELLS = HEAD_CELLS;
 
 module.exports = GameplayEngine;

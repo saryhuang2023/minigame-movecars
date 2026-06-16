@@ -5,6 +5,7 @@
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const databus = require('../databus.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
+const { roundRect } = require('../render/PigRenderer.js');
 
 const BG_COLOR = '#1a1a2e';
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
@@ -151,7 +152,9 @@ class EditorEngine {
           pendingId: tempId,
           lockedAngle: pig.angle,
           lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
-          headHoleIdx: -1
+          headHoleIdx: -1,
+          lastCollidedId: null,
+          isValidNow: true
         };
       } else {
         this.gp.pigs.push({ id: tempId, tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle });
@@ -166,7 +169,9 @@ class EditorEngine {
           targetAngle: pig.angle,
           currentChaseStep: GameplayEngine.CHASE_SPEED,
           lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
-          headHoleIdx: -1
+          headHoleIdx: -1,
+          lastCollidedId: null,
+          isValidNow: true
         };
       }
       return;
@@ -232,7 +237,9 @@ class EditorEngine {
           currentChaseStep: GameplayEngine.CHASE_SPEED,
           lastValid: { tailIndex: pts.tailIndex, length: pts.length, angle: pts.angle },
           previewMode: true,
-          headHoleIdx: -1
+          headHoleIdx: -1,
+          lastCollidedId: null,
+          isValidNow: true
         };
       }
     }
@@ -274,40 +281,25 @@ class EditorEngine {
     const dx = x - tail.x;
     const dy = y - this.gp.topBarH - this.gp.boardOffsetY - tail.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    let len = Math.max(2, Math.min(20, Math.floor(dist / this.gp.diameter) + 1));
+    let len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.cellLength) + 1));
 
     // 长度没变 → 跳过（避免无谓的占用重建）
     if (ds._lastLen === len) return;
     ds._lastLen = len;
 
     const excludeId = ds.pendingId;
+    // 调整长度拖拽只检查碰撞（requireHeadOnHole=false），不强制头部落孔
     const check = this.gp.checkAngleValid(ds.tailIndex, len, excludeId, ds.lockedAngle, false);
     if (check.valid) {
-      const headHoleIdx = this.gp.findHeadHole(ds.tailIndex, len, ds.lockedAngle);
-      if (headHoleIdx >= 0) {
-        // 原地更新临时猪，避免 filter+push
-        const tempPig = this.gp.pigs.find(p => p.id === excludeId);
-        if (tempPig) tempPig.length = len;
-        this.gp.updatePigOccupancy(excludeId, ds.tailIndex, len, ds.lockedAngle);
-        ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: ds.lockedAngle };
-        ds.headHoleIdx = headHoleIdx;
-        ds.lastCollidedId = null;
-        ds.isValidNow = true;
-      } else {
-        ds.isValidNow = false;
-        ds.headHoleIdx = -1;
-        // 还原到上一个合法长度
-        if (ds.lastValid) {
-          const tempPig = this.gp.pigs.find(p => p.id === excludeId);
-          if (tempPig) tempPig.length = ds.lastValid.length;
-          this.gp.updatePigOccupancy(excludeId, ds.tailIndex, ds.lastValid.length, ds.lockedAngle);
-        }
-      }
+      // 原地更新临时猪，避免 filter+push
+      const tempPig = this.gp.pigs.find(p => p.id === excludeId);
+      if (tempPig) tempPig.length = len;
+      this.gp.updatePigOccupancy(excludeId, ds.tailIndex, len, ds.lockedAngle);
+      ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: ds.lockedAngle };
+      ds.lastCollidedId = null;
+      ds.isValidNow = true;
     } else {
       ds.isValidNow = false;
-      ds.headHoleIdx = ds.lastValid
-        ? this.gp.findHeadHole(ds.tailIndex, ds.lastValid.length, ds.lockedAngle)
-        : -1;
       if (check.collidedId !== undefined && check.collidedId !== ds.lastCollidedId) {
         this.gp.triggerCollisionEffect(check.collidedId);
         ds.lastCollidedId = check.collidedId;
@@ -333,7 +325,7 @@ class EditorEngine {
     angle = Math.round(angle);
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const len = Math.max(2, Math.min(20, Math.floor(dist / this.gp.diameter) + 1));
+    const len = Math.max(5, Math.min(30, Math.floor(dist / this.gp.cellLength) + 1));
 
     const pig = this.gp.dragState.pigId != null ? this.gp.pigs.find(p => p.id === this.gp.dragState.pigId) : null;
 
@@ -379,8 +371,7 @@ class EditorEngine {
     const lv = this.gp.dragState.lastValid;
 
     const verifyHeadOnHole = (tailIdx, len, angle) => {
-      const headIdx = this.gp.findHeadHole(tailIdx, len, angle);
-      return headIdx >= 0;
+      return this.gp.findHeadHole(tailIdx, len, angle) >= 0;
     };
 
     if (this.gp.dragState.type === 'rotate') {
@@ -400,7 +391,26 @@ class EditorEngine {
       } else if (pig) {
         this.gp.updatePigOccupancy(pig.id, this.gp.dragState.tailIndex, pig.length, pig.angle);
       }
-    } else if (this.gp.dragState.type === 'adjustLength' || this.gp.dragState.type === 'adjustAngle') {
+    } else if (this.gp.dragState.type === 'adjustLength') {
+      // 调整长度：直接应用，不做落孔检查（头部落孔由玩家自行旋转对齐）
+      this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
+      if (lv) {
+        const realId = this.gp.dragState.pigId;
+        this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: lv.angle });
+        this.gp.selectedPigId = realId;
+        for (let i = 0; i < this.gp.holeOccupied.length; i++) {
+          if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
+        }
+        this.gp.updatePigOccupancy(realId, lv.tailIndex, lv.length, lv.angle);
+        this.showToast(`小猪 #${realId} 长度 → ${lv.length}格`);
+        this.markCurrentDirty();
+        this.tryGhostPush(realId);
+      } else if (this.gp.dragState.originalPig) {
+        this.gp.pigs.push(this.gp.dragState.originalPig);
+        this.gp.selectedPigId = this.gp.dragState.originalPig.id;
+        this.gp.rebuildOccupancy();
+      }
+    } else if (this.gp.dragState.type === 'adjustAngle') {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
       if (lv) {
         const snappedAngle = this.gp.snapAngleToHoles(lv.tailIndex, lv.length, lv.angle);
@@ -412,8 +422,8 @@ class EditorEngine {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
           }
           this.gp.updatePigOccupancy(realId, lv.tailIndex, lv.length, snappedAngle);
-          const label = this.gp.dragState.type === 'adjustLength' ? '长度' : '角度';
-          const val = this.gp.dragState.type === 'adjustLength' ? `${lv.length}格` : `${snappedAngle}°`;
+          const label = '角度';
+          const val = `${snappedAngle}°`;
           this.showToast(`小猪 #${realId} ${label} → ${val}`);
           this.markCurrentDirty();
           this.tryGhostPush(realId);
@@ -801,7 +811,7 @@ class EditorEngine {
     const backW = 32, backH = 28;
     const backX = 4, backY = (topBarH - backH) / 2;
     ctx.fillStyle = '#f0f0f0';
-    this.roundRect(backX, backY, backW, backH, 5);
+    roundRect(ctx,backX, backY, backW, backH, 5);
     ctx.fill();
     ctx.fillStyle = '#666';
     ctx.font = 'bold 16px sans-serif';
@@ -824,7 +834,7 @@ class EditorEngine {
     const btnX = rightBase - btnW, btnY = (topBarH - btnH) / 2;
     const isEdit = this.mode === 'edit';
     ctx.fillStyle = isEdit ? '#2196F3' : '#f44336';
-    this.roundRect(btnX, btnY, btnW, btnH, 5);
+    roundRect(ctx,btnX, btnY, btnW, btnH, 5);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 13px sans-serif';
@@ -972,7 +982,7 @@ class EditorEngine {
   addBottomBtn(x, y, w, h, text, onClick) {
     ctx.strokeStyle = '#ccc';
     ctx.lineWidth = 1;
-    this.roundRect(x, y, w, h, 5);
+    roundRect(ctx,x, y, w, h, 5);
     ctx.stroke();
     ctx.fillStyle = '#333';
     ctx.font = 'bold 16px sans-serif';
@@ -984,7 +994,7 @@ class EditorEngine {
 
   addColoredBtn(x, y, w, h, text, color, onClick) {
     ctx.fillStyle = color;
-    this.roundRect(x, y, w, h, 6);
+    roundRect(ctx,x, y, w, h, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 12px sans-serif';
@@ -1015,11 +1025,11 @@ class EditorEngine {
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     ctx.fillStyle = '#fff';
-    this.roundRect(0, sheetY, SCREEN_WIDTH, sheetH, 16, true);
+    roundRect(ctx,0, sheetY, SCREEN_WIDTH, sheetH, 16, true);
     ctx.fill();
 
     ctx.fillStyle = '#ddd';
-    this.roundRect(SCREEN_WIDTH / 2 - 18, sheetY + 8, 36, 4, 2);
+    roundRect(ctx,SCREEN_WIDTH / 2 - 18, sheetY + 8, 36, 4, 2);
     ctx.fill();
 
     ctx.fillStyle = '#555';
@@ -1036,7 +1046,7 @@ class EditorEngine {
 
     const addBtnX = SCREEN_WIDTH - 110;
     ctx.fillStyle = '#4CAF50';
-    this.roundRect(addBtnX, sheetY + 18, 50, 26, 4);
+    roundRect(ctx,addBtnX, sheetY + 18, 50, 26, 4);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 11px sans-serif';
@@ -1069,12 +1079,12 @@ class EditorEngine {
       if (itemY + itemH < listTop || itemY > listTop + listH) continue;
 
       ctx.fillStyle = isActive ? '#E8F5E9' : 'rgba(0,0,0,0.02)';
-      this.roundRect(10, itemY, SCREEN_WIDTH - 20, itemH - 4, 6);
+      roundRect(ctx,10, itemY, SCREEN_WIDTH - 20, itemH - 4, 6);
       ctx.fill();
       if (isActive) {
         ctx.strokeStyle = '#4CAF50';
         ctx.lineWidth = 1;
-        this.roundRect(10, itemY, SCREEN_WIDTH - 20, itemH - 4, 6);
+        roundRect(ctx,10, itemY, SCREEN_WIDTH - 20, itemH - 4, 6);
         ctx.stroke();
       }
 
@@ -1093,7 +1103,7 @@ class EditorEngine {
       const delX = SCREEN_WIDTH - 58;
       const delY = itemY + 6;
       ctx.fillStyle = '#f44336';
-      this.roundRect(delX, delY, 44, 28, 4);
+      roundRect(ctx,delX, delY, 44, 28, 4);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = '11px sans-serif';
@@ -1107,7 +1117,7 @@ class EditorEngine {
     const footerY = sheetY + sheetH - 44;
     if (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length) {
       ctx.fillStyle = '#4CAF50';
-      this.roundRect(12, footerY, 64, 32, 6);
+      roundRect(ctx,12, footerY, 64, 32, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 12px sans-serif';
@@ -1116,7 +1126,7 @@ class EditorEngine {
       ctx.fillText('保存', 12 + 32, footerY + 16);
 
       ctx.fillStyle = '#f44336';
-      this.roundRect(84, footerY, 64, 32, 6);
+      roundRect(ctx,84, footerY, 64, 32, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 12px sans-serif';
@@ -1145,11 +1155,11 @@ class EditorEngine {
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     ctx.fillStyle = '#fff';
-    this.roundRect(0, sheetY, SCREEN_WIDTH, sheetH, 16, true);
+    roundRect(ctx,0, sheetY, SCREEN_WIDTH, sheetH, 16, true);
     ctx.fill();
 
     ctx.fillStyle = '#ddd';
-    this.roundRect(SCREEN_WIDTH / 2 - 18, sheetY + 8, 36, 4, 2);
+    roundRect(ctx,SCREEN_WIDTH / 2 - 18, sheetY + 8, 36, 4, 2);
     ctx.fill();
 
     ctx.fillStyle = '#555';
@@ -1179,7 +1189,7 @@ class EditorEngine {
       const delBtnX = SCREEN_WIDTH - 100;
       const delBtnY = sheetY + sheetH - 48;
       ctx.fillStyle = '#f44336';
-      this.roundRect(delBtnX, delBtnY, 84, 34, 6);
+      roundRect(ctx,delBtnX, delBtnY, 84, 34, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 13px sans-serif';
@@ -1282,7 +1292,7 @@ class EditorEngine {
     const y = this.gp.topBarH + 6;
 
     ctx.fillStyle = 'rgba(0,0,0,0.8)';
-    this.roundRect(x, y, w, h, 8);
+    roundRect(ctx,x, y, w, h, 8);
     ctx.fill();
 
     ctx.fillStyle = '#fff';
@@ -1292,12 +1302,6 @@ class EditorEngine {
     ctx.restore();
   }
 
-  // ============================================================
-  // === 工具方法 ===
-  // ============================================================
-  roundRect(x, y, w, h, r, topOnly) {
-    this.gp.roundRect(ctx, x, y, w, h, r, topOnly);
-  }
 }
 
 module.exports = EditorEngine;
