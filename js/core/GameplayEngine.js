@@ -470,8 +470,10 @@ class GameplayEngine {
         pig.angle = boundary;
       }
       this.updatePigOccupancy(targetId, ds.tailIndex, len, boundary);
-      ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: boundary };
       ds.headHoleIdx = this.findHeadHole(ds.tailIndex, len, boundary);
+      if (ds.headHoleIdx >= 0) {
+        ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: boundary };
+      }
       if (check.collidedId !== ds.lastCollidedId) {
         this.triggerCollisionEffect(check.collidedId);
         ds.lastCollidedId = check.collidedId;
