@@ -291,8 +291,7 @@ class EditorEngine {
     angle = Math.round(angle);
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const step = this.gp.diameter / 5;
-    const len = Math.max(2, Math.min(30, Math.floor(dist / step) + 1));
+    const len = Math.max(2, Math.min(30, Math.floor(dist / this.gp.segmentLength) + 1));
 
     // 长度和角度都没变 → 跳过
     if (ds._lastLen === len && ds._lastAngle === angle) return;
@@ -348,8 +347,7 @@ class EditorEngine {
     angle = Math.round(angle);
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const step = this.gp.diameter / 5;
-    const len = Math.max(2, Math.min(30, Math.floor(dist / step) + 1));
+    const len = Math.max(2, Math.min(30, Math.floor(dist / this.gp.segmentLength) + 1));
 
     const pig = this.gp.dragState.pigId != null ? this.gp.pigs.find(p => p.id === this.gp.dragState.pigId) : null;
 

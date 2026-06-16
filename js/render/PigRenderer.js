@@ -57,16 +57,11 @@ class PigRenderer {
 
   // ---- 坐标计算辅助 ----
   _pigCenter(pig, offDx, offDy) {
-    const angle = this.getDisplayAngle(pig);
-    const rad = angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.e.holes[pig.tailIndex];
-    if (!tail) return null;
-    const cl = this.e.segmentLength;
-    const totalLen = pig.length * cl;
-    const cx = tail.x + (pig.length - 1) / 2 * cl * dirX + offDx;
-    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * cl * dirY + offDy;
-    return { cx, cy, rad, totalLen, dirX, dirY };
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig));
+    if (!r) return null;
+    const cx = r.cx + (offDx || 0);
+    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
+    return { cx, cy, rad: r.rad, totalLen: r.hw * 2 + this.e.diameter };
   }
 
   // ---- 三图拼接绘制（头尾等比 + 中段拉伸） ----
@@ -143,19 +138,17 @@ class PigRenderer {
 
   // ---- 碰撞闪烁效果 ----
   drawFlash(ctx, pig, t) {
-    const rad = pig.angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.e.holes[pig.tailIndex];
-    if (!tail) return;
-    const totalLen = pig.length * this.e.segmentLength;
-    const cx = tail.x + (pig.length - 1) / 2 * this.e.segmentLength * dirX;
-    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.e.segmentLength * dirY;
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r) return;
+    const cx = r.cx;
+    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy;
+    const totalLen = r.hw * 2;
     const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
     const flashAlpha = 0.7 * (1 - t) * (1 - t);
 
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(-rad);
+    ctx.rotate(-r.rad);
 
     ctx.beginPath();
     roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
@@ -187,17 +180,15 @@ class PigRenderer {
 
   // ---- 推出孤儿猪（已从 pigs 移除，仅动画残影） ----
   drawOrphan(ctx, anim) {
-    const rad = anim.angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.e.holes[anim.tailIndex];
-    if (!tail) return;
-    const totalLen = anim.length * this.e.segmentLength;
-    const cx = tail.x + (anim.length - 1) / 2 * this.e.segmentLength * dirX + anim.currentDx;
-    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (anim.length - 1) / 2 * this.e.segmentLength * dirY + anim.currentDy;
+    const r = this.e.getPigRect(anim.tailIndex, anim.length, anim.angle);
+    if (!r) return;
+    const cx = r.cx + (anim.currentDx || 0);
+    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (anim.currentDy || 0);
+    const totalLen = r.hw * 2;
     const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(-rad);
+    ctx.rotate(-r.rad);
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = PIG_COLOR;
     roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
@@ -216,8 +207,8 @@ class PigRenderer {
     const tail = this.e.holes[pig.tailIndex];
     if (!tail) return;
     const cl = this.e.segmentLength;
-    // 头部中心 = 最后 HEAD_CELLS 段的中心点
-    const headMid = pig.length - HEAD_CELLS / 2;
+    // 头部中心 = 最后 HEAD_CELLS 段的中心点（OBB已+R偏移）
+    const headMid = pig.length;
     const headCx = tail.x + headMid * cl * dirX;
     const headCy = this.e.topBarH + this.e.boardOffsetY + tail.y + headMid * cl * dirY;
     const headLen = HEAD_CELLS * cl;
@@ -233,33 +224,20 @@ class PigRenderer {
     ctx.restore();
   }
 
-  // ---- 碰撞区蓝色半透明遮罩（80%透明度，显示 OBB 碰撞矩形） ----
-  drawCollisionOverlay(ctx, pig) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    if (!r) return;
-    const offY = this.e.topBarH + this.e.boardOffsetY;
-    ctx.save();
-    ctx.translate(r.cx, offY + r.cy);
-    ctx.rotate(-r.rad);
-    ctx.globalAlpha = 0.2;
-    ctx.fillStyle = '#2196F3';
-    ctx.fillRect(-r.hw, -r.hh, r.hw * 2, r.hh * 2);
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  // ---- 选中高亮虚线框（基于 OBB 碰撞矩形） ----
+  // ---- 选中高亮虚线框（OBB身体+头尾正方形） ----
   drawSelection(ctx, pig) {
     const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
     if (!r) return;
     const offY = this.e.topBarH + this.e.boardOffsetY;
+    const R = this.e.diameter / 2;
+    const fullHw = r.hw + R;
     ctx.save();
     ctx.translate(r.cx, offY + r.cy);
     ctx.rotate(-r.rad);
     ctx.strokeStyle = SELECTED_COLOR;
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 3]);
-    ctx.strokeRect(-r.hw - 3, -r.hh - 3, r.hw * 2 + 6, r.hh * 2 + 6);
+    ctx.strokeRect(-fullHw, -r.hh, fullHw * 2, r.hh * 2);
     ctx.setLineDash([]);
     ctx.restore();
   }

@@ -188,6 +188,7 @@ class GameplayEngine {
     const totalLen = length * this.segmentLength;
     const hw = totalLen / 2;
     const hh = this.pigBodyWidth / 2;
+    // OBB 锚定在孔心；尾正方形中心 = 孔心，头正方形中心 = _headSquareCenter
     const cx = tail.x + hw * cosL;
     const cy = tail.y + hw * sinL;
     // 垂直轴
@@ -643,7 +644,6 @@ class GameplayEngine {
     if (options.showSelection && this.selectedPigId != null && !this.dragState) {
       const pig = this.pigs.find(p => p.id === this.selectedPigId);
       if (pig) {
-        pr.drawCollisionOverlay(ctx, pig);
         pr.drawHeadOverlay(ctx, pig);
         pr.drawSelection(ctx, pig);
       }

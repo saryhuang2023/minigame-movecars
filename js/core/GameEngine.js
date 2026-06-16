@@ -15,6 +15,10 @@ class GameEngine {
     this.levelSelect = new LevelSelectEngine(this.input);
     this.playing = new PlayingEngine(this.input);
 
+    // 背景图
+    this.bgImg = wx.createImage();
+    this.bgImg.src = 'assets/images/bg.jpeg';
+
     // 菜单按钮
     this.menuButtons = [];
 
@@ -49,38 +53,49 @@ class GameEngine {
   renderMenu() {
     ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // 背景渐变
-    const grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
-    grad.addColorStop(0, '#1a1a2e');
-    grad.addColorStop(1, '#16213e');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    // 背景图 — 缩放至屏幕大小
+    if (this.bgImg.width) {
+      ctx.drawImage(this.bgImg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    } else {
+      // 图片未加载完成时使用渐变色占位
+      const grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+      grad.addColorStop(0, '#1a1a2e');
+      grad.addColorStop(1, '#16213e');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    }
 
     // 标题
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 40px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.10);
+    ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.16);
 
-    // 三图拼接小猪 — 屏幕正中央，等比例缩放至屏宽 65%
+    // 三图拼接小猪 — 屏幕正中央，等比例缩放至屏宽 65%，带漂浮效果
     const pigSize = getComposedPigSize();
-    let pigX = 0, pigY = 0, pigDrawH = 0;
+    let pigX = 0, pigY = 0, pigDrawH = 0, pigW = 0;
     if (pigSize) {
       const scale = (SCREEN_WIDTH * 0.65) / pigSize.naturalW;
-      const pigW = pigSize.naturalW * scale;
+      pigW = pigSize.naturalW * scale;
       pigDrawH = pigSize.naturalH * scale;
       pigX = (SCREEN_WIDTH - pigW) / 2;
       pigY = (SCREEN_HEIGHT - pigDrawH) / 2;
-      drawComposedPig(ctx, pigX, pigY, scale);
-    }
 
-    // 副标题 — 紧跟动画底部
-    if (pigDrawH === 0) pigDrawH = 60;
-    const subtitleY = pigY + pigDrawH + 12;
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.font = '14px sans-serif';
-    ctx.fillText('小猪推推乐', SCREEN_WIDTH / 2, subtitleY);
+      // 漂浮效果：上下浮动 + 轻微摇摆
+      const floatOffset = Math.sin(databus.frame * 0.16) * 2.5;
+      const swayAngle = Math.sin(databus.frame * 0.02) * 1.5; // 度
+      pigY += floatOffset;
+
+      const cx = pigX + pigW / 2;
+      const cy = pigY + pigDrawH / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(swayAngle * Math.PI / 180);
+      ctx.translate(-cx, -cy);
+      drawComposedPig(ctx, pigX, pigY, scale);
+      ctx.restore();
+    }
 
     // 按钮 — 底部区域
     this.menuButtons = [];
@@ -96,14 +111,10 @@ class GameEngine {
       databus.gameState = 'editor';
     });
 
-    // 渲染按钮
     for (const btn of this.menuButtons) {
-      // 按钮背景
       ctx.fillStyle = btn.color;
       this.roundRect(ctx, btn.x, btn.y, btn.w, btn.h, 10);
       ctx.fill();
-
-      // 按钮文字
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 18px sans-serif';
       ctx.textAlign = 'center';
