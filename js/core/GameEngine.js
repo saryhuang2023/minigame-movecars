@@ -97,8 +97,30 @@ class GameEngine {
       ctx.restore();
     }
 
+    // 分享按钮 — 标题下方居中
+    const shareW = 80, shareH = 34;
+    const shareX = (SCREEN_WIDTH - shareW) / 2;
+    const shareY = SCREEN_HEIGHT * 0.16 + 28;
+    this.menuButtons = [{
+      x: shareX, y: shareY, w: shareW, h: shareH,
+      action: () => {
+        wx.shareAppMessage({ title: '猪了个猪呀，快来一起推猪猪！' });
+      }
+    }];
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    this.roundRect(ctx, shareX, shareY, shareW, shareH, 8);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, shareX, shareY, shareW, shareH, 8);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔗 分享', shareX + shareW / 2, shareY + shareH / 2);
+
     // 按钮 — 底部区域
-    this.menuButtons = [];
     const btnW = 200, btnH = 52;
     const startX = (SCREEN_WIDTH - btnW) / 2;
     const btnBaseY = SCREEN_HEIGHT * 0.78;
@@ -112,6 +134,7 @@ class GameEngine {
     });
 
     for (const btn of this.menuButtons) {
+      if (!btn.text) continue; // 分享按钮已单独绘制
       ctx.fillStyle = btn.color;
       this.roundRect(ctx, btn.x, btn.y, btn.w, btn.h, 10);
       ctx.fill();

@@ -698,28 +698,41 @@ class EditorEngine {
     this.showToast(`已保存: ${entry.fileName}`);
   }
 
-  // ---- 导出关卡：保存 + 微信分享文件 ----
+  // ---- 导出关卡：保存 + 弹窗复制 ----
   exportLevel() {
     if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
-      this.showToast('无关卡可导出'); return;
+      this.showToast('无关卡可复制'); return;
     }
     const entry = this.levelList[this.currentLevelIdx];
     entry.data = this.getLevelData();
     entry.isDirty = false;
 
+    const jsonStr = JSON.stringify(entry.data, null, 2);
+
+    // 保存到本地文件
     const fs = wx.getFileSystemManager();
     const dir = `${wx.env.USER_DATA_PATH}/levels`;
     try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
     const filePath = `${dir}/${entry.fileName}`;
-    fs.writeFileSync(filePath, JSON.stringify(entry.data, null, 2), 'utf8');
+    fs.writeFileSync(filePath, jsonStr, 'utf8');
 
-    // 小游戏不支持 wx.shareFileMessage（仅小程序可用）
-    // 使用 wx.shareAppMessage 分享游戏入口，关卡通过 query 传递
-    wx.shareAppMessage({
-      title: `推猪消除关卡: ${entry.fileName}`,
-      query: `level=${encodeURIComponent(entry.fileName)}`,
-      success: () => { this.showToast(`已分享: ${entry.fileName}`); },
-      fail: (err) => { console.log('分享失败', err); this.showToast('导出失败'); }
+    // 弹出 JSON 内容（真机上 wx.setClipboardData 可能因权限静默失败）
+    const preview = jsonStr.length > 800 ? jsonStr.substring(0, 800) + '\n...' : jsonStr;
+    wx.showModal({
+      title: entry.fileName,
+      content: preview,
+      showCancel: true,
+      cancelText: '关闭',
+      confirmText: '复制',
+      success: (res) => {
+        if (res.confirm) {
+          wx.setClipboardData({
+            data: jsonStr,
+            success: () => { this.showToast('已复制到剪贴板'); },
+            fail: () => { this.showToast('复制失败'); }
+          });
+        }
+      }
     });
   }
 
@@ -1054,11 +1067,11 @@ class EditorEngine {
     this.levelBtns.push({ x, y: btnY2, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
     x += lvlBtnW + 8;
 
-    // 操作按钮：新建 / 保存 / 导出 — 手指友好
+    // 操作按钮：新建 / 保存 / 复制 — 手指友好
     const opBtns = [
       { label: '新建', color: '#4CAF50', action: 'newLevel' },
       { label: '保存', color: '#2196F3', action: 'saveLevel' },
-      { label: '导出', color: '#00BCD4', action: 'exportLevel' },
+      { label: '复制', color: '#00BCD4', action: 'exportLevel' },
     ];
 
     const opW = 44;

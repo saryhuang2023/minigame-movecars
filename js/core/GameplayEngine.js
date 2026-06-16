@@ -26,7 +26,6 @@ class GameplayEngine {
     this.rows = 5;
     this.heightRatio = 1.2;
     this.cellGapRatio = 1.5;
-
     // ===== 动态计算 =====
     this.boardW = SCREEN_WIDTH;
     this.boardH = 0;
@@ -676,7 +675,7 @@ class GameplayEngine {
       }
     }
 
-    // 底部提示文字
+    // 底部提示文字（屏幕坐标）
     if (options.hintText !== undefined) {
       const hintY = Math.min(SCREEN_HEIGHT - this.bottomStripH - 12, this.topBarH + this.boardOffsetY + this.boardH + 8);
       ctx.fillStyle = 'rgba(255,255,255,0.45)';
