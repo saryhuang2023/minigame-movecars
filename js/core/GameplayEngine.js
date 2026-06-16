@@ -201,10 +201,10 @@ class GameplayEngine {
   // 头部正方形碰撞区中心（对角线交点）
   // B = OBB前端边缘中点 - R * 头部方向（往回R进入正方形中心）
   _headSquareCenter(rect) {
-    const R = this.diameter / 2;
+    // B = OBB前端边缘中点，正方形中心 = F（不再是 F-R）
     return {
-      x: rect.cx + (rect.hw - R) * rect.cosL,
-      y: rect.cy + (rect.hw - R) * rect.sinL
+      x: rect.cx + rect.hw * rect.cosL,
+      y: rect.cy + rect.hw * rect.sinL
     };
   }
 
@@ -353,12 +353,16 @@ class GameplayEngine {
     const center = this._headSquareCenter(r);
     const thresh = this.diameter / 2;  // R
     const thresh2 = thresh * thresh;
+    let bestIdx = -1, bestDist2 = Infinity;
     for (let i = 0; i < this.holes.length; i++) {
       const dx = center.x - this.holes[i].x;
       const dy = center.y - this.holes[i].y;
-      if (dx * dx + dy * dy <= thresh2) return i;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 <= thresh2) {
+        if (dist2 < bestDist2) { bestDist2 = dist2; bestIdx = i; }
+      }
     }
-    return -1;
+    return bestIdx;
   }
 
   // ============================================================
@@ -646,6 +650,30 @@ class GameplayEngine {
       if (pig) {
         pr.drawHeadOverlay(ctx, pig);
         pr.drawSelection(ctx, pig);
+
+        // 调试：红线从头部正方形中心 → findHeadHole 命中的孔心
+        const hr = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+        if (hr) {
+          const hsc = this._headSquareCenter(hr);
+          // 绿点：头部正方形中心 B
+          ctx.beginPath();
+          ctx.arc(hsc.x, offY + hsc.y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = '#00FF00';
+          ctx.fill();
+          ctx.strokeStyle = '#008800';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          const headHoleIdx = this.findHeadHole(pig.tailIndex, pig.length, pig.angle);
+          if (headHoleIdx >= 0) {
+            const hh = this.holes[headHoleIdx];
+            ctx.beginPath();
+            ctx.moveTo(hsc.x, offY + hsc.y);
+            ctx.lineTo(hh.x, offY + hh.y);
+            ctx.strokeStyle = '#FF0000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        }
       }
     }
 
