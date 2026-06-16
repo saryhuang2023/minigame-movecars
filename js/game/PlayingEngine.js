@@ -46,6 +46,7 @@ class PlayingEngine {
     this.gp.flashingPigs = {};
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
+    this.gp.flyingPigs = [];
     this.gp.topBarH = TOP_BAR_H;
     this.gp.bottomStripH = BOTTOM_H;
     this.gp.recomputeBoard();
@@ -166,13 +167,17 @@ class PlayingEngine {
         pigId,
         dirX: result.dirX, dirY: result.dirY,
         totalDist: result.totalDist, currentDx: 0, currentDy: 0,
-        startTime: Date.now(), duration: 6400,
-        tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle
+        startTime: Date.now(), duration: 6400
       });
-      this.gp.pigs = this.gp.pigs.filter(p => p.id !== pigId);
+      // 逻辑层立即移除（结算/计分不受动画影响）
+      const idx = this.gp.pigs.findIndex(p => p.id === pigId);
+      this.gp.flyingPigs.push(this.gp.pigs[idx]);
+      this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
       this.steps++;
+      // 动画结束后清理渲染层
       setTimeout(() => {
+        this.gp.flyingPigs = this.gp.flyingPigs.filter(p => p.id !== pigId);
         this.gp.animations = this.gp.animations.filter(a => a.pigId !== pigId);
       }, 6500);
     } else if (result.collidedPigId !== undefined) {

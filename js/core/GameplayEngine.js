@@ -13,7 +13,7 @@ const BG_COLOR = '#1a1a2e';
 const FLASH_DURATION = 500;
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
-const HEAD_CELLS = 2;  // 头部触摸区段数
+const HEAD_ZONE_MULT = 1;  // 头部区域 = HEAD_ZONE_MULT × diameter 像素
 
 class GameplayEngine {
   constructor() {
@@ -53,6 +53,7 @@ class GameplayEngine {
     // ===== 动画 =====
     this.animations = [];
     this.ghostAnimations = [];
+    this.flyingPigs = [];
     this.flashingPigs = {};
 
     // ===== 渲染 =====
@@ -83,8 +84,8 @@ class GameplayEngine {
     this.rebuildOccupancy();
   }
 
-  // 每段长度 = 孔位半径（diameter/2）
-  get segmentLength() { return this.diameter / 2; }
+  // 碰撞检测射线推进步长 = 孔位半径（diameter/2）
+  get collisionStep() { return this.diameter / 2; }
 
   // 猪身体宽度 = 渲染对齐，碰撞也用这个值
   get pigBodyWidth() { return this.diameter; }
@@ -185,7 +186,7 @@ class GameplayEngine {
     const rad = angle * Math.PI / 180;
     const cosL = Math.cos(rad);
     const sinL = -Math.sin(rad);       // canvas y-flip
-    const totalLen = length * this.segmentLength;
+    const totalLen = length;  // length 即真实像素长度
     const hw = totalLen / 2;
     const hh = this.pigBodyWidth / 2;
     // OBB 锚定在孔心；尾正方形中心 = 孔心，头正方形中心 = _headSquareCenter
@@ -270,10 +271,9 @@ class GameplayEngine {
       const lx = px * Math.cos(r.rad) - py * Math.sin(r.rad);
       const ly = px * Math.sin(r.rad) + py * Math.cos(r.rad);
       if (Math.abs(lx) <= r.hw + 4 && Math.abs(ly) <= r.hh + 4) {
-        // 沿长度方向线性映射段索引
-        const cellIndex = Math.round((lx / r.hw) * (pig.length - 1) / 2 + (pig.length - 1) / 2);
-        const ci = Math.max(0, Math.min(pig.length - 1, cellIndex));
-        return { id: pig.id, cellIndex: ci, totalLen: pig.length };
+        // 像素偏移（从尾部 0 → 头部 totalLen）
+        const offset = Math.max(0, Math.min(pig.length, lx + r.hw));
+        return { id: pig.id, offset, totalLen: pig.length };
       }
     }
     return null;
@@ -503,7 +503,7 @@ class GameplayEngine {
 
     const rad = pig.angle * Math.PI / 180;
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const stepSize = this.segmentLength;
+    const stepSize = this.collisionStep;
     const maxSteps = 100;
 
     for (let step = 1; step <= maxSteps; step++) {
@@ -637,11 +637,10 @@ class GameplayEngine {
       }
     }
 
-    // 孤儿动画猪
-    for (const a of this.animations) {
-      if (!this.pigs.find(p => p.id === a.pigId) && a.tailIndex !== undefined) {
-        pr.drawOrphan(ctx, a);
-      }
+    // 飞行猪（已从逻辑层 pigs 移除，纯 UI 层渲染）
+    for (const fp of this.flyingPigs) {
+      const off = animOffs[fp.id] || { dx: 0, dy: 0 };
+      pr.draw(ctx, fp, off.dx, off.dy);
     }
 
     // 选中高亮（无拖拽时）
@@ -710,6 +709,6 @@ class GameplayEngine {
 }
 
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
-GameplayEngine.HEAD_CELLS = HEAD_CELLS;
+GameplayEngine.HEAD_ZONE_MULT = HEAD_ZONE_MULT;
 
 module.exports = GameplayEngine;

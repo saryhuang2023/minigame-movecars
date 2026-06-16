@@ -5,7 +5,6 @@
 const PIG_COLOR = '#FFD700';
 const PIG_STROKE = '#FFB300';
 const SELECTED_COLOR = '#2196F3';
-const HEAD_CELLS = 2;  // 头部占用段数
 
 // ============================================================
 // === canvas 工具 ===
@@ -121,7 +120,7 @@ class PigRenderer {
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      const eyeX = c.totalLen / 2 - this.e.segmentLength * 0.35;
+      const eyeX = c.totalLen / 2 - this.e.diameter * 0.35;
       const eyeY = -bh * 0.45;
       ctx.fillStyle = '#fff';
       ctx.beginPath();
@@ -178,44 +177,19 @@ class PigRenderer {
     ctx.restore();
   }
 
-  // ---- 推出孤儿猪（已从 pigs 移除，仅动画残影） ----
-  drawOrphan(ctx, anim) {
-    const r = this.e.getPigRect(anim.tailIndex, anim.length, anim.angle);
-    if (!r) return;
-    const cx = r.cx + (anim.currentDx || 0);
-    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (anim.currentDy || 0);
-    const totalLen = r.hw * 2;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-r.rad);
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = PIG_COLOR;
-    roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
-    ctx.fill();
-    ctx.strokeStyle = PIG_STROKE;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
 
-  // ---- 头部红色半透明遮罩（80%透明度，覆盖最后 HEAD_CELLS 段） ----
+  // ---- 头部红色半透明遮罩（最后 1×diameter 范围） ----
   drawHeadOverlay(ctx, pig) {
-    const rad = pig.angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.e.holes[pig.tailIndex];
-    if (!tail) return;
-    const cl = this.e.segmentLength;
-    // 头部中心 = 最后 HEAD_CELLS 段的中心点（OBB已+R偏移）
-    const headMid = pig.length;
-    const headCx = tail.x + headMid * cl * dirX;
-    const headCy = this.e.topBarH + this.e.boardOffsetY + tail.y + headMid * cl * dirY;
-    const headLen = HEAD_CELLS * cl;
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r) return;
+    const offY = this.e.topBarH + this.e.boardOffsetY;
     const bw = this.pigBodyWidth;
+    // 头部中心 = _headSquareCenter（OBB前端，正方形中心）
+    const hsc = this.e._headSquareCenter(r);
+    const headLen = this.e.diameter;  // 头部区域 = HEAD_ZONE_MULT × diameter
     ctx.save();
-    ctx.translate(headCx, headCy);
-    ctx.rotate(-rad);
+    ctx.translate(hsc.x, offY + hsc.y);
+    ctx.rotate(-r.rad);
     ctx.globalAlpha = 0.2;
     ctx.fillStyle = '#FF0000';
     roundRect(ctx, -headLen / 2, -bw / 2, headLen, bw, 4);

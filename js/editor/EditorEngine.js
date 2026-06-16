@@ -138,7 +138,7 @@ class EditorEngine {
       this.gp.selectedPigId = pigInfo.id;
 
       const tempId = -999;
-      const isHead = pigInfo.cellIndex >= pigInfo.totalLen - GameplayEngine.HEAD_CELLS;
+      const isHead = pigInfo.offset >= pigInfo.totalLen - GameplayEngine.HEAD_ZONE_MULT * this.gp.diameter;
 
       if (isHead) {
         // 从 pigs 中移除原始猪，推入 temp 猪，重建占用表避免自碰撞
@@ -291,10 +291,10 @@ class EditorEngine {
     angle = Math.round(angle);
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const len = Math.max(2, Math.min(30, Math.floor(dist / this.gp.segmentLength) + 1));
+    const len = Math.max(this.gp.diameter, Math.min(this.gp.diameter * 15, Math.round(dist)));
 
-    // 长度和角度都没变 → 跳过
-    if (ds._lastLen === len && ds._lastAngle === angle) return;
+    // 长度和角度都没变 → 跳过（像素值允许 ±2px 误差）
+    if (ds._lastLen !== undefined && Math.abs(ds._lastLen - len) < 3 && ds._lastAngle === angle) return;
     ds._lastLen = len;
     ds._lastAngle = angle;
 
@@ -347,7 +347,7 @@ class EditorEngine {
     angle = Math.round(angle);
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const len = Math.max(2, Math.min(30, Math.floor(dist / this.gp.segmentLength) + 1));
+    const len = Math.max(this.gp.diameter, Math.min(this.gp.diameter * 15, Math.round(dist)));
 
     const pig = this.gp.dragState.pigId != null ? this.gp.pigs.find(p => p.id === this.gp.dragState.pigId) : null;
 
@@ -426,7 +426,7 @@ class EditorEngine {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
           }
           this.gp.updatePigOccupancy(realId, lv.tailIndex, lv.length, snappedAngle);
-          this.showToast(`小猪 #${realId} → ${lv.length}格 ${snappedAngle}°`);
+          this.showToast(`小猪 #${realId} → ${Math.round(lv.length)}px ${snappedAngle}°`);
           this.markCurrentDirty();
           this.tryGhostPush(realId);
         } else if (this.gp.dragState.originalPig) {
@@ -477,12 +477,12 @@ class EditorEngine {
             realId = this.gp.dragState.pigId;
             this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: snappedAngle });
             this.gp.selectedPigId = realId;
-            this.showToast(`小猪 #${realId} 已调整 (${lv.length}格, ${snappedAngle}°)`);
+            this.showToast(`小猪 #${realId} 已调整 (${Math.round(lv.length)}px, ${snappedAngle}°)`);
           } else {
             realId = this.gp.nextPigId++;
             this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: snappedAngle });
             this.gp.selectedPigId = realId;
-            this.showToast(`小猪 #${realId} 已放置 (${lv.length}格, ${snappedAngle}°)`);
+            this.showToast(`小猪 #${realId} 已放置 (${Math.round(lv.length)}px, ${snappedAngle}°)`);
           }
           for (let i = 0; i < this.gp.holeOccupied.length; i++) {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
@@ -698,6 +698,31 @@ class EditorEngine {
     this.showToast(`已保存: ${entry.fileName}`);
   }
 
+  // ---- 导出关卡：保存 + 微信分享文件 ----
+  exportLevel() {
+    if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
+      this.showToast('无关卡可导出'); return;
+    }
+    const entry = this.levelList[this.currentLevelIdx];
+    entry.data = this.getLevelData();
+    entry.isDirty = false;
+
+    const fs = wx.getFileSystemManager();
+    const dir = `${wx.env.USER_DATA_PATH}/levels`;
+    try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
+    const filePath = `${dir}/${entry.fileName}`;
+    fs.writeFileSync(filePath, JSON.stringify(entry.data, null, 2), 'utf8');
+
+    // 小游戏不支持 wx.shareFileMessage（仅小程序可用）
+    // 使用 wx.shareAppMessage 分享游戏入口，关卡通过 query 传递
+    wx.shareAppMessage({
+      title: `推猪消除关卡: ${entry.fileName}`,
+      query: `level=${encodeURIComponent(entry.fileName)}`,
+      success: () => { this.showToast(`已分享: ${entry.fileName}`); },
+      fail: (err) => { console.log('分享失败', err); this.showToast('导出失败'); }
+    });
+  }
+
   newLevel() {
     if (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length) {
       this.levelList[this.currentLevelIdx].data = this.getLevelData();
@@ -829,7 +854,7 @@ class EditorEngine {
     if (this.gp.selectedPigId != null && !this.gp.dragState) {
       const pig = this.gp.pigs.find(p => p.id === this.gp.selectedPigId);
       if (pig) {
-        hintText = `小猪 #${pig.id} | 长度:${pig.length} | 角度:${pig.angle}°`;
+        hintText = `小猪 #${pig.id} | 长度:${Math.round(pig.length)}px | 角度:${pig.angle}°`;
       }
     }
     if (!hintText) {
@@ -1029,13 +1054,11 @@ class EditorEngine {
     this.levelBtns.push({ x, y: btnY2, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
     x += lvlBtnW + 8;
 
-    // 操作按钮：新建 / 保存 / 删除 / 清空 / 重置 — 手指友好
+    // 操作按钮：新建 / 保存 / 导出 — 手指友好
     const opBtns = [
       { label: '新建', color: '#4CAF50', action: 'newLevel' },
       { label: '保存', color: '#2196F3', action: 'saveLevel' },
-      { label: '删除', color: '#f44336', action: 'deleteLevel' },
-      { label: '清空', color: '#FF9800', action: 'clearLevel' },
-      { label: '重置', color: '#9C27B0', action: 'resetLevel' },
+      { label: '导出', color: '#00BCD4', action: 'exportLevel' },
     ];
 
     const opW = 44;
@@ -1164,9 +1187,10 @@ class EditorEngine {
           return;
         }
         this.switchToLevel(this.currentLevelIdx, true);
-        this.showToast('已重置');
+        this.showToast('已重载');
         break;
       }
+      case 'exportLevel': this.exportLevel(); break;
       case 'togglePig': {
         if (this.gp.selectedPigId == null) {
           this.showToast('请先在棋盘上选中小猪');
@@ -1216,7 +1240,7 @@ class EditorEngine {
       ctx.textBaseline = 'top';
       const infoY = sheetY + 56;
       ctx.fillText(`编号: #${pig.id}`, 28, infoY);
-      ctx.fillText(`长度: ${pig.length} 格`, 180, infoY);
+      ctx.fillText(`长度: ${Math.round(pig.length)}px`, 180, infoY);
       ctx.fillText(`角度: ${Math.round(pig.angle)}°`, 28, infoY + 26);
       ctx.fillText(`尾部孔: #${pig.tailIndex}`, 180, infoY + 26);
 
@@ -1275,7 +1299,8 @@ class EditorEngine {
   // === 关卡选择子页面 ===
   // ============================================================
   renderLevelSheet() {
-    const sheetH = Math.min(SCREEN_HEIGHT * 0.65, this.levelList.length * 48 + 70);
+    const barH = 48;  // 操作按钮栏高度
+    const sheetH = Math.min(SCREEN_HEIGHT * 0.65, this.levelList.length * 48 + 70 + barH);
     const sheetY = SCREEN_HEIGHT - sheetH;
 
     // 半透明遮罩
@@ -1306,8 +1331,33 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.fillText('✕', closeX + 16, sheetY + 22);
 
+    // ---- 操作按钮栏：删除 / 清空 / 重载 ----
+    const actionBarY = sheetY + 52;
+    const actionBtns = [
+      { label: '删除', color: '#f44336', action: 'deleteLevel' },
+      { label: '清空', color: '#FF9800', action: 'clearLevel' },
+      { label: '重载', color: '#9C27B0', action: 'resetLevel' },
+    ];
+    const abW = 80, abH = 36;
+    const totalW = actionBtns.length * abW + (actionBtns.length - 1) * 10;
+    let abX = (SCREEN_WIDTH - totalW) / 2;
+    const abY = actionBarY + (barH - abH) / 2;
+    this.levelSheetActionBtns = [];
+    for (const b of actionBtns) {
+      ctx.fillStyle = b.color;
+      roundRect(ctx, abX, abY, abW, abH, 6);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(b.label, abX + abW / 2, abY + abH / 2);
+      this.levelSheetActionBtns.push({ x: abX, y: abY, w: abW, h: abH, action: b.action });
+      abX += abW + 10;
+    }
+
     // 关卡列表 — 手指友好
-    const listY = sheetY + 52;
+    const listY = sheetY + 52 + barH;
     const itemH = 44;
     this.levelSheetItems = [];
 
@@ -1369,6 +1419,17 @@ class EditorEngine {
     if (this.sheetLevelRect && y < this.sheetLevelRect.y) {
       this.showLevelSheet = false;
       return true;
+    }
+
+    // 操作按钮栏：删除 / 清空 / 重载
+    if (this.levelSheetActionBtns) {
+      for (const btn of this.levelSheetActionBtns) {
+        if (this.hitRect(x, y, btn)) {
+          this.showLevelSheet = false;
+          this._handleLevelAction(btn.action);
+          return true;
+        }
+      }
     }
 
     if (this.levelSheetItems) {
