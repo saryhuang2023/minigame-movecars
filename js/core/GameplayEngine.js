@@ -87,7 +87,7 @@ class GameplayEngine {
   get segmentLength() { return this.diameter / 2; }
 
   // 猪身体宽度 = 渲染对齐，碰撞也用这个值
-  get pigBodyWidth() { return this.diameter * 2 / 3; }
+  get pigBodyWidth() { return this.diameter; }
 
   isInHeightHandle(x, y) {
     const handleCenterY = this.topBarH + this.boardOffsetY + this.boardH;
@@ -322,7 +322,7 @@ class GameplayEngine {
     const r = this.getPigRect(tailIndex, length, rawAngle);
     if (!r) return rawAngle;
     const center = this._headSquareCenter(r);
-    const thresh = this.diameter / 4;  // R/2
+    const thresh = this.diameter / 2;  // R
     const thresh2 = thresh * thresh;
     let bestHole = null;
     let bestDist = Infinity;
@@ -350,7 +350,7 @@ class GameplayEngine {
     const r = this.getPigRect(tailIndex, length, angle);
     if (!r) return -1;
     const center = this._headSquareCenter(r);
-    const thresh = this.diameter / 4;  // R/2
+    const thresh = this.diameter / 2;  // R
     const thresh2 = thresh * thresh;
     for (let i = 0; i < this.holes.length; i++) {
       const dx = center.x - this.holes[i].x;

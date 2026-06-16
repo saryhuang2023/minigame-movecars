@@ -43,7 +43,7 @@ class PigRenderer {
   }
 
   // ---- 猪身体尺寸 ----
-  get pigBodyWidth() { return this.e.diameter * 2 / 3; }
+  get pigBodyWidth() { return this.e.diameter; }
   get pigBodyHalf()  { return this.pigBodyWidth / 2; }
 
   // ---- 拖拽中的显示角度（旋转追逐动画） ----
@@ -69,6 +69,44 @@ class PigRenderer {
     return { cx, cy, rad, totalLen, dirX, dirY };
   }
 
+  // ---- 三图拼接绘制（头尾等比 + 中段拉伸） ----
+  // 在已 translate+rotate 的 ctx 中绘制，local 坐标系：x ∈ [-totalLen/2, totalLen/2]
+  // 返回 true 表示图片已画出，false 表示图片未加载需 fallback
+  _drawPigImage(ctx, totalLen) {
+    const parts = _loadPigParts();
+    if (!parts.allLoaded) return false;
+
+    const bodyH = this.pigBodyWidth;                // 猪体高度 = 孔直径
+    const imgScale = bodyH / parts.height;          // 等比缩放（图片等高→按高度缩放）
+    let tailW = parts.tailW * imgScale;
+    let headW = parts.headW * imgScale;
+    const drawH = bodyH;
+
+    // 如果猪太短，头尾等比缩小
+    if (tailW + headW > totalLen) {
+      const altScale = totalLen / (tailW + headW);
+      tailW *= altScale;
+      headW *= altScale;
+    }
+    const midW = totalLen - tailW - headW;          // 中段拉伸填充
+    const overlap = 2;                               // 相邻段交叉像素
+    const halfLen = totalLen / 2;
+    const halfH = drawH / 2;
+
+    // 尾（左端对齐，先画）
+    ctx.drawImage(parts.tailImg, -halfLen, -halfH, tailW, drawH);
+
+    // 中段（左右各交叉 overlap px，覆盖尾部和头部边缘）
+    if (midW > 0.5) {
+      ctx.drawImage(parts.midImg, -halfLen + tailW - overlap, -halfH, midW + overlap * 2, drawH);
+    }
+
+    // 头（右端对齐，最后画，覆盖中段右边缘）
+    ctx.drawImage(parts.headImg, halfLen - headW, -halfH, headW, drawH);
+
+    return true;
+  }
+
   // ---- 正常猪绘制 ----
   draw(ctx, pig, offDx, offDy) {
     const c = this._pigCenter(pig, offDx, offDy);
@@ -78,23 +116,28 @@ class PigRenderer {
     ctx.save();
     ctx.translate(c.cx, c.cy);
     ctx.rotate(-c.rad);
-    ctx.fillStyle = PIG_COLOR;
-    roundRect(ctx, -c.totalLen / 2, -bh, c.totalLen, bw, 6);
-    ctx.fill();
-    ctx.strokeStyle = PIG_STROKE;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
 
-    const eyeX = c.totalLen / 2 - this.e.segmentLength * 0.35;
-    const eyeY = -bh * 0.45;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(eyeX, eyeY, this.e.diameter * 0.22, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#333';
-    ctx.beginPath();
-    ctx.arc(eyeX + 1, eyeY, this.e.diameter * 0.11, 0, Math.PI * 2);
-    ctx.fill();
+    if (!this._drawPigImage(ctx, c.totalLen)) {
+      // 图片未加载 → 矩形 fallback
+      ctx.fillStyle = PIG_COLOR;
+      roundRect(ctx, -c.totalLen / 2, -bh, c.totalLen, bw, 6);
+      ctx.fill();
+      ctx.strokeStyle = PIG_STROKE;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      const eyeX = c.totalLen / 2 - this.e.segmentLength * 0.35;
+      const eyeY = -bh * 0.45;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(eyeX, eyeY, this.e.diameter * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#333';
+      ctx.beginPath();
+      ctx.arc(eyeX + 1, eyeY, this.e.diameter * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
   }
 
@@ -205,22 +248,18 @@ class PigRenderer {
     ctx.restore();
   }
 
-  // ---- 选中高亮虚线框 ----
+  // ---- 选中高亮虚线框（基于 OBB 碰撞矩形） ----
   drawSelection(ctx, pig) {
-    const rad = pig.angle * Math.PI / 180;
-    const dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    const tail = this.e.holes[pig.tailIndex];
-    if (!tail) return;
-    const totalLen = pig.length * this.e.segmentLength;
-    const cx = tail.x + (pig.length - 1) / 2 * this.e.segmentLength * dirX;
-    const cy = this.e.topBarH + this.e.boardOffsetY + tail.y + (pig.length - 1) / 2 * this.e.segmentLength * dirY;
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r) return;
+    const offY = this.e.topBarH + this.e.boardOffsetY;
     ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-rad);
+    ctx.translate(r.cx, offY + r.cy);
+    ctx.rotate(-r.rad);
     ctx.strokeStyle = SELECTED_COLOR;
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 3]);
-    ctx.strokeRect(-totalLen / 2 - 3, -this.e.diameter / 2 - 3, totalLen + 6, this.e.diameter + 6);
+    ctx.strokeRect(-r.hw - 3, -r.hh - 3, r.hw * 2 + 6, r.hh * 2 + 6);
     ctx.setLineDash([]);
     ctx.restore();
   }

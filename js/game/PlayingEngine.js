@@ -18,7 +18,6 @@ class PlayingEngine {
     this.steps = 0;
     this.backBtn = null;
     this.restartBtn = null;
-    this.quitBtn = null;
   }
 
   activate() {
@@ -80,11 +79,6 @@ class PlayingEngine {
     if (this.restartBtn && x >= this.restartBtn.x && x <= this.restartBtn.x + this.restartBtn.w &&
         y >= this.restartBtn.y && y <= this.restartBtn.y + this.restartBtn.h) {
       this.restartLevel();
-      return;
-    }
-    if (this.quitBtn && x >= this.quitBtn.x && x <= this.quitBtn.x + this.quitBtn.w &&
-        y >= this.quitBtn.y && y <= this.quitBtn.y + this.quitBtn.h) {
-      this.tryQuit();
       return;
     }
 
@@ -186,36 +180,6 @@ class PlayingEngine {
     }
   }
 
-  // 松手后尝试推出
-  tryQuit() {
-    // 找到一头合法的猪尝试推出
-    // 通常玩家操作的最后一头猪就是目标
-    if (!this.gp.dragState && this.gp.pigs.length > 0) {
-      const result = this.gp.canPushPig(this.gp.pigs[0].id);
-      if (result.canPush) {
-        // 推出动画
-        const pig = this.gp.pigs[0];
-        this.gp.ghostAnimations.push({
-          pigId: pig.id,
-          dirX: result.dirX, dirY: result.dirY,
-          totalDist: result.totalDist,
-          currentDx: 0, currentDy: 0,
-          startTime: Date.now(), duration: 4000
-        });
-        setTimeout(() => {
-          this.gp.ghostAnimations = this.gp.ghostAnimations.filter(g => g.pigId !== pig.id);
-          // 移除已推出的猪
-          this.gp.pigs = this.gp.pigs.filter(p => p.id !== pig.id);
-          this.gp.clearPigOccupancy(pig.id);
-          this.gp.rebuildOccupancy();
-          this.steps++;
-        }, 4100);
-      } else if (result.collidedPigId !== undefined) {
-        this.gp.triggerCollisionEffect(result.collidedPigId);
-      }
-    }
-  }
-
   restartLevel() {
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
   }
@@ -278,10 +242,9 @@ class PlayingEngine {
 
     const btnW = 110, btnH = 38;
     const btnY = barY + (BOTTOM_H - btnH) / 2;
-    const midX = SCREEN_WIDTH / 2;
 
-    // 重来按钮
-    const restartX = midX - btnW - 10;
+    // 重来按钮（居中）
+    const restartX = (SCREEN_WIDTH - btnW) / 2;
     this.restartBtn = { x: restartX, y: btnY, w: btnW, h: btnH };
     ctx.fillStyle = '#FF9800';
     this._roundRect(ctx, restartX, btnY, btnW, btnH, 8);
@@ -291,15 +254,6 @@ class PlayingEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('重来', restartX + btnW / 2, btnY + btnH / 2);
-
-    // 推出按钮
-    const quitX = midX + 10;
-    this.quitBtn = { x: quitX, y: btnY, w: btnW, h: btnH };
-    ctx.fillStyle = '#4CAF50';
-    this._roundRect(ctx, quitX, btnY, btnW, btnH, 8);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.fillText('推出', quitX + btnW / 2, btnY + btnH / 2);
   }
 
   _roundRect(ctx, x, y, w, h, r) {
