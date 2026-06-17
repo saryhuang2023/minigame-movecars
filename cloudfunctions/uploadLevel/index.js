@@ -21,6 +21,7 @@ exports.main = async (event, context) => {
 
     if (exist.data.length === 0) {
       // 新增（首次上传）
+      data.version = 1;
       const res = await db.collection('levels').add({
         data: {
           _openid: OPENID, name, data, pigCount,
@@ -47,6 +48,7 @@ exports.main = async (event, context) => {
 
     // 版本匹配 — 原子条件更新
     const newVersion = serverVersion + 1;
+    data.version = newVersion;
     const result = await db.collection('levels')
       .where({ _id: doc._id, version: serverVersion })
       .update({

@@ -32,7 +32,7 @@ exports.main = async (event, context) => {
       const res = await db.collection('levels')
         .field({
           _id: true, _openid: true, name: true, pigCount: true,
-          version: true, updatedAt: true
+          version: true, updatedAt: true, data: true
         })
         .orderBy('name', 'asc')
         .limit(200)
@@ -44,6 +44,7 @@ exports.main = async (event, context) => {
         name: doc.name,
         pigCount: doc.pigCount || 0,
         version: doc.version || 0,
+        ready: (doc.data && doc.data.ready) || 0,
         updatedAt: doc.updatedAt
           ? new Date(doc.updatedAt).toISOString().slice(0, 19).replace('T', ' ')
           : ''

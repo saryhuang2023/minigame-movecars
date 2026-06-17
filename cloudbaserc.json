@@ -25,6 +25,13 @@
       "ignore": ["node_modules"]
     },
     {
+      "name": "httpLevels",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
       "name": "deleteLevel",
       "runtime": "Nodejs18.15",
       "handler": "index.main",

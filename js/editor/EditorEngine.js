@@ -507,9 +507,12 @@ class EditorEngine {
   // 关卡数据
   // ============================================================
   getLevelData() {
+    const curData = this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length
+      ? this.levelList[this.currentLevelIdx].data : null;
     return {
       board: { cols: this.gp.cols, hGap: this.gp.hGap, rows: this.gp.rows, vGap: this.gp.vGap, diameter: this.gp.diameter },
-      pigs: this.gp.pigs.map(p => ({ id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle }))
+      pigs: this.gp.pigs.map(p => ({ id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle })),
+      ready: (curData && curData.ready != null) ? curData.ready : 0
     };
   }
 
@@ -551,13 +554,14 @@ class EditorEngine {
           const data = JSON.parse(raw);
           const name = f.replace('.json', '');
           // 读取已保存的 _cloudId 和 _version
-          let cloudId = null, localVersion = 0;
+          // 优先从 data.version 读取版本号（上传时写入），.meta 作为兜底
+          let cloudId = null, localVersion = data.version || 0;
           const metaPath = `${dir}/.meta/${name}.json`;
           try {
             const metaRaw = fs.readFileSync(metaPath, 'utf8');
             const meta = JSON.parse(metaRaw);
             cloudId = meta.cloudId || null;
-            localVersion = meta.version || 0;
+            if (!localVersion) localVersion = meta.version || 0;
           } catch (e) {}
           return { name, fileName: f, data, isDirty: false, _cloudId: cloudId, _version: localVersion };
         } catch (e) { return null; }
@@ -600,26 +604,54 @@ class EditorEngine {
     this._uploadToCloud(entry);
   }
 
-  // ---- 本地同步：从正式关卡目录加载同名文件 ----
+  // ---- 本地同步：从正式关卡目录覆盖 board/pigs，保留编辑器元数据 ----
   localSync() {
     if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
       this.showToast('无关卡可同步'); return;
     }
-    const name = this.levelList[this.currentLevelIdx].name;
-    const filePath = `assets/levels/${name}.json`;
+    const entry = this.levelList[this.currentLevelIdx];
+    const name = entry.name;
+    const srcPath = `assets/levels/${name}.json`;
+    const dstPath = `${wx.env.USER_DATA_PATH}/levels/${name}.json`;
 
     const fs = wx.getFileSystemManager();
     try {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      const data = JSON.parse(raw);
-      this.loadLevelData(data);
-      // 将当前编辑器的数据也更新为同步后的数据
-      this.levelList[this.currentLevelIdx].data = data;
-      this.levelList[this.currentLevelIdx].isDirty = true;
+      const formalRaw = fs.readFileSync(srcPath, 'utf8');
+      const formal = JSON.parse(formalRaw);
+      // 保留编辑器元数据（正式关卡文件不含 ready/version 等字段）
+      if (entry.data && entry.data.ready !== undefined) {
+        formal.ready = entry.data.ready;
+      }
+      if (entry.data && entry.data.version !== undefined) {
+        formal.version = entry.data.version;
+      }
+      // 写入合并后的数据
+      fs.writeFileSync(dstPath, JSON.stringify(formal, null, 2), 'utf8');
+      // 更新内存
+      entry.data = formal;
+      entry.isDirty = false;
+      entry._version = formal.version || 0;
+      entry._cloudId = null;
+      this.dirty = false;
+      this.loadLevelData(formal);
       this.showToast(`已同步: ${name}`);
     } catch (e) {
       this.showToast(`正式关卡无: ${name}`);
     }
+  }
+
+  // ---- 切换关卡 ready 状态：0(设计中) ↔ 1(待发布) ----
+  toggleReady() {
+    if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
+      this.showToast('无关卡可切换'); return;
+    }
+    const entry = this.levelList[this.currentLevelIdx];
+    const curReady = entry.data.ready || 0;
+    const newReady = curReady === 1 ? 0 : 1;
+    entry.data.ready = newReady;
+    entry.isDirty = true;
+    this.dirty = true;
+    this.showToast(newReady === 1 ? '已设为待发布' : '已设为设计中');
   }
 
   // ---- 复制关卡：新建关卡并拷贝当前内容 ----
@@ -708,7 +740,8 @@ class EditorEngine {
   getDefaultLevelData() {
     return {
       board: { cols: 5, rows: 5, hGap: 10, vGap: 10, diameter: 30 },
-      pigs: []
+      pigs: [],
+      ready: 0
     };
   }
 
@@ -726,6 +759,8 @@ class EditorEngine {
         this.showToast('关卡已被其他设备更新，已刷新为最新版本');
         // 用服务器返回的最新数据覆盖本地
         if (res.data) {
+          // 将服务器 version 写入数据再存储
+          res.data.version = res.serverVersion;
           entry.data = res.data;
           entry.isDirty = false;
           this.dirty = false;
@@ -748,6 +783,12 @@ class EditorEngine {
         entry._cloudId = res.id;
         entry._version = res.version || 1;
         this._saveCloudMeta(entry.name, res.id, res.version || 1);
+        // 将服务器 version 写入关卡 JSON 文件，方便后续对比
+        entry.data.version = res.version || 1;
+        const fs = wx.getFileSystemManager();
+        const dir = `${wx.env.USER_DATA_PATH}/levels`;
+        const fullPath = `${dir}/${entry.fileName}`;
+        fs.writeFileSync(fullPath, JSON.stringify(entry.data, null, 2), 'utf8');
         console.log(`[Cloud] 关卡 ${entry.name} 已同步云端 v${res.version}`);
       }
     } catch (e) {
@@ -1293,6 +1334,22 @@ class EditorEngine {
     ctx.textBaseline = 'middle';
     ctx.fillText('本地同步', x + syncW / 2, midY3);
     this.levelBtns.push({ x, y: btnY3, w: syncW, h: btnH, action: 'localSync' });
+    x += syncW + 8;
+
+    // 发布按钮：toggle ready 0↔1
+    const ready = (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length)
+      ? (this.levelList[this.currentLevelIdx].data.ready || 0) : 0;
+    const publishW = 56;
+    const publishColor = ready === 1 ? '#E91E63' : '#9E9E9E';
+    ctx.fillStyle = publishColor;
+    roundRect(ctx, x, btnY3, publishW, btnH, 6);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ready === 1 ? '待发布' : '设计中', x + publishW / 2, midY3);
+    this.levelBtns.push({ x, y: btnY3, w: publishW, h: btnH, action: 'toggleReady' });
   }
 
   // ---- 紧凑步进器：label [-][+] — 手指友好 ----
@@ -1403,6 +1460,7 @@ class EditorEngine {
       }
       case 'exportLevel': this.exportLevel(); break;
       case 'localSync': this.localSync(); break;
+      case 'toggleReady': this.toggleReady(); break;
       case 'togglePig': {
         if (this.gp.selectedPigId == null) {
           this.showToast('请先在棋盘上选中小猪');

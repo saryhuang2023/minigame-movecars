@@ -9,7 +9,7 @@ exports.main = async (event, context) => {
   try {
     const res = await db.collection('levels')
       .where({ _openid: OPENID })
-      .field({ _id: true, name: true, pigCount: true, version: true, updatedAt: true })
+      .field({ _id: true, name: true, pigCount: true, version: true, updatedAt: true, data: true })
       .orderBy('name', 'asc')
       .get();
     return { code: 0, data: res.data };

@@ -1,6 +1,7 @@
 // 关卡选择界面引擎
 // 正式关卡：读取工程目录 assets/levels/index.json
-// 设计中的关卡：从云端拉取（调试用）
+// 待发布关卡：云端 ready=1 的关卡
+// 设计中的关卡：云端 ready=0 的关卡（调试用）
 
 const databus = require('../databus.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
@@ -14,6 +15,7 @@ const ACCENT_GREEN = '#4CAF50';
 const ACCENT_BLUE = '#2196F3';
 const ACCENT_YELLOW = '#FFD700';
 const ACCENT_ORANGE = '#FF9800';
+const ACCENT_PINK = '#E91E63';
 
 // 布局
 const TOP_BAR_H = 52;
@@ -27,16 +29,20 @@ class LevelSelectEngine {
   constructor(input) {
     this.input = input;
     this.projectLevels = [];  // 正式关卡
-    this.cloudLevels = [];    // 设计中的关卡
+    this.readyLevels = [];    // 待发布关卡（云端 ready=1）
+    this.cloudLevels = [];    // 设计中的关卡（云端 ready=0）
     this.projectCards = [];   // 正式关卡卡片
-    this.cloudCards = [];     // 云端关卡卡片
+    this.readyCards = [];     // 待发布关卡卡片
+    this.cloudCards = [];     // 设计中关卡卡片
     this.backBtn = null;
-    this.cloudSectionTop = 0; // 云端区域的 gridTop
+    this.readySectionTop = 0;
+    this.cloudSectionTop = 0;
   }
 
   activate() {
     this.loadProjectLevels();
     this.buildProjectCards();
+    this.buildReadyCards();
     this.buildCloudCards();
     this.input.on('levelSelect', (e) => this.handleEvent(e));
     // 异步拉取云端关卡
@@ -72,22 +78,33 @@ class LevelSelectEngine {
   }
 
   // ============================================================
-  // 设计中的关卡：从云端拉取
+  // 云端关卡：按 ready 拆分为"待发布"和"设计中"
   // ============================================================
   async _fetchCloudLevels() {
     try {
       const list = await cloud.listLevels();
-      this.cloudLevels = list.map(item => ({
-        name: item.name,
-        _id: item._id,
-        pigCount: item.pigCount,
-        updatedAt: item.updatedAt,
-        _needsDownload: true,
-      }));
+      this.readyLevels = [];
+      this.cloudLevels = [];
+      for (const item of list) {
+        const lv = {
+          name: item.name,
+          _id: item._id,
+          pigCount: item.pigCount,
+          updatedAt: item.updatedAt,
+          _needsDownload: true,
+        };
+        if (((item.data && item.data.ready) || 0) === 1) {
+          this.readyLevels.push(lv);
+        } else {
+          this.cloudLevels.push(lv);
+        }
+      }
     } catch (e) {
       console.warn('[LevelSelect] 拉取云端关卡失败:', e);
+      this.readyLevels = [];
       this.cloudLevels = [];
     }
+    this.buildReadyCards();
     this.buildCloudCards();
   }
 
@@ -98,8 +115,7 @@ class LevelSelectEngine {
     return databus.safeTop + TOP_BAR_H + SECTION_H + 12;
   }
 
-  _buildCardsForLevels(levels) {
-    const gridTop = this.cloudSectionTop || this._getGridTop();
+  _buildCardsForLevels(levels, gridTop) {
     const startX = (SCREEN_WIDTH - (CARD_W * COLS + GAP * (COLS - 1))) / 2;
     const cards = [];
     levels.forEach((lv, i) => {
@@ -116,15 +132,32 @@ class LevelSelectEngine {
   }
 
   buildProjectCards() {
+    this.readySectionTop = 0;
     this.cloudSectionTop = 0;
-    this.projectCards = this._buildCardsForLevels(this.projectLevels);
+    const gridTop = this._getGridTop();
+    this.projectCards = this._buildCardsForLevels(this.projectLevels, gridTop);
+  }
+
+  buildReadyCards() {
+    // 正式关卡区域结束后
+    const projectRows = Math.ceil(this.projectLevels.length / COLS) || 0;
+    this.readySectionTop = this._getGridTop() + projectRows * (CARD_H + GAP) + SECTION_H + 8;
+    this.readyCards = this._buildCardsForLevels(this.readyLevels, this.readySectionTop);
+    // 更新云端区域 top（可能需要等 readyLevels 加载后）
+    this._updateCloudSectionTop();
+  }
+
+  _updateCloudSectionTop() {
+    const projectRows = Math.ceil(this.projectLevels.length / COLS) || 0;
+    const readyRows = Math.ceil(this.readyLevels.length / COLS) || 0;
+    this.cloudSectionTop = this._getGridTop()
+      + projectRows * (CARD_H + GAP) + SECTION_H + 8   // 正式关卡区
+      + (this.readyLevels.length > 0 ? readyRows * (CARD_H + GAP) + SECTION_H + 8 : 0);
   }
 
   buildCloudCards() {
-    // 计算正式关卡区域结束后的位置
-    const projectRows = Math.ceil(this.projectLevels.length / COLS) || 0;
-    this.cloudSectionTop = this._getGridTop() + projectRows * (CARD_H + GAP) + SECTION_H + 8;
-    this.cloudCards = this._buildCardsForLevels(this.cloudLevels);
+    this._updateCloudSectionTop();
+    this.cloudCards = this._buildCardsForLevels(this.cloudLevels, this.cloudSectionTop);
   }
 
   // ============================================================
@@ -158,11 +191,18 @@ class LevelSelectEngine {
       }
     }
 
+    // 待发布关卡卡片：异步下载
+    for (const card of this.readyCards) {
+      if (this._hitCard(card, t)) {
+        this._playCloudLevel(card.level);
+        return;
+      }
+    }
+
     // 设计中的关卡卡片：异步下载
     for (const card of this.cloudCards) {
       if (this._hitCard(card, t)) {
-        const lv = card.level;
-        this._playCloudLevel(lv);
+        this._playCloudLevel(card.level);
         return;
       }
     }
@@ -193,6 +233,7 @@ class LevelSelectEngine {
     this.drawTopBar();
     this.drawSectionLabels();
     this.drawCards(this.projectCards, ACCENT_GREEN);
+    this.drawCards(this.readyCards, ACCENT_ORANGE);
     this.drawCards(this.cloudCards, ACCENT_BLUE);
   }
 
@@ -220,23 +261,28 @@ class LevelSelectEngine {
     ctx.fillText('选择关卡', SCREEN_WIDTH / 2, barY + TOP_BAR_H / 2);
   }
 
-  // 两个区域标签
+  // 三个区域标签
   drawSectionLabels() {
     const labelX = 16;
 
     // 正式关卡
-    const formalLabelY = this._getGridTop() - SECTION_H / 2 - 2;
     ctx.fillStyle = ACCENT_YELLOW;
     ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`★ 正式关卡 (${this.projectLevels.length})`, labelX, formalLabelY);
+    ctx.fillText(`★ 正式关卡 (${this.projectLevels.length})`, labelX, this._getGridTop() - SECTION_H / 2 - 2);
+
+    // 待发布关卡
+    if (this.readyLevels.length > 0) {
+      const readyLabelY = this.readySectionTop - SECTION_H / 2 - 2;
+      ctx.fillStyle = ACCENT_ORANGE;
+      ctx.fillText(`★ 待发布关卡 (${this.readyLevels.length})`, labelX, readyLabelY);
+    }
 
     // 设计中的关卡
-    if (this.cloudSectionTop > 0) {
+    if (this.cloudLevels.length > 0) {
       const cloudLabelY = this.cloudSectionTop - SECTION_H / 2 - 2;
       ctx.fillStyle = ACCENT_BLUE;
-      ctx.font = 'bold 15px sans-serif';
       ctx.fillText(`★ 设计中的关卡 (${this.cloudLevels.length})`, labelX, cloudLabelY);
     }
   }
