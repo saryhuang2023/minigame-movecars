@@ -48,6 +48,9 @@ class EditorEngine {
 
     // ===== 云端同步加载状态 =====
     this._cloudLoading = false;
+
+    // ===== 点击 vs 拖拽区分 =====
+    this._pendingTouch = null;  // { x, y, pigInfo } — 未超过阈值前暂存
   }
 
   // ============================================================
@@ -73,6 +76,7 @@ class EditorEngine {
     this.input.off('editor');
     this.confirmDialog = null;
     this._cloudLoading = false;
+    this._pendingTouch = null;
   }
 
   // ============================================================
@@ -117,9 +121,24 @@ class EditorEngine {
       // 棋盘
       this.onBoardTouchStart(x, y);
     } else if (e.type === 'touchmove') {
+      // 有暂存触摸 → 检查是否超过拖拽阈值
+      if (this._pendingTouch) {
+        const dx = x - this._pendingTouch.x;
+        const dy = y - this._pendingTouch.y;
+        if (dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD) {
+          this._activatePigDrag(this._pendingTouch.pig, this._pendingTouch.pigInfo);
+          this._pendingTouch = null;
+        }
+      }
       if (this.gp.dragState) this.onDragMove(x, y);
     } else if (e.type === 'touchend') {
       if (this.showPigSheet) return;
+      // 暂存触摸 + 无拖拽 → 纯点击
+      if (this._pendingTouch) {
+        this.onPigTap(this._pendingTouch.pig);
+        this._pendingTouch = null;
+        return;
+      }
       if (this.gp.dragState) this.onDragEnd(x, y);
     }
   }
@@ -138,41 +157,9 @@ class EditorEngine {
       const pig = this.gp.pigs.find(p => p.id === pigInfo.id);
       if (!pig) return;
       this.gp.selectedPigId = pigInfo.id;
-      this.gp.dragState = null;
 
-      const isHead = pigInfo.offset >= pigInfo.totalLen - this.gp.scaledHeadZone;
-
-      if (isHead) {
-        // 头部拖拽：移除原猪，用临时猪（避免自碰撞）
-        this.gp.pigs = this.gp.pigs.filter(p => p.id !== pigInfo.id);
-        const tempId = -999;
-        this.gp.pigs.push({ id: tempId, tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle });
-        this.gp.rebuildOccupancy();
-        this.gp.dragState = {
-          type: 'adjustHead',
-          tailIndex: pig.tailIndex,
-          pigId: pigInfo.id,
-          originalPig: pig,
-          pendingId: tempId,
-          lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
-          headHoleIdx: -1,
-          lastCollidedId: null,
-          isValidNow: true
-        };
-      } else {
-        // 身体/尾部旋转：与正式游玩一致的 rotate 路径，猪保持在原位
-        this.gp.dragState = {
-          type: 'rotate',
-          tailIndex: pig.tailIndex,
-          pigId: pigInfo.id,
-          displayAngle: pig.angle,
-          targetAngle: pig.angle,
-          lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
-          headHoleIdx: -1,
-          lastCollidedId: null,
-          isValidNow: true
-        };
-      }
+      // 暂存触摸信息，等 move 超阈值后再激活拖拽；未超阈值则为点击
+      this._pendingTouch = { x, y, pig, pigInfo };
       return;
     }
 
@@ -199,6 +186,52 @@ class EditorEngine {
 
     this.gp.selectedPigId = null;
     this.gp.dragState = null;
+  }
+
+  // 移动超过阈值 → 激活拖拽（原 handleEditTouchStart 中拖拽初始化逻辑）
+  _activatePigDrag(pig, pigInfo) {
+    const isHead = pigInfo.offset >= pigInfo.totalLen - this.gp.scaledHeadZone;
+    this.gp.dragState = null;
+
+    if (isHead) {
+      // 头部拖拽：移除原猪，用临时猪（避免自碰撞）
+      this.gp.pigs = this.gp.pigs.filter(p => p.id !== pigInfo.id);
+      const tempId = -999;
+      this.gp.pigs.push({ id: tempId, tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle });
+      this.gp.rebuildOccupancy();
+      this.gp.dragState = {
+        type: 'adjustHead',
+        tailIndex: pig.tailIndex,
+        pigId: pigInfo.id,
+        originalPig: pig,
+        pendingId: tempId,
+        lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+        headHoleIdx: -1,
+        lastCollidedId: null,
+        isValidNow: true
+      };
+    } else {
+      // 身体/尾部旋转：rotate 路径，猪保持在原位
+      this.gp.dragState = {
+        type: 'rotate',
+        tailIndex: pig.tailIndex,
+        pigId: pigInfo.id,
+        displayAngle: pig.angle,
+        targetAngle: pig.angle,
+        lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+        headHoleIdx: -1,
+        lastCollidedId: null,
+        isValidNow: true
+      };
+    }
+  }
+
+  // 纯点击（未超过拖拽阈值）—— 检测前方猪并触发受击动画
+  onPigTap(pig) {
+    const result = this.gp.canPushPig(pig.id);
+    if (result.collidedPigId !== undefined) {
+      this.gp.triggerCollisionEffect(result.collidedPigId);
+    }
   }
 
   // ============================================================

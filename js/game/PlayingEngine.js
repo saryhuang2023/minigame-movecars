@@ -9,6 +9,7 @@ const TOP_BAR_H = 48;
 const BOTTOM_H = 60;
 const ACCENT_YELLOW = '#FFD700';
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
+const SNAP_ANGLE_PUSH_THRESHOLD = 20; // 对齐角度变化阈值：低于此值执行逃脱
 
 class PlayingEngine {
   constructor(input) {
@@ -145,24 +146,34 @@ class PlayingEngine {
     if (ds.type === 'rotate') {
       const pig = this.gp.pigs.find(p => p.id === pigId);
       if (pig && ds.lastValid) {
+        // 记录松手时手指的真实方向（未受拖拽追逐/落孔修正的原始角度）
+        const releaseAngle = ds.targetAngle;
         // 三点共线对齐归位
         const snapped = this.gp.snapAlignPig(ds.tailIndex, pig.length, ds.lastValid.angle);
         if (snapped) {
           pig.length = snapped.length;
           pig.angle = snapped.angle;
           this.gp.updatePigOccupancy(pigId, snapped.tailIndex, snapped.length, snapped.angle);
+          // 手指方向 vs 落孔方向，变化 < 阈值 → 执行逃脱
+          const angleDelta = Math.min(
+            Math.abs(snapped.angle - releaseAngle),
+            360 - Math.abs(snapped.angle - releaseAngle)
+          );
+          this._shouldPushAfterSnap = (angleDelta < SNAP_ANGLE_PUSH_THRESHOLD);
         } else {
           // 无法对齐 → 回退到 lastValid（保持无碰撞状态）
           pig.angle = ds.lastValid.angle;
           this.gp.updatePigOccupancy(pigId, ds.tailIndex, pig.length, ds.lastValid.angle);
+          this._shouldPushAfterSnap = false;
         }
       }
       this.gp.dragState = null;
 
-      // 对齐归位后再执行逃脱逻辑
-      if (pig) {
+      // 对齐归位后，仅角度变化 < 阈值时执行逃脱
+      if (pig && this._shouldPushAfterSnap) {
         this.tryPushPig(pigId);
       }
+      this._shouldPushAfterSnap = false;
     }
   }
 
