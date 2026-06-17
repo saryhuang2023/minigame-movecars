@@ -29,6 +29,15 @@ class GameEngine {
   start() {
     databus.screenWidth = SCREEN_WIDTH;
     databus.screenHeight = SCREEN_HEIGHT;
+
+    // 安全区：避开状态栏 + 微信胶囊按钮
+    try {
+      const menuBtn = wx.getMenuButtonBoundingClientRect();
+      databus.safeTop = menuBtn.bottom + 8;
+    } catch (e) {
+      databus.safeTop = 56; // 典型设备默认值
+    }
+
     databus.gameState = 'menu';
     this.setupMenuInput();
     this.loop();
@@ -51,28 +60,17 @@ class GameEngine {
   }
 
   renderMenu() {
-    ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-    // 背景图 — 缩放至屏幕大小
-    if (this.bgImg.width) {
-      ctx.drawImage(this.bgImg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    } else {
-      // 图片未加载完成时使用渐变色占位
-      const grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
-      grad.addColorStop(0, '#1a1a2e');
-      grad.addColorStop(1, '#16213e');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    }
+    const safeTop = databus.safeTop;
+    const titleY = safeTop + 40;
 
     // 标题
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 40px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.16);
+    ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, titleY);
 
-    // 三图拼接小猪 — 屏幕正中央，等比例缩放至屏宽 65%，带漂浮效果
+    // 三图拼接小猪 — 屏幕正中央，等比例缩放至屏宽 65%
     const pigSize = getComposedPigSize();
     let pigX = 0, pigY = 0, pigDrawH = 0, pigW = 0;
     if (pigSize) {
@@ -82,9 +80,9 @@ class GameEngine {
       pigX = (SCREEN_WIDTH - pigW) / 2;
       pigY = (SCREEN_HEIGHT - pigDrawH) / 2;
 
-      // 漂浮效果：上下浮动 + 轻微摇摆
+      // 漂浮效果
       const floatOffset = Math.sin(databus.frame * 0.16) * 2.5;
-      const swayAngle = Math.sin(databus.frame * 0.02) * 1.5; // 度
+      const swayAngle = Math.sin(databus.frame * 0.02) * 1.5;
       pigY += floatOffset;
 
       const cx = pigX + pigW / 2;
@@ -97,10 +95,10 @@ class GameEngine {
       ctx.restore();
     }
 
-    // 分享按钮 — 标题下方居中
+    // 分享按钮
     const shareW = 80, shareH = 34;
     const shareX = (SCREEN_WIDTH - shareW) / 2;
-    const shareY = SCREEN_HEIGHT * 0.16 + 28;
+    const shareY = titleY + 28;
     this.menuButtons = [{
       x: shareX, y: shareY, w: shareW, h: shareH,
       action: () => {
@@ -191,6 +189,7 @@ class GameEngine {
   }
 
   render() {
+    this.drawBackground();
     switch (databus.gameState) {
       case 'menu':
         this.renderMenu();
@@ -204,6 +203,18 @@ class GameEngine {
       case 'editor':
         this.editor.render();
         break;
+    }
+  }
+
+  drawBackground() {
+    if (this.bgImg.width) {
+      ctx.drawImage(this.bgImg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    } else {
+      const grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+      grad.addColorStop(0, '#1a1a2e');
+      grad.addColorStop(1, '#16213e');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     }
   }
 

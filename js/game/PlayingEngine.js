@@ -49,7 +49,7 @@ class PlayingEngine {
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
     this.gp.flyingPigs = [];
-    this.gp.topBarH = TOP_BAR_H;
+    this.gp.topBarH = databus.safeTop + TOP_BAR_H;
     this.gp.bottomStripH = BOTTOM_H;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
@@ -201,14 +201,11 @@ class PlayingEngine {
 
   // ========== 渲染 ==========
   render() {
-    ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    // 背景由 GameEngine.drawBackground() 统一绘制
+    const safeTop = databus.safeTop;
 
-    // 背景
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-    // 棋盘主体（GameplayEngine 会自己处理 topBarH 偏移）
-    this.gp.topBarH = TOP_BAR_H;
+    // 棋盘主体
+    this.gp.topBarH = safeTop + TOP_BAR_H;
     this.gp.renderBoard(ctx, 0, 0);
 
     // 顶栏
@@ -219,13 +216,13 @@ class PlayingEngine {
   }
 
   drawTopBar() {
-    // 背景
+    const barY = databus.safeTop;
     ctx.fillStyle = 'rgba(15, 52, 96, 0.7)';
-    ctx.fillRect(0, 0, SCREEN_WIDTH, TOP_BAR_H);
+    ctx.fillRect(0, barY, SCREEN_WIDTH, TOP_BAR_H);
 
     // 返回按钮
     const btnW = 48, btnH = 30;
-    const btnX = 10, btnY = (TOP_BAR_H - btnH) / 2;
+    const btnX = 10, btnY = barY + (TOP_BAR_H - btnH) / 2;
     this.backBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
 
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
@@ -240,13 +237,13 @@ class PlayingEngine {
     // 关卡名
     ctx.fillStyle = ACCENT_YELLOW;
     ctx.font = 'bold 16px sans-serif';
-    ctx.fillText(this.levelName, SCREEN_WIDTH / 2, TOP_BAR_H / 2);
+    ctx.fillText(this.levelName, SCREEN_WIDTH / 2, barY + TOP_BAR_H / 2);
 
     // 步数
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.font = '13px sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(`步数: ${this.steps}`, SCREEN_WIDTH - 14, TOP_BAR_H / 2);
+    ctx.fillText(`步数: ${this.steps}`, SCREEN_WIDTH - 14, barY + TOP_BAR_H / 2);
     ctx.textAlign = 'center';
   }
 

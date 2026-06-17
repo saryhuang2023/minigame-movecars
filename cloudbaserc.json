@@ -1,0 +1,35 @@
+{
+  "version": "2.0",
+  "envId": "cloud1-4gmoyu9g16089510",
+  "functionRoot": "cloudfunctions",
+  "functions": [
+    {
+      "name": "uploadLevel",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "listLevels",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "downloadLevel",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "deleteLevel",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    }
+  ]
+}

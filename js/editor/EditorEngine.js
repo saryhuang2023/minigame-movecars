@@ -15,6 +15,7 @@ const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const databus = require('../databus.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 const { roundRect } = require('../render/PigRenderer.js');
+const cloud = require('../cloud.js');
 
 const BG_COLOR = '#1a1a2e';
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
@@ -58,6 +59,8 @@ class EditorEngine {
     this.dirty = false;
     this.showRedFrame = false;
     this.input.on('editor', (e) => this.handleEvent(e));
+    // 异步从云端拉取关卡列表
+    this._pullCloudLevels();
   }
 
   deactivate() {
@@ -546,7 +549,17 @@ class EditorEngine {
         try {
           const raw = fs.readFileSync(`${dir}/${f}`, 'utf8');
           const data = JSON.parse(raw);
-          return { name: f.replace('.json', ''), fileName: f, data, isDirty: false };
+          const name = f.replace('.json', '');
+          // 读取已保存的 _cloudId 和 _version
+          let cloudId = null, localVersion = 0;
+          const metaPath = `${dir}/.meta/${name}.json`;
+          try {
+            const metaRaw = fs.readFileSync(metaPath, 'utf8');
+            const meta = JSON.parse(metaRaw);
+            cloudId = meta.cloudId || null;
+            localVersion = meta.version || 0;
+          } catch (e) {}
+          return { name, fileName: f, data, isDirty: false, _cloudId: cloudId, _version: localVersion };
         } catch (e) { return null; }
       }).filter(Boolean);
 
@@ -579,44 +592,35 @@ class EditorEngine {
     fs.writeFileSync(fullPath, JSON.stringify(entry.data, null, 2), 'utf8');
     console.log(`关卡保存成功, 完整路径: ${resolveRealPath(fullPath)}`);
     this.showToast(`已保存: ${entry.fileName}`);
+
+    // 异步上传到云端
+    this._uploadToCloud(entry);
   }
 
-  // ---- 导出关卡：保存 + 弹窗复制 ----
+  // ---- 复制关卡：新建关卡并拷贝当前内容 ----
   exportLevel() {
     if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
       this.showToast('无关卡可复制'); return;
     }
-    const entry = this.levelList[this.currentLevelIdx];
-    entry.data = this.getLevelData();
-    entry.isDirty = false;
+    // 先保存当前编辑内容到当前关卡
+    this.levelList[this.currentLevelIdx].data = this.getLevelData();
 
-    const jsonStr = JSON.stringify(entry.data, null, 2);
+    // 生成新编号
+    let maxNum = 0;
+    for (const lv of this.levelList) {
+      const m = lv.name.match(/^(\d{4})$/);
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+    }
+    const num = maxNum + 1;
+    const name = String(num).padStart(4, '0');
+    const fileName = name + '.json';
 
-    // 保存到本地文件
-    const fs = wx.getFileSystemManager();
-    const dir = `${wx.env.USER_DATA_PATH}/levels`;
-    try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
-    const filePath = `${dir}/${entry.fileName}`;
-    fs.writeFileSync(filePath, jsonStr, 'utf8');
-
-    // 弹出 JSON 内容（真机上 wx.setClipboardData 可能因权限静默失败）
-    const preview = jsonStr.length > 800 ? jsonStr.substring(0, 800) + '\n...' : jsonStr;
-    wx.showModal({
-      title: entry.fileName,
-      content: preview,
-      showCancel: true,
-      cancelText: '关闭',
-      confirmText: '复制',
-      success: (res) => {
-        if (res.confirm) {
-          wx.setClipboardData({
-            data: jsonStr,
-            success: () => { this.showToast('已复制到剪贴板'); },
-            fail: () => { this.showToast('复制失败'); }
-          });
-        }
-      }
-    });
+    // 深拷贝当前关卡数据作为新关卡内容
+    const copiedData = JSON.parse(JSON.stringify(this.levelList[this.currentLevelIdx].data));
+    this.levelList.push({ name, fileName, data: copiedData, isDirty: true, _version: 0 });
+    this.currentLevelIdx = this.levelList.length - 1;
+    this.loadLevelData(this.levelList[this.currentLevelIdx].data);
+    this.showToast(`已复制为: ${name}`);
   }
 
   newLevel() {
@@ -631,7 +635,7 @@ class EditorEngine {
     const num = maxNum + 1;
     const name = String(num).padStart(4, '0');
     const fileName = name + '.json';
-    this.levelList.push({ name, fileName, data: this.getDefaultLevelData(), isDirty: true });
+    this.levelList.push({ name, fileName, data: this.getDefaultLevelData(), isDirty: true, _version: 0 });
     this.currentLevelIdx = this.levelList.length - 1;
     this.loadLevelData(this.levelList[this.currentLevelIdx].data);
     this.showToast(`新建: ${name}`);
@@ -644,7 +648,13 @@ class EditorEngine {
     try {
       const fs = wx.getFileSystemManager();
       fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/${entry.fileName}`);
+      // 清理 .meta
+      try { fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/.meta/${entry.name}.json`); } catch (e) {}
     } catch (e) {}
+    // 异步从云端删除
+    if (entry._cloudId) {
+      cloud.deleteLevel(entry._cloudId).catch(e => console.warn('云端删除失败:', e));
+    }
     this.levelList.splice(idx, 1);
     if (this.levelList.length === 0) {
       this.currentLevelIdx = -1;
@@ -675,6 +685,137 @@ class EditorEngine {
       board: { cols: 5, rows: 5, hGap: 10, vGap: 10, diameter: 30 },
       pigs: []
     };
+  }
+
+  // ---- 云端操作 ----
+
+  // 异步上传关卡到云端（乐观并发控制）
+  async _uploadToCloud(entry) {
+    try {
+      const version = entry._version || 0;
+      const res = await cloud.uploadLevel(entry.name, entry.data, version);
+
+      if (res.code === 2) {
+        // 版本冲突：其他设备已保存 → 自动刷新为云端最新版本
+        console.log(`[Cloud] 关卡 ${entry.name} 版本冲突 (本地v${version}, 云端v${res.serverVersion})，自动刷新`);
+        this.showToast('关卡已被其他设备更新，已刷新为最新版本');
+        // 用服务器返回的最新数据覆盖本地
+        if (res.data) {
+          entry.data = res.data;
+          entry.isDirty = false;
+          this.dirty = false;
+          const fs = wx.getFileSystemManager();
+          const dir = `${wx.env.USER_DATA_PATH}/levels`;
+          const fullPath = `${dir}/${entry.fileName}`;
+          fs.writeFileSync(fullPath, JSON.stringify(res.data, null, 2), 'utf8');
+          entry._version = res.serverVersion;
+          entry._cloudId = res.id;
+          this._saveCloudMeta(entry.name, res.id, res.serverVersion);
+          // 如果当前正在编辑这个关卡，刷新编辑器内容
+          if (this.currentLevelIdx >= 0 && this.levelList[this.currentLevelIdx] === entry) {
+            this.loadLevelData(entry.data);
+          }
+        }
+        return;
+      }
+
+      if (res.code === 0 && res.id) {
+        entry._cloudId = res.id;
+        entry._version = res.version || 1;
+        this._saveCloudMeta(entry.name, res.id, res.version || 1);
+        console.log(`[Cloud] 关卡 ${entry.name} 已同步云端 v${res.version}`);
+      }
+    } catch (e) {
+      console.warn(`[Cloud] 上传 ${entry.name} 失败:`, e);
+    }
+  }
+
+  // 保存 .meta 文件，记录 cloudId 映射和版本号
+  _saveCloudMeta(name, cloudId, version) {
+    const fs = wx.getFileSystemManager();
+    const metaDir = `${wx.env.USER_DATA_PATH}/levels/.meta`;
+    try { fs.accessSync(metaDir); } catch (e) { fs.mkdirSync(metaDir, true); }
+    fs.writeFileSync(`${metaDir}/${name}.json`, JSON.stringify({ cloudId, version: version || 0 }), 'utf8');
+  }
+
+  // 异步从云端拉取关卡列表，合并到本地
+  async _pullCloudLevels() {
+    try {
+      const cloudList = await cloud.listLevels();
+      if (!cloudList || cloudList.length === 0) return;
+
+      const nameSet = new Set(this.levelList.map(lv => lv.name));
+      const fs = wx.getFileSystemManager();
+      const dir = `${wx.env.USER_DATA_PATH}/levels`;
+      try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
+
+      for (const cl of cloudList) {
+        if (!nameSet.has(cl.name)) {
+          // 云端有但本地没有 → 下载完整数据写入本地
+          try {
+              const full = await cloud.downloadLevel(cl._id);
+            if (full && full.data) {
+              const cloudVersion = (full.version != null) ? full.version : (cl.version || 1);
+              const fileName = cl.name + '.json';
+              fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(full.data, null, 2), 'utf8');
+              this._saveCloudMeta(cl.name, cl._id, cloudVersion);
+              this.levelList.push({
+                name: cl.name, fileName, data: full.data, isDirty: false,
+                _cloudId: cl._id, _version: cloudVersion
+              });
+              nameSet.add(cl.name);
+            }
+          } catch (e) {
+            console.warn(`[Cloud] 下载 ${cl.name} 失败:`, e);
+          }
+        } else {
+          // 本地已有 → 同步 cloudId 和 version
+          const local = this.levelList.find(lv => lv.name === cl.name);
+          if (local) {
+            const cloudVersion = cl.version || 1;
+            if (!local._cloudId) {
+              local._cloudId = cl._id;
+              this._saveCloudMeta(cl.name, cl._id, cloudVersion);
+            }
+            // 云端版本比本地新 → 自动拉取最新数据
+            if (cloudVersion > (local._version || 0) && !local.isDirty) {
+              try {
+                const full = await cloud.downloadLevel(cl._id);
+                if (full && full.data) {
+                  const dir = `${wx.env.USER_DATA_PATH}/levels`;
+                  const fullPath = `${dir}/${local.fileName}`;
+                  fs.writeFileSync(fullPath, JSON.stringify(full.data, null, 2), 'utf8');
+                  local.data = full.data;
+                  local._version = cloudVersion;
+                  this._saveCloudMeta(cl.name, cl._id, cloudVersion);
+                  // 如果当前正在编辑这个关卡，刷新编辑器
+                  if (this.currentLevelIdx >= 0 && this.levelList[this.currentLevelIdx] === local) {
+                    this.loadLevelData(local.data);
+                  }
+                  console.log(`[Cloud] 关卡 ${cl.name} 已自动更新到 v${cloudVersion}`);
+                }
+              } catch (e) {
+                console.warn(`[Cloud] 自动更新 ${cl.name} 失败:`, e);
+              }
+            }
+            // 同步版本号（即使数据没更新）
+            if (!local._version || cloudVersion > local._version) {
+              local._version = cloudVersion;
+            }
+          }
+        }
+      }
+
+      // 刷新当前关卡选择
+      this.levelList.sort((a, b) => a.name.localeCompare(b.name));
+      if (this.currentLevelIdx < 0 && this.levelList.length > 0) {
+        this.currentLevelIdx = 0;
+        this.loadLevelData(this.levelList[0].data);
+      }
+    } catch (e) {
+      console.warn('[Cloud] 拉取云端列表失败:', e);
+      // 静默失败 — 继续使用本地数据
+    }
   }
 
   markCurrentDirty() {
@@ -769,14 +910,30 @@ class EditorEngine {
   }
 
   deleteLevelByIndex(idx) {
+    const entry = this.levelList[idx];
+    if (!entry) return;
+    try {
+      const fs = wx.getFileSystemManager();
+      fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/${entry.fileName}`);
+      try { fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/.meta/${entry.name}.json`); } catch (e) {}
+    } catch (e) {}
+    if (entry._cloudId) {
+      cloud.deleteLevel(entry._cloudId).catch(e => console.warn('云端删除失败:', e));
+    }
     if (this.currentLevelIdx === idx) {
-      this.deleteLevel();
+      this.levelList.splice(idx, 1);
+      if (this.levelList.length === 0) {
+        this.currentLevelIdx = -1;
+        this.loadLevelData(this.getDefaultLevelData());
+        this.newLevel();
+      } else if (idx >= this.levelList.length) {
+        this.currentLevelIdx = this.levelList.length - 1;
+        this.loadLevelData(this.levelList[this.currentLevelIdx].data);
+      } else {
+        this.currentLevelIdx = idx;
+        this.loadLevelData(this.levelList[idx].data);
+      }
     } else {
-      const entry = this.levelList[idx];
-      try {
-        const fs = wx.getFileSystemManager();
-        fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/${entry.fileName}`);
-      } catch (e) {}
       this.levelList.splice(idx, 1);
       if (this.currentLevelIdx > idx) this.currentLevelIdx--;
     }

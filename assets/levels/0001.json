@@ -1,0 +1,35 @@
+{
+  "board": {
+    "cols": 3,
+    "diameter": 50,
+    "hGap": 60,
+    "rows": 5,
+    "vGap": 20
+  },
+  "pigs": [
+    {
+      "angle": 327.5288077091515,
+      "id": 0,
+      "length": 180,
+      "tail": 0
+    },
+    {
+      "angle": 270,
+      "id": 1,
+      "length": 65,
+      "tail": 8
+    },
+    {
+      "angle": 327.5288077091515,
+      "id": 2,
+      "length": 52,
+      "tail": 19
+    },
+    {
+      "angle": 90,
+      "id": 3,
+      "length": 123,
+      "tail": 12
+    }
+  ]
+}
