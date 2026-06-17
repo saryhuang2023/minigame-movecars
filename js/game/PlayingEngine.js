@@ -143,15 +143,23 @@ class PlayingEngine {
     const ds = this.gp.dragState;
     const pigId = ds.pigId;
     if (ds.type === 'rotate') {
-      // snap 到合法位置
       const pig = this.gp.pigs.find(p => p.id === pigId);
       if (pig && ds.lastValid) {
-        pig.angle = ds.lastValid.angle;
-        this.gp.updatePigOccupancy(pigId, ds.tailIndex, pig.length, ds.lastValid.angle);
+        // 三点共线对齐归位
+        const snapped = this.gp.snapAlignPig(ds.tailIndex, pig.length, ds.lastValid.angle);
+        if (snapped) {
+          pig.length = snapped.length;
+          pig.angle = snapped.angle;
+          this.gp.updatePigOccupancy(pigId, snapped.tailIndex, snapped.length, snapped.angle);
+        } else {
+          // 无法对齐 → 回退到 lastValid（保持无碰撞状态）
+          pig.angle = ds.lastValid.angle;
+          this.gp.updatePigOccupancy(pigId, ds.tailIndex, pig.length, ds.lastValid.angle);
+        }
       }
       this.gp.dragState = null;
 
-      // 松手后尝试自动推出（与编辑器试玩一致）
+      // 对齐归位后再执行逃脱逻辑
       if (pig) {
         this.tryPushPig(pigId);
       }

@@ -339,6 +339,11 @@ class EditorEngine {
     return { cfg: { tailIndex: tailIdx, length: len, angle, inBounds: true } };
   }
 
+  // 松手时将猪头部对准最近的孔 —— 三点共线对齐（委托给 GameplayEngine 共享方法）
+  _snapWithLengthFallback(tailIndex, length, hintAngle) {
+    return this.gp.snapAlignPig(tailIndex, length, hintAngle);
+  }
+
   applyDragConfig(cfg) {
     if (this.gp.dragState.type === 'place') {
       if (this.gp.dragState.pendingId !== null) {
@@ -359,23 +364,24 @@ class EditorEngine {
 
     const lv = this.gp.dragState.lastValid;
 
-    const verifyHeadOnHole = (tailIdx, len, angle) => {
-      return this.gp.findHeadHole(tailIdx, len, angle) >= 0;
-    };
-
     if (this.gp.dragState.type === 'rotate') {
       const pig = this.gp.pigs.find(p => p.id === this.gp.dragState.pigId);
       if (pig && lv) {
-        const snappedAngle = this.gp.snapAngleToHoles(this.gp.dragState.tailIndex, pig.length, lv.angle);
-        if (verifyHeadOnHole(this.gp.dragState.tailIndex, pig.length, snappedAngle)) {
-          pig.angle = snappedAngle;
-          this.gp.updatePigOccupancy(pig.id, this.gp.dragState.tailIndex, pig.length, snappedAngle);
+        const snapped = this._snapWithLengthFallback(
+          this.gp.dragState.tailIndex, pig.length, lv.angle
+        );
+        if (snapped) {
+          pig.length = snapped.length;
+          pig.angle = snapped.angle;
+          this.gp.updatePigOccupancy(pig.id, snapped.tailIndex, snapped.length, snapped.angle);
           this.markCurrentDirty();
-          this.showToast(`小猪 #${pig.id} 角度 → ${pig.angle}°`);
+          this.showToast(`小猪 #${pig.id} → ${snapped.length}px ${snapped.angle}°`);
           this.tryGhostPush(pig.id);
         } else {
+          // 无法落孔 → 回退到 lastValid（保持无碰撞状态）
           pig.angle = lv.angle;
           this.gp.updatePigOccupancy(pig.id, this.gp.dragState.tailIndex, pig.length, lv.angle);
+          this.showToast('头部未落孔');
         }
       } else if (pig) {
         this.gp.updatePigOccupancy(pig.id, this.gp.dragState.tailIndex, pig.length, pig.angle);
@@ -383,16 +389,18 @@ class EditorEngine {
     } else if (this.gp.dragState.type === 'adjustHead') {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
       if (lv) {
-        const snappedAngle = lv.angle != null ? this.gp.snapAngleToHoles(lv.tailIndex, lv.length, lv.angle) : null;
-        if (snappedAngle != null && verifyHeadOnHole(lv.tailIndex, lv.length, snappedAngle)) {
+        const snapped = this._snapWithLengthFallback(
+          lv.tailIndex, lv.length, lv.angle
+        );
+        if (snapped) {
           const realId = this.gp.dragState.pigId;
-          this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: snappedAngle });
+          this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
           this.gp.selectedPigId = realId;
           for (let i = 0; i < this.gp.holeOccupied.length; i++) {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
           }
-          this.gp.updatePigOccupancy(realId, lv.tailIndex, lv.length, snappedAngle);
-          this.showToast(`小猪 #${realId} → ${Math.round(lv.length)}px ${snappedAngle}°`);
+          this.gp.updatePigOccupancy(realId, snapped.tailIndex, snapped.length, snapped.angle);
+          this.showToast(`小猪 #${realId} → ${snapped.length}px ${snapped.angle}°`);
           this.markCurrentDirty();
           this.tryGhostPush(realId);
         } else if (this.gp.dragState.originalPig) {
@@ -409,36 +417,38 @@ class EditorEngine {
     } else if (this.gp.dragState.type === 'place') {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
       if (lv) {
-        const snappedAngle = this.gp.snapAngleToHoles(lv.tailIndex, lv.length, lv.angle);
-        if (verifyHeadOnHole(lv.tailIndex, lv.length, snappedAngle)) {
+        const snapped = this._snapWithLengthFallback(
+          lv.tailIndex, lv.length, lv.angle
+        );
+        if (snapped) {
           let realId;
           if (this.gp.dragState.pigId != null) {
             realId = this.gp.dragState.pigId;
-            this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: snappedAngle });
+            this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
             this.gp.selectedPigId = realId;
-            this.showToast(`小猪 #${realId} 已调整 (${Math.round(lv.length)}px, ${snappedAngle}°)`);
+            this.showToast(`小猪 #${realId} 已调整 (${snapped.length}px, ${snapped.angle}°)`);
           } else {
             realId = this.gp.nextPigId++;
-            this.gp.pigs.push({ id: realId, tailIndex: lv.tailIndex, length: lv.length, angle: snappedAngle });
+            this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
             this.gp.selectedPigId = realId;
-            this.showToast(`小猪 #${realId} 已放置 (${Math.round(lv.length)}px, ${snappedAngle}°)`);
+            this.showToast(`小猪 #${realId} 已放置 (${snapped.length}px, ${snapped.angle}°)`);
           }
           for (let i = 0; i < this.gp.holeOccupied.length; i++) {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
           }
-          this.gp.updatePigOccupancy(realId, lv.tailIndex, lv.length, snappedAngle);
+          this.gp.updatePigOccupancy(realId, snapped.tailIndex, snapped.length, snapped.angle);
           this.markCurrentDirty();
           this.tryGhostPush(realId);
         } else {
-          // 头部未落孔 → 清理 temp 占用
+          // 无法落孔 → 清理 temp 占用
           this.gp.rebuildOccupancy();
+          this.showToast('头部未落孔');
         }
       } else if (this.gp.dragState.originalPig) {
         this.gp.pigs.push(this.gp.dragState.originalPig);
         this.gp.rebuildOccupancy();
         this.gp.selectedPigId = this.gp.dragState.originalPig.id;
       } else {
-        // lv 不存在且无原始猪 → 清理 temp 占用
         this.gp.rebuildOccupancy();
       }
     }

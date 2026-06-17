@@ -342,6 +342,53 @@ class GameplayEngine {
     return snapAngle;
   }
 
+  // 松手对齐：三点共线 + 长度回退搜索（全模式共用）
+  // 对齐 = 尾部孔中心 → 头部落孔中心 → 猪头中心，三点在同一直线上
+  snapAlignPig(tailIndex, length, hintAngle) {
+    const r = this.getPigRect(tailIndex, length, hintAngle);
+    if (!r) return null;
+    const headCenter = this._headSquareCenter(r);
+    const tailHole = this.holes[tailIndex];
+    if (!tailHole) return null;
+
+    // 找到离头部最近的孔（无距离限制，跳过尾孔）
+    let bestIdx = -1, bestD2 = Infinity;
+    for (let i = 0; i < this.holes.length; i++) {
+      if (i === tailIndex) continue;
+      const dx = this.holes[i].x - headCenter.x;
+      const dy = this.holes[i].y - headCenter.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+    }
+    if (bestIdx < 0) return null;
+
+    // 计算尾孔 → 最近孔的精确角度（三点共线）
+    const bestHole = this.holes[bestIdx];
+    let snapAngle = Math.atan2(-(bestHole.y - tailHole.y), bestHole.x - tailHole.x) * 180 / Math.PI;
+    if (snapAngle < 0) snapAngle += 360;
+
+    // 尝试让头部真正落孔（优先原长度）
+    if (this.findHeadHole(tailIndex, length, snapAngle) >= 0) {
+      return { tailIndex, length, angle: snapAngle };
+    }
+    for (let dl = -1; dl >= -5; dl--) {
+      const tryLen = length + dl;
+      if (tryLen < 1) break;
+      if (this.findHeadHole(tailIndex, tryLen, snapAngle) >= 0) {
+        return { tailIndex, length: tryLen, angle: snapAngle };
+      }
+    }
+    for (let dl = 1; dl <= 5; dl++) {
+      const tryLen = length + dl;
+      if (this.findHeadHole(tailIndex, tryLen, snapAngle) >= 0) {
+        return { tailIndex, length: tryLen, angle: snapAngle };
+      }
+    }
+
+    // 长度对不上孔也不管了，角度优先 —— 三点共线对齐
+    return { tailIndex, length, angle: snapAngle };
+  }
+
   // ============================================================
   findHeadHole(tailIndex, length, angle) {
     if (angle == null) return -1;
@@ -388,7 +435,7 @@ class GameplayEngine {
   }
 
   // ============================================================
-  // 碰撞效果（棕色虚线闪烁3次）
+  // 碰撞效果（全身透明度闪烁 500ms，全模式生效）
   // ============================================================
   triggerCollisionEffect(pigId) {
     this.flashingPigs[pigId] = Date.now();
@@ -398,9 +445,18 @@ class GameplayEngine {
     const now = Date.now();
     const toDelete = [];
     for (const [pid, st] of Object.entries(this.flashingPigs)) {
-      if (now - st > 600) toDelete.push(pid);
+      if (now - st > 500) toDelete.push(pid);
     }
     for (const pid of toDelete) delete this.flashingPigs[pid];
+  }
+
+  _getFlashAlpha(pigId) {
+    const start = this.flashingPigs[pigId];
+    if (!start) return 1;
+    const elapsed = Date.now() - start;
+    if (elapsed > 500) return 1;
+    const t = elapsed / 500;
+    return 0.25 + 0.75 * Math.abs(Math.sin(t * Math.PI * 4));
   }
 
   // ============================================================
@@ -613,13 +669,13 @@ class GameplayEngine {
       const isDragPig = this.dragState && (
         this.dragState.pigId === pig.id || pig.id === this.dragState.pendingId
       );
-      pr.draw(ctx, pig, off.dx, off.dy);
-
-      // 被撞效果：棕色虚线闪烁3下（仅编辑模式）
-      if (options.showCollisionBox && this.flashingPigs[pig.id]) {
-        const elapsed = Date.now() - this.flashingPigs[pig.id];
-        pr.drawCollisionFlash(ctx, pig, elapsed);
+      // 被撞效果：全身闪烁 500ms（通过透明度实现，全模式生效）
+      const flashAlpha = this._getFlashAlpha(pig.id);
+      if (flashAlpha < 1) {
+        ctx.globalAlpha = flashAlpha;
       }
+      pr.draw(ctx, pig, off.dx, off.dy);
+      ctx.globalAlpha = 1;
 
       // 拖拽中：头部绿点 + 碰撞区棕色虚线框（仅编辑模式）
       if (options.showCollisionBox && isDragPig) {

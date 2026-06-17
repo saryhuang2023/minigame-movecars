@@ -135,34 +135,6 @@ class PigRenderer {
     ctx.fillStyle = '#00C853';
     ctx.fill();
   }
-
-  // ---- 被撞闪烁效果（棕色虚线，3次闪烁） ----
-  drawCollisionFlash(ctx, pig, elapsed) {
-    const cycle = 200;  // 每个闪烁周期 200ms
-    const maxCycles = 3;
-    const visible = (Math.floor(elapsed / cycle) % 2 === 0) && (elapsed < cycle * maxCycles);
-    if (!visible) return;
-
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    if (!r) return;
-    const cx = this.e.boardOffsetX + r.cx;
-    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy;
-    const hw = r.collisionHw;
-    const hh = r.collisionHh;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-r.rad);
-
-    ctx.setLineDash([6, 4]);
-    ctx.strokeStyle = '#8B6914';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
-
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
   // ---- 碰撞区棕色虚线框 ----
   drawCollisionBox(ctx, pig, offDx, offDy) {
     const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
