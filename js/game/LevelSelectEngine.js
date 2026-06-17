@@ -1,13 +1,17 @@
-// 关卡选择界面引擎 — 只读取工程目录 levels/ 下的关卡文件
+// 关卡选择界面引擎
+// 正式关卡：读取工程目录 assets/levels/index.json
+// 设计中的关卡：从云端拉取（调试用）
 
 const databus = require('../databus.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
+const cloud = require('../cloud.js');
 
 // 颜色
 const BG = '#1a1a2e';
 const CARD_FILL = '#16213e';
 const CARD_BORDER = '#0f3460';
 const ACCENT_GREEN = '#4CAF50';
+const ACCENT_BLUE = '#2196F3';
 const ACCENT_YELLOW = '#FFD700';
 const ACCENT_ORANGE = '#FF9800';
 
@@ -22,30 +26,32 @@ const COLS = 3;
 class LevelSelectEngine {
   constructor(input) {
     this.input = input;
-    this.levels = [];   // 所有关卡（只来自工程目录 levels/）
-    this.cards = [];    // { x, y, w, h, level }
+    this.projectLevels = [];  // 正式关卡
+    this.cloudLevels = [];    // 设计中的关卡
+    this.projectCards = [];   // 正式关卡卡片
+    this.cloudCards = [];     // 云端关卡卡片
     this.backBtn = null;
+    this.cloudSectionTop = 0; // 云端区域的 gridTop
   }
 
   activate() {
     this.loadProjectLevels();
-    this.buildCards();
+    this.buildProjectCards();
+    this.buildCloudCards();
     this.input.on('levelSelect', (e) => this.handleEvent(e));
+    // 异步拉取云端关卡
+    this._fetchCloudLevels();
   }
 
   deactivate() {
     this.input.off('levelSelect');
   }
 
-  /**
-   * 只读 index.json 元数据构建关卡列表，不读取关卡文件（点击时才懒加载）
-   *
-   * index.json 结构：
-   *   [ { "file": "0001.json", "type": 1, "progress": 10 } ]
-   * 兼容旧格式：纯文件名数组  [ "0001.json", "0002.json" ]
-   */
+  // ============================================================
+  // 正式关卡：读取 assets/levels/index.json
+  // ============================================================
   loadProjectLevels() {
-    this.levels = [];
+    this.projectLevels = [];
     const fs = wx.getFileSystemManager();
     try {
       const indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
@@ -55,36 +61,75 @@ class LevelSelectEngine {
       for (const entry of rawList) {
         const f = typeof entry === 'string' ? entry : entry.file;
         if (!f || f === 'index.json' || !f.endsWith('.json')) continue;
-
         const name = f.replace('.json', '');
         const extra = typeof entry === 'object' ? { ...entry } : {};
         delete extra.file;
-        this.levels.push({ name, file: f, ...extra });
+        this.projectLevels.push({ name, file: f, ...extra });
       }
     } catch (e) {
       console.warn('[LevelSelect] 读取 index.json 失败:', e);
     }
   }
 
-  // 构建卡片布局
-  buildCards() {
-    this.cards = [];
-    const gridTop = databus.safeTop + TOP_BAR_H + SECTION_H + 12;
-    const startX = (SCREEN_WIDTH - (CARD_W * COLS + GAP * (COLS - 1))) / 2;
+  // ============================================================
+  // 设计中的关卡：从云端拉取
+  // ============================================================
+  async _fetchCloudLevels() {
+    try {
+      const list = await cloud.listLevels();
+      this.cloudLevels = list.map(item => ({
+        name: item.name,
+        _id: item._id,
+        pigCount: item.pigCount,
+        updatedAt: item.updatedAt,
+        _needsDownload: true,
+      }));
+    } catch (e) {
+      console.warn('[LevelSelect] 拉取云端关卡失败:', e);
+      this.cloudLevels = [];
+    }
+    this.buildCloudCards();
+  }
 
-    this.levels.forEach((lv, i) => {
+  // ============================================================
+  // 卡片布局
+  // ============================================================
+  _getGridTop() {
+    return databus.safeTop + TOP_BAR_H + SECTION_H + 12;
+  }
+
+  _buildCardsForLevels(levels) {
+    const gridTop = this.cloudSectionTop || this._getGridTop();
+    const startX = (SCREEN_WIDTH - (CARD_W * COLS + GAP * (COLS - 1))) / 2;
+    const cards = [];
+    levels.forEach((lv, i) => {
       const col = i % COLS;
       const row = Math.floor(i / COLS);
-      this.cards.push({
+      cards.push({
         x: startX + col * (CARD_W + GAP),
         y: gridTop + row * (CARD_H + GAP),
         w: CARD_W, h: CARD_H,
-        level: lv
+        level: lv,
       });
     });
+    return cards;
   }
 
+  buildProjectCards() {
+    this.cloudSectionTop = 0;
+    this.projectCards = this._buildCardsForLevels(this.projectLevels);
+  }
+
+  buildCloudCards() {
+    // 计算正式关卡区域结束后的位置
+    const projectRows = Math.ceil(this.projectLevels.length / COLS) || 0;
+    this.cloudSectionTop = this._getGridTop() + projectRows * (CARD_H + GAP) + SECTION_H + 8;
+    this.cloudCards = this._buildCardsForLevels(this.cloudLevels);
+  }
+
+  // ============================================================
   // 事件处理
+  // ============================================================
   handleEvent(e) {
     if (e.type !== 'touchstart' || !e.touches[0]) return;
     const t = e.touches[0];
@@ -96,10 +141,9 @@ class LevelSelectEngine {
       return;
     }
 
-    // 关卡卡片：点击时懒加载关卡文件
-    for (const card of this.cards) {
-      if (t.x >= card.x && t.x <= card.x + card.w &&
-          t.y >= card.y && t.y <= card.y + card.h) {
+    // 正式关卡卡片
+    for (const card of this.projectCards) {
+      if (this._hitCard(card, t)) {
         const lv = card.level;
         try {
           const fs = wx.getFileSystemManager();
@@ -113,13 +157,43 @@ class LevelSelectEngine {
         return;
       }
     }
+
+    // 设计中的关卡卡片：异步下载
+    for (const card of this.cloudCards) {
+      if (this._hitCard(card, t)) {
+        const lv = card.level;
+        this._playCloudLevel(lv);
+        return;
+      }
+    }
   }
 
-  // ========== 渲染 ==========
+  async _playCloudLevel(lv) {
+    try {
+      const fullDoc = await cloud.downloadLevel(lv._id);
+      if (fullDoc && fullDoc.data) {
+        databus.currentLevel = { name: lv.name, data: fullDoc.data };
+        databus.returnState = 'levelSelect';
+        databus.gameState = 'playing';
+      }
+    } catch (err) {
+      console.warn(`[LevelSelect] 下载云端关卡 ${lv.name} 失败:`, err);
+    }
+  }
+
+  _hitCard(card, t) {
+    return t.x >= card.x && t.x <= card.x + card.w &&
+           t.y >= card.y && t.y <= card.y + card.h;
+  }
+
+  // ============================================================
+  // 渲染
+  // ============================================================
   render() {
     this.drawTopBar();
-    this.drawSectionLabel();
-    this.drawCards();
+    this.drawSectionLabels();
+    this.drawCards(this.projectCards, ACCENT_GREEN);
+    this.drawCards(this.cloudCards, ACCENT_BLUE);
   }
 
   // 顶栏
@@ -146,26 +220,35 @@ class LevelSelectEngine {
     ctx.fillText('选择关卡', SCREEN_WIDTH / 2, barY + TOP_BAR_H / 2);
   }
 
-  // 统一关卡标签
-  drawSectionLabel() {
+  // 两个区域标签
+  drawSectionLabels() {
     const labelX = 16;
-    const gridTop = databus.safeTop + TOP_BAR_H + SECTION_H + 12;
-    const labelY = gridTop - SECTION_H / 2 - 2;
+
+    // 正式关卡
+    const formalLabelY = this._getGridTop() - SECTION_H / 2 - 2;
     ctx.fillStyle = ACCENT_YELLOW;
-    ctx.font = '13px sans-serif';
+    ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`★ 全部关卡 (${this.levels.length})`, labelX, labelY);
-  }
+    ctx.fillText(`★ 正式关卡 (${this.projectLevels.length})`, labelX, formalLabelY);
 
-  // 关卡卡片列表
-  drawCards() {
-    for (const card of this.cards) {
-      this.drawCard(card);
+    // 设计中的关卡
+    if (this.cloudSectionTop > 0) {
+      const cloudLabelY = this.cloudSectionTop - SECTION_H / 2 - 2;
+      ctx.fillStyle = ACCENT_BLUE;
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(`★ 设计中的关卡 (${this.cloudLevels.length})`, labelX, cloudLabelY);
     }
   }
 
-  drawCard(card) {
+  // 关卡卡片列表
+  drawCards(cards, accentColor) {
+    for (const card of cards) {
+      this.drawCard(card, accentColor);
+    }
+  }
+
+  drawCard(card, accentColor) {
     const { x, y, w, h, level } = card;
 
     // 背景
@@ -180,24 +263,24 @@ class LevelSelectEngine {
     ctx.stroke();
 
     // 编号大字
-    ctx.fillStyle = ACCENT_GREEN;
+    ctx.fillStyle = accentColor;
     ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(level.name, x + w / 2, y + h * 0.45);
 
     // 标签
-    const label = (level.type !== undefined) ? `类型${level.type}` : (level.name);
+    const label = (level.type !== undefined) ? `类型${level.type}` : (level.pigCount !== undefined ? `${level.pigCount}只猪` : level.name);
+    ctx.font = '11px sans-serif';
     const labelW = ctx.measureText(label).width + 12;
     const labelH = 18;
     const labelX = x + (w - labelW) / 2;
     const labelY = y + h * 0.45 + 20;
 
-    ctx.fillStyle = ACCENT_GREEN + '20';
+    ctx.fillStyle = accentColor + '20';
     this._roundRect(ctx, labelX, labelY - labelH / 2, labelW, labelH, labelH / 2);
     ctx.fill();
-    ctx.fillStyle = ACCENT_GREEN;
-    ctx.font = '11px sans-serif';
+    ctx.fillStyle = accentColor;
     ctx.fillText(label, x + w / 2, labelY);
   }
 

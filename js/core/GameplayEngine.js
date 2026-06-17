@@ -6,8 +6,8 @@ const { ctx, canvas, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const { PigRenderer, roundRect } = require('../render/PigRenderer.js');
 
 // ========== 常量 ==========
-const HOLE_EMPTY = 'rgba(255,255,255,0.22)';
-const HOLE_OCCUPIED = 'rgba(255,182,193,0.55)';
+const HOLE_EMPTY = '#C4A882';
+const HOLE_OCCUPIED = '#6B3A20';
 const HOLE_STROKE = 'rgba(255,255,255,0.45)';
 const BG_COLOR = '#1a1a2e';
 const PUSH_ANIM_DURATION = 6400;
