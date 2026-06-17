@@ -1,0 +1,53 @@
+{
+  "board": {
+    "cols": 3,
+    "diameter": 50,
+    "hGap": 60,
+    "rows": 5,
+    "vGap": 20
+  },
+  "pigs": [
+    {
+      "angle": 90,
+      "id": 5,
+      "length": 69,
+      "tail": 12
+    },
+    {
+      "angle": 147.52880770915152,
+      "id": 6,
+      "length": 63,
+      "tail": 13
+    },
+    {
+      "angle": 90,
+      "id": 7,
+      "length": 63,
+      "tail": 10
+    },
+    {
+      "angle": 147.52880770915152,
+      "id": 8,
+      "length": 62,
+      "tail": 14
+    },
+    {
+      "angle": 270,
+      "id": 9,
+      "length": 201,
+      "tail": 2
+    },
+    {
+      "angle": 327.5288077091515,
+      "id": 10,
+      "length": 64,
+      "tail": 1
+    },
+    {
+      "angle": 270,
+      "id": 4,
+      "length": 120,
+      "tail": 0
+    }
+  ]
+}

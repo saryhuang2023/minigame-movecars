@@ -579,6 +579,9 @@ class EditorEngine {
     if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
       this.showToast('无关卡可保存'); return;
     }
+    if (!this.gp.pigs || this.gp.pigs.length === 0) {
+      this.showToast('没有猪，不能保存'); return;
+    }
     const entry = this.levelList[this.currentLevelIdx];
     if (!entry) { this.showToast('无关卡可保存'); return; }
     entry.data = this.getLevelData();
@@ -595,6 +598,28 @@ class EditorEngine {
 
     // 异步上传到云端
     this._uploadToCloud(entry);
+  }
+
+  // ---- 本地同步：从正式关卡目录加载同名文件 ----
+  localSync() {
+    if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
+      this.showToast('无关卡可同步'); return;
+    }
+    const name = this.levelList[this.currentLevelIdx].name;
+    const filePath = `assets/levels/${name}.json`;
+
+    const fs = wx.getFileSystemManager();
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const data = JSON.parse(raw);
+      this.loadLevelData(data);
+      // 将当前编辑器的数据也更新为同步后的数据
+      this.levelList[this.currentLevelIdx].data = data;
+      this.levelList[this.currentLevelIdx].isDirty = true;
+      this.showToast(`已同步: ${name}`);
+    } catch (e) {
+      this.showToast(`正式关卡无: ${name}`);
+    }
   }
 
   // ---- 复制关卡：新建关卡并拷贝当前内容 ----
@@ -1256,6 +1281,18 @@ class EditorEngine {
       this.levelBtns.push({ x, y: btnY3, w: opW, h: btnH, action: b.action });
       x += opW + 8;
     }
+
+    // 本地同步按钮
+    const syncW = 56;
+    ctx.fillStyle = '#ff9800';
+    roundRect(ctx, x, btnY3, syncW, btnH, 6);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('本地同步', x + syncW / 2, midY3);
+    this.levelBtns.push({ x, y: btnY3, w: syncW, h: btnH, action: 'localSync' });
   }
 
   // ---- 紧凑步进器：label [-][+] — 手指友好 ----
@@ -1365,6 +1402,7 @@ class EditorEngine {
         break;
       }
       case 'exportLevel': this.exportLevel(); break;
+      case 'localSync': this.localSync(); break;
       case 'togglePig': {
         if (this.gp.selectedPigId == null) {
           this.showToast('请先在棋盘上选中小猪');

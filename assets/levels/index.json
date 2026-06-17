@@ -1,3 +1,4 @@
 [
-  { "file": "0001.json", "type": 1, "progress": 10 }
+  { "file": "0001.json", "type": 1, "progress": 10 },
+  { "file": "0002.json", "type": 1, "progress": 10 }
 ]

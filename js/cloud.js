@@ -35,7 +35,7 @@ async function callFunction(name, data = {}) {
     if (k === 'data') {
       argsSummary[k] = `[${typeof v}, ${JSON.stringify(v).length} chars]`;
     } else {
-      argsSummary[k] = typeof v === 'string' && v.length < 80 ? v : JSON.stringify(v).substring(0, 80);
+      argsSummary[k] = typeof v === 'string' && v.length < 80 ? v : (v === undefined ? 'undefined' : JSON.stringify(v).substring(0, 80));
     }
   }
   console.log(`[Cloud] → ${name}`, argsSummary);
