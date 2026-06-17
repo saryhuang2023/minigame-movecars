@@ -84,6 +84,8 @@ class LevelSelectEngine {
     } catch (e) {
       console.warn('[LevelSelect] 读取 index.json 失败:', e);
     }
+    // 同步到 databus，供 PlayingEngine "下一关" 使用
+    databus.projectLevels = this.projectLevels;
   }
 
   // ============================================================
@@ -190,13 +192,15 @@ class LevelSelectEngine {
     }
 
     // 正式关卡卡片
-    for (const card of this.projectCards) {
+    for (let i = 0; i < this.projectCards.length; i++) {
+      const card = this.projectCards[i];
       if (this._hitCard(card, t)) {
         const lv = card.level;
         try {
           const fs = wx.getFileSystemManager();
           const raw = fs.readFileSync(`assets/levels/${lv.file}`, 'utf8');
           databus.currentLevel = { name: lv.name, data: JSON.parse(raw) };
+          databus.currentLevelIndex = i;
           databus.returnState = 'levelSelect';
           databus.gameState = 'playing';
         } catch (err) {

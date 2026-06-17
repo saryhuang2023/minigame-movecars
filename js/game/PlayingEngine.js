@@ -19,12 +19,16 @@ class PlayingEngine {
     this.steps = 0;
     this.backBtn = null;
     this.restartBtn = null;
+    this._victory = false;
+    this._exitBtn = null;
+    this._nextBtn = null;
   }
 
   activate() {
     const lv = databus.currentLevel;
     this.levelName = lv ? lv.name : '';
     this.steps = 0;
+    this._victory = false;
     this.gp.effectiveWidth = databus.storedScreenWidth;
     this.loadLevel(lv ? lv.data : null);
     this.input.on('playing', (e) => this.handleEvent(e));
@@ -63,6 +67,20 @@ class PlayingEngine {
     if (!t) return;
 
     if (e.type === 'touchstart') {
+      // 通关界面按钮优先
+      if (this._victory) {
+        if (this._exitBtn && t.x >= this._exitBtn.x && t.x <= this._exitBtn.x + this._exitBtn.w &&
+            t.y >= this._exitBtn.y && t.y <= this._exitBtn.y + this._exitBtn.h) {
+          databus.gameState = 'menu';
+          return;
+        }
+        if (this._nextBtn && t.x >= this._nextBtn.x && t.x <= this._nextBtn.x + this._nextBtn.w &&
+            t.y >= this._nextBtn.y && t.y <= this._nextBtn.y + this._nextBtn.h) {
+          this._goNextLevel();
+          return;
+        }
+        return; // 屏蔽棋盘操作
+      }
       this.onTouchStart(t.x, t.y);
     } else if (e.type === 'touchmove') {
       this.onTouchMove(t.x, t.y);
@@ -196,6 +214,10 @@ class PlayingEngine {
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
       this.steps++;
+      // 所有猪都逃脱 → 通关
+      if (this.gp.pigs.length === 0) {
+        setTimeout(() => { this._victory = true; }, 400);
+      }
       // 动画结束后清理渲染层
       setTimeout(() => {
         this.gp.flyingPigs = this.gp.flyingPigs.filter(p => p.id !== pigId);
@@ -208,6 +230,29 @@ class PlayingEngine {
 
   restartLevel() {
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
+    this._victory = false;
+  }
+
+  _goNextLevel() {
+    const idx = databus.currentLevelIndex + 1;
+    if (idx >= databus.projectLevels.length) {
+      // 已是最后一关，回到关卡选择
+      databus.gameState = databus.returnState || 'levelSelect';
+      return;
+    }
+    const next = databus.projectLevels[idx];
+    try {
+      const fs = wx.getFileSystemManager();
+      const raw = fs.readFileSync(`assets/levels/${next.file}`, 'utf8');
+      const data = JSON.parse(raw);
+      databus.currentLevel = { name: next.name, data };
+      databus.currentLevelIndex = idx;
+      // 直接加载到当前引擎（gameState 不变，checkStateTransition 不会重新 activate）
+      this.levelName = next.name;
+      this.loadLevel(data);
+    } catch (err) {
+      console.warn(`[Playing] 加载下一关 ${next.file} 失败:`, err);
+    }
   }
 
   // ========== 渲染 ==========
@@ -224,6 +269,11 @@ class PlayingEngine {
 
     // 底部按钮
     this.drawBottomBar();
+
+    // 通关界面（覆盖在最上层）
+    if (this._victory) {
+      this.renderVictoryOverlay();
+    }
   }
 
   drawTopBar() {
@@ -291,6 +341,65 @@ class PlayingEngine {
     ctx.lineTo(x, y + r);
     ctx.arcTo(x, y, x + r, y, r);
     ctx.closePath();
+  }
+
+  // ========== 通关界面 ==========
+  renderVictoryOverlay() {
+    // 半透明遮罩
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    // 弹窗面板
+    const pw = 260, ph = 200;
+    const px = (SCREEN_WIDTH - pw) / 2;
+    const py = (SCREEN_HEIGHT - ph) / 2 - 20;
+
+    ctx.fillStyle = 'rgba(26, 26, 46, 0.95)';
+    this._roundRect(ctx, px, py, pw, ph, 16);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineWidth = 2;
+    this._roundRect(ctx, px, py, pw, ph, 16);
+    ctx.stroke();
+
+    // 标题
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 26px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('通关成功！', SCREEN_WIDTH / 2, py + 44);
+
+    // 步数
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(`共 ${this.steps} 步`, SCREEN_WIDTH / 2, py + 80);
+
+    // 按钮
+    const btnW = 100, btnH = 42;
+    const btnY = py + 120;
+    const gap = 20;
+    const totalBtnW = btnW * 2 + gap;
+    const btnStartX = (SCREEN_WIDTH - totalBtnW) / 2;
+
+    // 退出按钮
+    const exitX = btnStartX;
+    this._exitBtn = { x: exitX, y: btnY, w: btnW, h: btnH };
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    this._roundRect(ctx, exitX, btnY, btnW, btnH, 8);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText('退出', exitX + btnW / 2, btnY + btnH / 2);
+
+    // 下一关按钮
+    const nextX = btnStartX + btnW + gap;
+    const hasNext = databus.currentLevelIndex + 1 < databus.projectLevels.length;
+    this._nextBtn = { x: nextX, y: btnY, w: btnW, h: btnH };
+    ctx.fillStyle = hasNext ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)';
+    this._roundRect(ctx, nextX, btnY, btnW, btnH, 8);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(hasNext ? '下一关' : '已完成', nextX + btnW / 2, btnY + btnH / 2);
   }
 }
 
