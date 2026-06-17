@@ -19,18 +19,17 @@ class GameplayEngine {
   constructor() {
     // ===== 布局常量 =====
     this.topBarH = 48;
-    this.bottomStripH = 120;
+    this.bottomStripH = 175;
 
     // ===== 棋盘参数 =====
     this.cols = 5;
     this.rows = 5;
-    this.heightRatio = 1.2;
-    this.cellGapRatio = 1.5;
+    this.hGap = 10;
+    this.vGap = 10;
+    this.diameter = 30;
     // ===== 动态计算 =====
-    this.boardW = SCREEN_WIDTH;
-    this.boardH = 0;
+    this.boardOffsetX = 0;
     this.boardOffsetY = 0;
-    this.diameter = 0;
     this.hSpacing = 0;
     this.vSpacing = 0;
     this.holes = [];
@@ -45,10 +44,6 @@ class GameplayEngine {
     this.dragState = null;
     this.lastDragTime = 0;
 
-    // ===== 棋盘高度拖拽 =====
-    this.heightDragState = null;
-    this.handleZoneH = 20;
-
     // ===== 动画 =====
     this.animations = [];
     this.ghostAnimations = [];
@@ -62,22 +57,20 @@ class GameplayEngine {
   // ============================================================
   // 棋盘计算
   // ============================================================
-  recomputeBoard(boardHOverride) {
-    this.boardW = SCREEN_WIDTH;
+  recomputeBoard() {
+    const maxBoardW = SCREEN_WIDTH;
     const maxBoardH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
-    const minBoardH = 80;
 
-    if (boardHOverride !== undefined) {
-      this.boardH = Math.max(minBoardH, Math.min(maxBoardH, Math.round(boardHOverride)));
-      this.heightRatio = this.boardH / this.boardW;
-    } else {
-      this.boardH = Math.round(this.boardW * this.heightRatio);
-      if (this.boardH > maxBoardH) this.boardH = maxBoardH;
-      if (this.boardH < minBoardH) this.boardH = minBoardH;
+    this.hSpacing = this.diameter + this.hGap;
+    this.vSpacing = this.diameter + this.vGap;
+
+    // 棋盘超出屏幕时压缩间距
+    if (this.cols * this.hSpacing > maxBoardW) {
+      this.hSpacing = Math.floor(maxBoardW / this.cols);
     }
-    this.hSpacing = Math.round(this.boardW / this.cols);
-    this.vSpacing = Math.round(this.boardH / this.rows);
-    this.diameter = Math.round(this.hSpacing / (1 + this.cellGapRatio));
+    if (this.rows * this.vSpacing > maxBoardH) {
+      this.vSpacing = Math.floor(maxBoardH / this.rows);
+    }
 
     this.computeHoles();
     this.rebuildOccupancy();
@@ -88,19 +81,6 @@ class GameplayEngine {
 
   // 猪身体宽度 = 渲染对齐，碰撞也用这个值
   get pigBodyWidth() { return this.diameter; }
-
-  isInHeightHandle(x, y) {
-    const handleCenterY = this.topBarH + this.boardOffsetY + this.boardH;
-    const hh = this.handleZoneH;
-    return y >= handleCenterY - hh / 2 && y <= handleCenterY + hh / 2;
-  }
-
-  handleHeightDrag(y) {
-    if (!this.heightDragState) return;
-    const dy = y - this.heightDragState.startY;
-    const newBoardH = this.heightDragState.startBoardH + dy;
-    this.recomputeBoard(newBoardH);
-  }
 
   computeHoles() {
     this.holes = [];
@@ -129,12 +109,11 @@ class GameplayEngine {
   // 棋盘居中对齐
   // ============================================================
   recenterBoard() {
+    const visualW = this.cols * this.hSpacing;
+    const visualH = this.rows * this.vSpacing;
     const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
-    if (this.boardH < availH) {
-      this.boardOffsetY = Math.round((availH - this.boardH) / 2);
-    } else {
-      this.boardOffsetY = 0;
-    }
+    this.boardOffsetX = Math.max(0, Math.round((SCREEN_WIDTH - visualW) / 2));
+    this.boardOffsetY = Math.max(0, Math.round((availH - visualH) / 2));
   }
 
   // ============================================================
@@ -264,7 +243,7 @@ class GameplayEngine {
     for (const pig of this.pigs) {
       const r = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
       if (!r) continue;
-      const px = x - r.cx;
+      const px = (x - this.boardOffsetX) - r.cx;
       const py = (y - offY) - r.cy;
       // 逆变换到矩形局部坐标
       const lx = px * Math.cos(r.rad) - py * Math.sin(r.rad);
@@ -282,7 +261,7 @@ class GameplayEngine {
     const r = this.diameter / 2 + (margin || 0);
     const offY = this.topBarH + this.boardOffsetY;
     for (let i = 0; i < this.holes.length; i++) {
-      const hx = this.holes[i].x;
+      const hx = this.boardOffsetX + this.holes[i].x;
       const hy = offY + this.holes[i].y;
       const dx = x - hx, dy = y - hy;
       if (dx * dx + dy * dy <= r * r) return i;
@@ -408,7 +387,7 @@ class GameplayEngine {
     const tail = this.holes[ds.tailIndex];
     if (!tail) return;
 
-    const dx = x - tail.x;
+    const dx = x - this.boardOffsetX - tail.x;
     const dy = y - this.topBarH - this.boardOffsetY - tail.y;
     let fingerAngle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (fingerAngle < 0) fingerAngle += 360;
@@ -577,7 +556,7 @@ class GameplayEngine {
     for (let i = 0; i < this.holes.length; i++) {
       const h = this.holes[i];
       const occ = this.holeOccupied[i];
-      const hx = h.x, hy = offY + h.y;
+      const hx = this.boardOffsetX + h.x, hy = offY + h.y;
       ctx.beginPath();
       ctx.arc(hx, hy, r, 0, Math.PI * 2);
       if (occ !== -1) {
@@ -594,7 +573,7 @@ class GameplayEngine {
     // 拖拽中头部占孔 → 红色外边框高亮
     if (this.dragState && this.dragState.headHoleIdx >= 0) {
       const hh = this.holes[this.dragState.headHoleIdx];
-      const hhx = hh.x, hhy = offY + hh.y;
+      const hhx = this.boardOffsetX + hh.x, hhy = offY + hh.y;
       ctx.beginPath();
       ctx.arc(hhx, hhy, r + 3, 0, Math.PI * 2);
       ctx.strokeStyle = '#FF3B30';
@@ -657,7 +636,7 @@ class GameplayEngine {
           const hsc = this._headSquareCenter(hr);
           // 绿点：头部正方形中心 B
           ctx.beginPath();
-          ctx.arc(hsc.x, offY + hsc.y, 5, 0, Math.PI * 2);
+          ctx.arc(this.boardOffsetX + hsc.x, offY + hsc.y, 5, 0, Math.PI * 2);
           ctx.fillStyle = '#00FF00';
           ctx.fill();
           ctx.strokeStyle = '#008800';
@@ -667,8 +646,8 @@ class GameplayEngine {
           if (headHoleIdx >= 0) {
             const hh = this.holes[headHoleIdx];
             ctx.beginPath();
-            ctx.moveTo(hsc.x, offY + hsc.y);
-            ctx.lineTo(hh.x, offY + hh.y);
+            ctx.moveTo(this.boardOffsetX + hsc.x, offY + hsc.y);
+            ctx.lineTo(this.boardOffsetX + hh.x, offY + hh.y);
             ctx.strokeStyle = '#FF0000';
             ctx.lineWidth = 2;
             ctx.stroke();
@@ -679,36 +658,17 @@ class GameplayEngine {
 
     // 底部提示文字（屏幕坐标）
     if (options.hintText !== undefined) {
-      const hintY = Math.min(SCREEN_HEIGHT - this.bottomStripH - 12, this.topBarH + this.boardOffsetY + this.boardH + 8);
+      const visualH = this.rows * this.vSpacing;
+      const hintY = Math.min(SCREEN_HEIGHT - this.bottomStripH - 12, this.topBarH + this.boardOffsetY + visualH + 8);
       ctx.fillStyle = 'rgba(255,255,255,0.45)';
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(options.hintText, SCREEN_WIDTH / 2, hintY);
     }
-
-    // 棋盘底部拖拽手柄
-    this.renderHeightHandle(ctx, offY);
-  }
-
-  renderHeightHandle(ctx, offY) {
-    const handleY = offY + this.boardH;
-    const isDragging = !!this.heightDragState;
-
-    const hh = this.handleZoneH;
-    ctx.fillStyle = isDragging ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)';
-    ctx.fillRect(0, handleY - hh / 2, SCREEN_WIDTH, hh);
-
-    const barW = 48, barH = 5, barR = 2.5;
-    const barX = SCREEN_WIDTH / 2 - barW / 2;
-    const barY = handleY - barH / 2;
-    ctx.fillStyle = isDragging ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.25)';
-    roundRect(ctx, barX, barY, barW, barH, barR);
-    ctx.fill();
   }
 
 }
-
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
 GameplayEngine.HEAD_ZONE_MULT = HEAD_ZONE_MULT;
 

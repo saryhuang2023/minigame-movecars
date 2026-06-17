@@ -9,7 +9,7 @@ const BUILTIN_LEVELS = [
     name: '入门',
     label: '入门',
     data: {
-      board: { cols: 5, rows: 5, heightRatio: 1.2, cellGapRatio: 1.5 },
+      board: { cols: 5, rows: 5, hGap: 10, vGap: 10, diameter: 30 },
       pigs: [
         { id: 0, tail: 12, length: 2, angle: 0 }
       ]
@@ -19,7 +19,7 @@ const BUILTIN_LEVELS = [
     name: '简单',
     label: '简单',
     data: {
-      board: { cols: 5, rows: 5, heightRatio: 1.2, cellGapRatio: 1.5 },
+      board: { cols: 5, rows: 5, hGap: 10, vGap: 10, diameter: 30 },
       pigs: [
         { id: 0, tail: 1, length: 2, angle: 90 },
         { id: 1, tail: 7, length: 3, angle: 0 }
@@ -30,7 +30,7 @@ const BUILTIN_LEVELS = [
     name: '进阶',
     label: '进阶',
     data: {
-      board: { cols: 5, rows: 5, heightRatio: 1.2, cellGapRatio: 1.5 },
+      board: { cols: 5, rows: 5, hGap: 10, vGap: 10, diameter: 30 },
       pigs: [
         { id: 0, tail: 2, length: 3, angle: 45 },
         { id: 1, tail: 10, length: 2, angle: 180 },

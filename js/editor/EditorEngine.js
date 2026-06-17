@@ -83,11 +83,6 @@ class EditorEngine {
         this.checkBottomButtons(x, y);
         return;
       }
-      // 棋盘高度拖拽手柄
-      if (this.gp.isInHeightHandle(x, y)) {
-        this.gp.heightDragState = { startY: y, startBoardH: this.gp.boardH };
-        return;
-      }
       // 顶部工具栏
       if (y < this.gp.topBarH) {
         this.checkTopButtons(x, y);
@@ -96,19 +91,9 @@ class EditorEngine {
       // 棋盘
       this.onBoardTouchStart(x, y);
     } else if (e.type === 'touchmove') {
-      if (this.gp.heightDragState) {
-        this.gp.handleHeightDrag(y);
-        return;
-      }
       // 预览模式需走阈值逻辑 → 无条件调 onDragMove（即使 dragState 为空）
       if (this.gp.dragState || this.mode === 'preview') this.onDragMove(x, y);
     } else if (e.type === 'touchend') {
-      if (this.gp.heightDragState) {
-        this.gp.heightDragState = null;
-        this.gp.recenterBoard();
-        this.markCurrentDirty();
-        return;
-      }
       if (this.showPigSheet) return;
       // 预览模式或已有拖拽 → 无条件调 onDragEnd（统一处理轻点推出 & 拖拽结束）
       if (this.gp.dragState || this._previewTouchState) this.onDragEnd(x, y);
@@ -284,7 +269,7 @@ class EditorEngine {
     const tail = this.gp.holes[ds.tailIndex];
     if (!tail) return;
 
-    const dx = x - tail.x;
+    const dx = x - this.gp.boardOffsetX - tail.x;
     const dy = y - this.gp.topBarH - this.gp.boardOffsetY - tail.y;
     let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (angle < 0) angle += 360;
@@ -340,7 +325,7 @@ class EditorEngine {
     const tail = this.gp.holes[tailIdx];
     if (!tail) return { cfg: null };
 
-    const dx = x - tail.x;
+    const dx = x - this.gp.boardOffsetX - tail.x;
     const dy = y - this.gp.topBarH - this.gp.boardOffsetY - tail.y;
     let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
     if (angle < 0) angle += 360;
@@ -625,7 +610,7 @@ class EditorEngine {
   // ============================================================
   getLevelData() {
     return {
-      board: { cols: this.gp.cols, rows: this.gp.rows, heightRatio: this.gp.heightRatio, cellGapRatio: this.gp.cellGapRatio },
+      board: { cols: this.gp.cols, hGap: this.gp.hGap, rows: this.gp.rows, vGap: this.gp.vGap, diameter: this.gp.diameter },
       pigs: this.gp.pigs.map(p => ({ id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle }))
     };
   }
@@ -634,8 +619,9 @@ class EditorEngine {
     if (data.board) {
       this.gp.cols = data.board.cols || 5;
       this.gp.rows = data.board.rows || 5;
-      this.gp.heightRatio = data.board.heightRatio || 1.2;
-      this.gp.cellGapRatio = data.board.cellGapRatio || 1.5;
+      this.gp.hGap = data.board.hGap || 10;
+      this.gp.vGap = data.board.vGap || 10;
+      this.gp.diameter = data.board.diameter || 30;
     }
     this.gp.pigs = (data.pigs || []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle
@@ -789,7 +775,7 @@ class EditorEngine {
 
   getDefaultLevelData() {
     return {
-      board: { cols: 5, rows: 5, heightRatio: 1.2, cellGapRatio: 1.5 },
+      board: { cols: 5, rows: 5, hGap: 10, vGap: 10, diameter: 30 },
       pigs: []
     };
   }
@@ -949,7 +935,8 @@ class EditorEngine {
   // ============================================================
   // === 渲染 — 底部控制条 ===
   // 第一行：[列 -5+] [行 -5+] | [猪]
-  // 第二行：[0002 ▼] [新建] [保存] [删除] [清空] [重置]
+  // 第二行：[径 -5+] [横距 -5+] [纵距 -5+]
+  // 第三行：[关卡▼] [新建] [保存] [复制]
   // ============================================================
   renderBottomStrip() {
     const baseY = SCREEN_HEIGHT - this.gp.bottomStripH;
@@ -988,7 +975,7 @@ class EditorEngine {
           this.showToast('空棋盘才能被调整!');
           return;
         }
-        this.gp.cols = v; this.gp.recomputeBoard(); this.markCurrentDirty();
+        this.gp.cols = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
       });
     x += 16;
 
@@ -999,7 +986,7 @@ class EditorEngine {
           this.showToast('空棋盘才能被调整!');
           return;
         }
-        this.gp.rows = v; this.gp.recomputeBoard(); this.markCurrentDirty();
+        this.gp.rows = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
       });
     x += 16;
 
@@ -1031,18 +1018,58 @@ class EditorEngine {
     }});
 
     // ============================
-    // 第二行：关卡管理
+    // 第二行：直径 / 孔间距 — 手指友好
     // ============================
     const btnY2 = row2Y + (row2H - btnH) / 2;
     const midY2 = row2Y + row2H / 2;
-    x = 12;
 
-    // 分隔线（顶边）
+    // 顶边分隔线
     ctx.strokeStyle = '#ddd';
     ctx.beginPath();
     ctx.moveTo(0, row2Y - 1);
     ctx.lineTo(SCREEN_WIDTH, row2Y - 1);
     ctx.stroke();
+
+    x = 12;
+
+    // 直径 stepper（步长 5）
+    x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 10, 100,
+      (v) => {
+        if (this.gp.pigs.length > 0) { this.showToast('空棋盘才能被调整!'); return; }
+        this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+      }, 5);
+    x += 8;
+
+    // 横向孔间距 stepper（步长 5）
+    x = this._drawCompactStepper(x, btnY2, btnH, '横距', this.gp.hGap, 0, 60,
+      (v) => {
+        if (this.gp.pigs.length > 0) { this.showToast('空棋盘才能被调整!'); return; }
+        this.gp.hGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+      }, 5);
+    x += 8;
+
+    // 纵向孔间距 stepper（步长 5）
+    x = this._drawCompactStepper(x, btnY2, btnH, '纵距', this.gp.vGap, 0, 60,
+      (v) => {
+        if (this.gp.pigs.length > 0) { this.showToast('空棋盘才能被调整!'); return; }
+        this.gp.vGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+      }, 5);
+
+    // ============================
+    // 第三行：关卡管理
+    // ============================
+    const row3Y = baseY + 2 * row1H + 8;
+    const btnY3 = row3Y + (row2H - btnH) / 2;
+    const midY3 = row3Y + row2H / 2;
+
+    // 顶边分隔线
+    ctx.strokeStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(0, row3Y - 1);
+    ctx.lineTo(SCREEN_WIDTH, row3Y - 1);
+    ctx.stroke();
+
+    x = 12;
 
     // 关卡选择按钮 [0002 ▼] — 手指友好
     const hasLevels = this.levelList.length > 0;
@@ -1055,7 +1082,7 @@ class EditorEngine {
     ctx.fillStyle = '#f5f5f5';
     ctx.strokeStyle = '#ccc';
     ctx.lineWidth = 1;
-    roundRect(ctx, x, btnY2, lvlBtnW, btnH, 6);
+    roundRect(ctx, x, btnY3, lvlBtnW, btnH, 6);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = isDirty ? '#E65100' : '#333';
@@ -1063,8 +1090,8 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const lvlLabel = (isDirty ? '*' : '') + curName + ' ▼';
-    ctx.fillText(lvlLabel, x + lvlBtnW / 2, midY2);
-    this.levelBtns.push({ x, y: btnY2, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
+    ctx.fillText(lvlLabel, x + lvlBtnW / 2, midY3);
+    this.levelBtns.push({ x, y: btnY3, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
     x += lvlBtnW + 8;
 
     // 操作按钮：新建 / 保存 / 复制 — 手指友好
@@ -1077,24 +1104,24 @@ class EditorEngine {
     const opW = 44;
     for (const b of opBtns) {
       ctx.fillStyle = b.color;
-      roundRect(ctx, x, btnY2, opW, btnH, 6);
+      roundRect(ctx, x, btnY3, opW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(b.label, x + opW / 2, midY2);
-      this.levelBtns.push({ x, y: btnY2, w: opW, h: btnH, action: b.action });
+      ctx.fillText(b.label, x + opW / 2, midY3);
+      this.levelBtns.push({ x, y: btnY3, w: opW, h: btnH, action: b.action });
       x += opW + 8;
     }
   }
 
-  // ---- 紧凑步进器：label [- value +] — 手指友好 ----
+  // ---- 紧凑步进器：label [-][+] — 手指友好 ----
   // 返回绘制后的 x 位置，供调用方精确控制间距
-  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange) {
+  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step) {
+    step = step || 1;
     const midY = btnY + btnH / 2;
     const btnW = 24;
-    const valW = 24;
 
     // 标签
     ctx.fillStyle = '#999';
@@ -1102,7 +1129,7 @@ class EditorEngine {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x, midY);
-    x += 18;
+    x += 30;
 
     // 减号
     ctx.strokeStyle = '#ccc';
@@ -1114,16 +1141,8 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x + btnW / 2, midY);
-    this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.max(min, value - 1)) });
-    x += btnW + 6;
-
-    // 数值（居中在固定宽度内）
-    ctx.fillStyle = '#333';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(value), x + valW / 2, midY);
-    x += valW + 6;
+    this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.max(min, value - step)) });
+    x += btnW + 4;
 
     // 加号
     ctx.strokeStyle = '#ccc';
@@ -1131,7 +1150,7 @@ class EditorEngine {
     ctx.stroke();
     ctx.fillStyle = '#333';
     ctx.fillText('+', x + btnW / 2, midY);
-    this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.min(max, value + 1)) });
+    this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.min(max, value + step)) });
     x += btnW;
 
     return x;

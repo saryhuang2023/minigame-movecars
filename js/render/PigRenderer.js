@@ -58,7 +58,7 @@ class PigRenderer {
   _pigCenter(pig, offDx, offDy) {
     const r = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig));
     if (!r) return null;
-    const cx = r.cx + (offDx || 0);
+    const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
     const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
     return { cx, cy, rad: r.rad, totalLen: r.hw * 2 + this.e.diameter };
   }
@@ -139,7 +139,7 @@ class PigRenderer {
   drawFlash(ctx, pig, t) {
     const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
     if (!r) return;
-    const cx = r.cx;
+    const cx = this.e.boardOffsetX + r.cx;
     const cy = this.e.topBarH + this.e.boardOffsetY + r.cy;
     const totalLen = r.hw * 2;
     const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
@@ -188,7 +188,7 @@ class PigRenderer {
     const hsc = this.e._headSquareCenter(r);
     const headLen = this.e.diameter;  // 头部区域 = HEAD_ZONE_MULT × diameter
     ctx.save();
-    ctx.translate(hsc.x, offY + hsc.y);
+    ctx.translate(this.e.boardOffsetX + hsc.x, offY + hsc.y);
     ctx.rotate(-r.rad);
     ctx.globalAlpha = 0.2;
     ctx.fillStyle = '#FF0000';
@@ -206,7 +206,7 @@ class PigRenderer {
     const R = this.e.diameter / 2;
     const fullHw = r.hw + R;
     ctx.save();
-    ctx.translate(r.cx, offY + r.cy);
+    ctx.translate(this.e.boardOffsetX + r.cx, offY + r.cy);
     ctx.rotate(-r.rad);
     ctx.strokeStyle = SELECTED_COLOR;
     ctx.lineWidth = 2;

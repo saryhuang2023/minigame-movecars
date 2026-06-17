@@ -36,8 +36,9 @@ class PlayingEngine {
     if (data && data.board) {
       this.gp.cols = data.board.cols || 5;
       this.gp.rows = data.board.rows || 5;
-      this.gp.heightRatio = data.board.heightRatio || 1.2;
-      this.gp.cellGapRatio = data.board.cellGapRatio || 1.5;
+      this.gp.hGap = data.board.hGap || 10;
+      this.gp.vGap = data.board.vGap || 10;
+      this.gp.diameter = data.board.diameter || 30;
     }
     this.gp.pigs = (data && data.pigs ? data.pigs : []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle
