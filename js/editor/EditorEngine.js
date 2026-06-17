@@ -52,7 +52,7 @@ class EditorEngine {
   // ============================================================
   activate() {
     this.gp.effectiveWidth = SCREEN_WIDTH;
-    this.gp.bottomStripH = 170;
+    this.gp.bottomStripH = 128;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.loadLevelList();
@@ -1159,15 +1159,15 @@ class EditorEngine {
     this.bottomBtns = [];
     this.levelBtns = [];
 
-    const row1H = 50;
-    const row1Y = baseY + 4;
-    const row2H = 50;
-    const row2Y = baseY + row1H + 4;
+    const row1H = 38;
+    const row1Y = baseY + 3;
+    const row2H = 38;
+    const row2Y = baseY + row1H + 3;
 
     // ============================
     // 第一行：棋盘尺寸 + 小猪按钮
     // ============================
-    const btnH = 40;
+    const btnH = 30;
     const btnY1 = row1Y + (row1H - btnH) / 2;
     const midY1 = row1Y + row1H / 2;
 
@@ -1182,7 +1182,7 @@ class EditorEngine {
         }
         this.gp.cols = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
       });
-    x += 16;
+    x += 12;
 
     // 行控制
     x = this._drawCompactStepper(x, btnY1, btnH, '行', this.gp.rows, 2, 20,
@@ -1193,7 +1193,7 @@ class EditorEngine {
         }
         this.gp.rows = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
       });
-    x += 16;
+    x += 12;
 
     // 分隔线
     ctx.strokeStyle = '#ddd';
@@ -1201,10 +1201,10 @@ class EditorEngine {
     ctx.moveTo(x, row1Y + 6);
     ctx.lineTo(x, row1Y + row1H - 6);
     ctx.stroke();
-    x += 14;
+    x += 12;
 
-    // 小猪按钮 — 手指友好
-    const pigW = 56;
+    // 小猪按钮
+    const pigW = 66;
     const pigLabel = this.gp.selectedPigId != null ? '#' + this.gp.selectedPigId : '猪';
     ctx.fillStyle = '#FF9800';
     roundRect(ctx, x, btnY1, pigW, btnH, 6);
@@ -1244,7 +1244,7 @@ class EditorEngine {
         this._adaptPigsToBoard();
         this.markCurrentDirty();
       }, 5);
-    x += 8;
+    x += 12;
 
     // 横向孔间距 stepper（步长 5）
     x = this._drawCompactStepper(x, btnY2, btnH, '横距', this.gp.hGap, 0, 60,
@@ -1253,7 +1253,7 @@ class EditorEngine {
         this._adaptPigsToBoard();
         this.markCurrentDirty();
       }, 5);
-    x += 8;
+    x += 12;
 
     // 纵向孔间距 stepper（步长 5）
     x = this._drawCompactStepper(x, btnY2, btnH, '纵距', this.gp.vGap, 0, 60,
@@ -1286,7 +1286,7 @@ class EditorEngine {
     const isDirty = hasLevels && this.currentLevelIdx >= 0
       && this.levelList[this.currentLevelIdx].isDirty;
 
-    const lvlBtnW = 80;
+    const lvlBtnW = 72;
     ctx.fillStyle = '#f5f5f5';
     ctx.strokeStyle = '#ccc';
     ctx.lineWidth = 1;
@@ -1300,7 +1300,7 @@ class EditorEngine {
     const lvlLabel = (isDirty ? '*' : '') + curName + ' ▼';
     ctx.fillText(lvlLabel, x + lvlBtnW / 2, midY3);
     this.levelBtns.push({ x, y: btnY3, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
-    x += lvlBtnW + 8;
+    x += lvlBtnW + 4;
 
     // 操作按钮：新建 / 保存 / 复制 — 手指友好
     const opBtns = [
@@ -1309,22 +1309,22 @@ class EditorEngine {
       { label: '复制', color: '#00BCD4', action: 'exportLevel' },
     ];
 
-    const opW = 44;
+    const opW = 38;
     for (const b of opBtns) {
       ctx.fillStyle = b.color;
       roundRect(ctx, x, btnY3, opW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 13px sans-serif';
+      ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(b.label, x + opW / 2, midY3);
       this.levelBtns.push({ x, y: btnY3, w: opW, h: btnH, action: b.action });
-      x += opW + 8;
+      x += opW + 4;
     }
 
     // 本地同步按钮
-    const syncW = 56;
+    const syncW = 50;
     ctx.fillStyle = '#ff9800';
     roundRect(ctx, x, btnY3, syncW, btnH, 6);
     ctx.fill();
@@ -1334,12 +1334,12 @@ class EditorEngine {
     ctx.textBaseline = 'middle';
     ctx.fillText('本地同步', x + syncW / 2, midY3);
     this.levelBtns.push({ x, y: btnY3, w: syncW, h: btnH, action: 'localSync' });
-    x += syncW + 8;
+    x += syncW + 4;
 
     // 发布按钮：toggle ready 0↔1
     const ready = (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length)
       ? (this.levelList[this.currentLevelIdx].data.ready || 0) : 0;
-    const publishW = 56;
+    const publishW = 50;
     const publishColor = ready === 1 ? '#E91E63' : '#9E9E9E';
     ctx.fillStyle = publishColor;
     roundRect(ctx, x, btnY3, publishW, btnH, 6);
@@ -1357,11 +1357,11 @@ class EditorEngine {
   _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step) {
     step = step || 1;
     const midY = btnY + btnH / 2;
-    const btnW = 24;
+    const btnW = 27;
 
     // 标签
     ctx.fillStyle = '#999';
-    ctx.font = '13px sans-serif';
+    ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x, midY);
@@ -1369,20 +1369,20 @@ class EditorEngine {
 
     // 减号
     ctx.strokeStyle = '#ccc';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, x, btnY, btnW, btnH, 5);
+    ctx.lineWidth = 1;
+    roundRect(ctx, x, btnY, btnW, btnH, 4);
     ctx.stroke();
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x + btnW / 2, midY);
     this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.max(min, value - step)) });
-    x += btnW + 4;
+    x += btnW + 3;
 
     // 加号
     ctx.strokeStyle = '#ccc';
-    roundRect(ctx, x, btnY, btnW, btnH, 5);
+    roundRect(ctx, x, btnY, btnW, btnH, 4);
     ctx.stroke();
     ctx.fillStyle = '#333';
     ctx.fillText('+', x + btnW / 2, midY);
