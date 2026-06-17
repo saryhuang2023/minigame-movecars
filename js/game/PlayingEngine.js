@@ -167,7 +167,7 @@ class PlayingEngine {
         // 记录松手时手指的真实方向（未受拖拽追逐/落孔修正的原始角度）
         const releaseAngle = ds.targetAngle;
         // 三点共线对齐归位
-        const snapped = this.gp.snapAlignPig(ds.tailIndex, pig.length, ds.lastValid.angle);
+        const snapped = this.gp.snapAlignPig(ds.tailIndex, pig.length, ds.lastValid.angle, pigId);
         if (snapped) {
           pig.length = snapped.length;
           pig.angle = snapped.angle;
@@ -250,6 +250,7 @@ class PlayingEngine {
       // 直接加载到当前引擎（gameState 不变，checkStateTransition 不会重新 activate）
       this.levelName = next.name;
       this.loadLevel(data);
+      this._victory = false;
     } catch (err) {
       console.warn(`[Playing] 加载下一关 ${next.file} 失败:`, err);
     }

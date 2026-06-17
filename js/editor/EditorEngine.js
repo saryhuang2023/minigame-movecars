@@ -386,8 +386,8 @@ class EditorEngine {
   }
 
   // 松手时将猪头部对准最近的孔 —— 三点共线对齐（委托给 GameplayEngine 共享方法）
-  _snapWithLengthFallback(tailIndex, length, hintAngle) {
-    return this.gp.snapAlignPig(tailIndex, length, hintAngle);
+  _snapWithLengthFallback(tailIndex, length, hintAngle, excludeId) {
+    return this.gp.snapAlignPig(tailIndex, length, hintAngle, excludeId);
   }
 
   applyDragConfig(cfg) {
@@ -414,7 +414,7 @@ class EditorEngine {
       const pig = this.gp.pigs.find(p => p.id === this.gp.dragState.pigId);
       if (pig && lv) {
         const snapped = this._snapWithLengthFallback(
-          this.gp.dragState.tailIndex, pig.length, lv.angle
+          this.gp.dragState.tailIndex, pig.length, lv.angle, pig.id
         );
         if (snapped) {
           pig.length = snapped.length;
@@ -433,9 +433,10 @@ class EditorEngine {
       }
     } else if (this.gp.dragState.type === 'adjustHead') {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
+      this.gp.rebuildOccupancy();
       if (lv) {
         const snapped = this._snapWithLengthFallback(
-          lv.tailIndex, lv.length, lv.angle
+          lv.tailIndex, lv.length, lv.angle, this.gp.dragState.pigId
         );
         if (snapped) {
           const realId = this.gp.dragState.pigId;
@@ -460,9 +461,10 @@ class EditorEngine {
       }
     } else if (this.gp.dragState.type === 'place') {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
+      this.gp.rebuildOccupancy();
       if (lv) {
         const snapped = this._snapWithLengthFallback(
-          lv.tailIndex, lv.length, lv.angle
+          lv.tailIndex, lv.length, lv.angle, undefined
         );
         if (snapped) {
           let realId;

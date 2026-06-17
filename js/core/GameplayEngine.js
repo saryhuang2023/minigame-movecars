@@ -346,17 +346,20 @@ class GameplayEngine {
 
   // 松手对齐：三点共线 + 长度回退搜索（全模式共用）
   // 对齐 = 尾部孔中心 → 头部落孔中心 → 猪头中心，三点在同一直线上
-  snapAlignPig(tailIndex, length, hintAngle) {
+  // excludeId: 对齐搜索时排除被其他猪占用的孔。默认 -2（不跳过任何孔，向后兼容）。
+  // 传 undefined 跳过所有已占用孔；传 pigId 跳过其他猪但保留自身占用的孔。
+  snapAlignPig(tailIndex, length, hintAngle, excludeId = -2) {
     const r = this.getPigRect(tailIndex, length, hintAngle);
     if (!r) return null;
     const headCenter = this._headSquareCenter(r);
     const tailHole = this.holes[tailIndex];
     if (!tailHole) return null;
 
-    // 找到离头部最近的孔（无距离限制，跳过尾孔）
+    // 找到离头部最近的未占用孔（跳过尾孔 + 被其他猪占用的孔）
     let bestIdx = -1, bestD2 = Infinity;
     for (let i = 0; i < this.holes.length; i++) {
       if (i === tailIndex) continue;
+      if (this.holeOccupied[i] !== -1 && this.holeOccupied[i] !== excludeId) continue;
       const dx = this.holes[i].x - headCenter.x;
       const dy = this.holes[i].y - headCenter.y;
       const d2 = dx * dx + dy * dy;
