@@ -37,6 +37,10 @@ class LevelSelectEngine {
     this.backBtn = null;
     this.readySectionTop = 0;
     this.cloudSectionTop = 0;
+
+    // 云端加载状态
+    this._cloudLoading = false;
+    this._cloudLoadingMsg = '';
   }
 
   activate() {
@@ -46,11 +50,16 @@ class LevelSelectEngine {
     this.buildCloudCards();
     this.input.on('levelSelect', (e) => this.handleEvent(e));
     // 异步拉取云端关卡
-    this._fetchCloudLevels();
+    this._cloudLoading = true;
+    this._cloudLoadingMsg = '同步云端关卡中...';
+    this._fetchCloudLevels().finally(() => {
+      this._cloudLoading = false;
+    });
   }
 
   deactivate() {
     this.input.off('levelSelect');
+    this._cloudLoading = false;
   }
 
   // ============================================================
@@ -85,7 +94,10 @@ class LevelSelectEngine {
       const list = await cloud.listLevels();
       this.readyLevels = [];
       this.cloudLevels = [];
+      const projectNames = new Set(this.projectLevels.map(p => p.name));
       for (const item of list) {
+        // 跳过与正式关卡同名的云端关卡（已发布，无需重复展示）
+        if (projectNames.has(item.name)) continue;
         const lv = {
           name: item.name,
           _id: item._id,
@@ -164,6 +176,9 @@ class LevelSelectEngine {
   // 事件处理
   // ============================================================
   handleEvent(e) {
+    // 云端加载中，屏蔽所有操作
+    if (this._cloudLoading) return;
+
     if (e.type !== 'touchstart' || !e.touches[0]) return;
     const t = e.touches[0];
 
@@ -209,6 +224,8 @@ class LevelSelectEngine {
   }
 
   async _playCloudLevel(lv) {
+    this._cloudLoading = true;
+    this._cloudLoadingMsg = '加载关卡中...';
     try {
       const fullDoc = await cloud.downloadLevel(lv._id);
       if (fullDoc && fullDoc.data) {
@@ -218,6 +235,8 @@ class LevelSelectEngine {
       }
     } catch (err) {
       console.warn(`[LevelSelect] 下载云端关卡 ${lv.name} 失败:`, err);
+    } finally {
+      this._cloudLoading = false;
     }
   }
 
@@ -235,6 +254,8 @@ class LevelSelectEngine {
     this.drawCards(this.projectCards, ACCENT_GREEN);
     this.drawCards(this.readyCards, ACCENT_ORANGE);
     this.drawCards(this.cloudCards, ACCENT_BLUE);
+
+    if (this._cloudLoading) this.renderCloudLoading();
   }
 
   // 顶栏
@@ -328,6 +349,30 @@ class LevelSelectEngine {
     ctx.fill();
     ctx.fillStyle = accentColor;
     ctx.fillText(label, x + w / 2, labelY);
+  }
+
+  renderCloudLoading() {
+    // 半透明遮罩
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    const bw = 240, bh = 80;
+    const bx = (SCREEN_WIDTH - bw) / 2;
+    const by = (SCREEN_HEIGHT - bh) / 2;
+
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    this._roundRect(ctx, bx, by, bw, bh, 12);
+    ctx.fill();
+
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this._cloudLoadingMsg, bx + bw / 2, by + 33);
+
+    ctx.fillStyle = '#999';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('请稍后', bx + bw / 2, by + 56);
   }
 
   _roundRect(ctx, x, y, w, h, r) {

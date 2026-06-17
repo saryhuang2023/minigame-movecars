@@ -1,4 +1,6 @@
 [
   { "file": "0001.json", "type": 1, "progress": 10 },
-  { "file": "0002.json", "type": 1, "progress": 10 }
+  { "file": "0002.json", "type": 1, "progress": 10 },
+  { "file": "0003.json", "type": 1, "progress": 10 },
+  { "file": "0004.json", "type": 1, "progress": 10 }
 ]

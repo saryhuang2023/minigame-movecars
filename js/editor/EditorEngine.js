@@ -45,6 +45,9 @@ class EditorEngine {
     this.toastText = '';
     this.toastAlpha = 0;
     this.toastFade = null;
+
+    // ===== 云端同步加载状态 =====
+    this._cloudLoading = false;
   }
 
   // ============================================================
@@ -58,20 +61,27 @@ class EditorEngine {
     this.loadLevelList();
     this.dirty = false;
     this.showRedFrame = false;
+    this._cloudLoading = true;
     this.input.on('editor', (e) => this.handleEvent(e));
-    // 异步从云端拉取关卡列表
-    this._pullCloudLevels();
+    // 异步从云端拉取关卡列表，完成后解除 loading
+    this._pullCloudLevels().finally(() => {
+      this._cloudLoading = false;
+    });
   }
 
   deactivate() {
     this.input.off('editor');
     this.confirmDialog = null;
+    this._cloudLoading = false;
   }
 
   // ============================================================
   // 事件处理
   // ============================================================
   handleEvent(e) {
+    // 云端同步中，屏蔽所有操作
+    if (this._cloudLoading) return;
+
     const t0 = e.touches[0] || e.changedTouches[0];
     if (!t0) return;
     const x = t0.x, y = t0.y;
@@ -379,7 +389,6 @@ class EditorEngine {
           this.gp.updatePigOccupancy(pig.id, snapped.tailIndex, snapped.length, snapped.angle);
           this.markCurrentDirty();
           this.showToast(`小猪 #${pig.id} → ${snapped.length}px ${snapped.angle}°`);
-          this.tryGhostPush(pig.id);
         } else {
           // 无法落孔 → 回退到 lastValid（保持无碰撞状态）
           pig.angle = lv.angle;
@@ -405,7 +414,6 @@ class EditorEngine {
           this.gp.updatePigOccupancy(realId, snapped.tailIndex, snapped.length, snapped.angle);
           this.showToast(`小猪 #${realId} → ${snapped.length}px ${snapped.angle}°`);
           this.markCurrentDirty();
-          this.tryGhostPush(realId);
         } else if (this.gp.dragState.originalPig) {
           this.gp.pigs.push(this.gp.dragState.originalPig);
           this.gp.selectedPigId = this.gp.dragState.originalPig.id;
@@ -441,7 +449,6 @@ class EditorEngine {
           }
           this.gp.updatePigOccupancy(realId, snapped.tailIndex, snapped.length, snapped.angle);
           this.markCurrentDirty();
-          this.tryGhostPush(realId);
         } else {
           // 无法落孔 → 清理 temp 占用
           this.gp.rebuildOccupancy();
@@ -458,23 +465,6 @@ class EditorEngine {
 
     this.gp.dragState = null;
     this.gp.recenterBoard();
-  }
-
-  tryGhostPush(pigId) {
-    const result = this.gp.canPushPig(pigId);
-    if (result.canPush) {
-      this.gp.ghostAnimations.push({
-        pigId, dirX: result.dirX, dirY: result.dirY,
-        totalDist: result.totalDist, currentDx: 0, currentDy: 0,
-        startTime: Date.now(), duration: 6400
-      });
-      setTimeout(() => {
-        this.gp.ghostAnimations = this.gp.ghostAnimations.filter(g => g.pigId !== pigId);
-      }, 6500);
-    } else if (result.collidedPigId !== undefined) {
-      this.gp.triggerCollisionEffect(result.collidedPigId);
-      this.showToast(`碰到了猪 #${result.collidedPigId}!`);
-    }
   }
 
   // ============================================================
@@ -1075,6 +1065,9 @@ class EditorEngine {
     if (this.showPigSheet) this.renderPigSheet();
     if (this.showLevelSheet) this.renderLevelSheet();
     if (this.confirmDialog) this.renderConfirmDialog();
+
+    // 云端同步加载遮罩
+    if (this._cloudLoading) this.renderCloudLoading();
   }
 
   // ============================================================
@@ -1812,6 +1805,34 @@ class EditorEngine {
       return true;
     }
     return true;  // 点击其他区域保持对话框
+  }
+
+  // ============================================================
+  // === 渲染 — 云端同步加载遮罩 ===
+  // ============================================================
+  renderCloudLoading() {
+    // 半透明遮罩
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    // 居中提示框
+    const bw = 240, bh = 80;
+    const bx = (SCREEN_WIDTH - bw) / 2;
+    const by = (SCREEN_HEIGHT - bh) / 2;
+
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    roundRect(ctx, bx, by, bw, bh, 12);
+    ctx.fill();
+
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('同步云端关卡中...', bx + bw / 2, by + 33);
+
+    ctx.fillStyle = '#999';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('请稍后', bx + bw / 2, by + 56);
   }
 
   // ============================================================

@@ -191,7 +191,9 @@ class GameplayEngine {
     const collisionHw = hw + this.scaledHalfDiameter;
     // 碰撞区宽度 = 孔直径的 2/3（窄于视觉宽度，更贴近猪身）
     const collisionHh = this.scaledDiameter * 2 / 3 / 2;
-    return { cx, cy, hw, hh, collisionHw, collisionHh, cosL, sinL, cosP, sinP, rad };
+    // 触控区：半高 = 孔半径（和孔的直径一样宽，方便手指点选）
+    const touchHh = this.scaledHalfDiameter;
+    return { cx, cy, hw, hh, collisionHw, collisionHh, touchHw: collisionHw, touchHh, cosL, sinL, cosP, sinP, rad };
   }
 
   // 矩形头端中心点（用于落孔判定）
@@ -266,7 +268,7 @@ class GameplayEngine {
       // 逆变换到矩形局部坐标
       const lx = px * Math.cos(r.rad) - py * Math.sin(r.rad);
       const ly = px * Math.sin(r.rad) + py * Math.cos(r.rad);
-      if (Math.abs(lx) <= r.collisionHw && Math.abs(ly) <= r.collisionHh) {
+      if (Math.abs(lx) <= r.touchHw && Math.abs(ly) <= r.touchHh) {
         // 像素偏移（从尾部 0 → 头部 totalLen）
         const scaledLen = pig.length * this.boardScale;
         const offset = Math.max(0, Math.min(scaledLen, lx + r.hw));
