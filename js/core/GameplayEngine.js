@@ -352,6 +352,7 @@ class GameplayEngine {
     const thresh2 = thresh * thresh;
     let bestIdx = -1, bestDist2 = Infinity;
     for (let i = 0; i < this.holes.length; i++) {
+      if (i === tailIndex) continue;  // 头部不能落在尾巴孔上
       const dx = center.x - this.holes[i].x;
       const dy = center.y - this.holes[i].y;
       const dist2 = dx * dx + dy * dy;

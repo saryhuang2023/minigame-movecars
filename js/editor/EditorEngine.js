@@ -674,6 +674,90 @@ class EditorEngine {
     }
   }
 
+  // ---- 棋盘参数变更后，让猪重新吸附合法位置 ----
+  _adaptPigsToBoard() {
+    if (this.gp.pigs.length === 0) return;
+
+    // 1. 快照所有猪
+    const snapshot = this.gp.pigs.map(p => ({
+      id: p.id, tailIndex: p.tailIndex, length: p.length, angle: p.angle
+    }));
+
+    // 2. 清空
+    this.gp.pigs = [];
+    this.gp.selectedPigId = null;
+    this.gp.holeOccupied = new Array(this.gp.holes.length).fill(-1);
+
+    // 3. 逐猪恢复
+    const lostPigs = [];
+    for (const snap of snapshot) {
+      // tailIndex 不变（cols/rows 未变，索引有效）
+      let bestAngle = this.gp.snapAngleToHoles(snap.tailIndex, snap.length, snap.angle);
+      let bestLength = snap.length;
+
+      // 吸附失败 → 尝试 length ±1…±5
+      if (bestAngle === null) {
+        for (let dl = 1; dl <= 5; dl++) {
+          for (const sign of [-1, 1]) {
+            const tryLen = snap.length + sign * dl;
+            if (tryLen < 1) continue;
+            const tryAngle = this.gp.snapAngleToHoles(snap.tailIndex, tryLen, snap.angle);
+            if (tryAngle !== null) {
+              bestAngle = tryAngle;
+              bestLength = tryLen;
+              break;
+            }
+          }
+          if (bestAngle !== null) break;
+        }
+      }
+
+      if (bestAngle !== null) {
+        this.gp.pigs.push({ id: snap.id, tailIndex: snap.tailIndex, length: bestLength, angle: bestAngle });
+        this.gp.updatePigOccupancy(snap.id, snap.tailIndex, bestLength, bestAngle);
+      } else {
+        lostPigs.push(snap.id);
+      }
+    }
+
+    // 4. 兜底：尝试 tailIndex 附近孔位
+    if (lostPigs.length > 0) {
+      const offsets = [
+        1, -1, this.gp.cols, -this.gp.cols,
+        2, -2, this.gp.cols * 2, -this.gp.cols * 2,
+        this.gp.cols + 1, this.gp.cols - 1,
+        -this.gp.cols + 1, -this.gp.cols - 1
+      ];
+      for (const pid of lostPigs) {
+        const snap = snapshot.find(s => s.id === pid);
+        if (!snap) continue;
+        let found = false;
+        for (const offset of offsets) {
+          const newTail = snap.tailIndex + offset;
+          if (newTail < 0 || newTail >= this.gp.holes.length) continue;
+          if (this.gp.holeOccupied[newTail] !== -1) continue;  // 不能落在已占用孔上
+          for (let tryLen = snap.length; tryLen >= 1; tryLen--) {
+            for (const sign of [0, -1, 1]) {
+              const a = sign === 0 ? snap.angle : snap.angle + sign * 22.5;
+              const sa = this.gp.snapAngleToHoles(newTail, tryLen, a);
+              if (sa !== null) {
+                this.gp.pigs.push({ id: snap.id, tailIndex: newTail, length: tryLen, angle: sa });
+                this.gp.updatePigOccupancy(snap.id, newTail, tryLen, sa);
+                found = true;
+                break;
+              }
+            }
+            if (found) break;
+          }
+          if (found) break;
+        }
+        if (!found) {
+          this.showToast('猪#' + snap.id + ' 无法适配已被移除');
+        }
+      }
+    }
+  }
+
   deleteLevelByIndex(idx) {
     if (this.currentLevelIdx === idx) {
       this.deleteLevel();
@@ -860,7 +944,7 @@ class EditorEngine {
     x = this._drawCompactStepper(x, btnY1, btnH, '列', this.gp.cols, 2, 20,
       (v) => {
         if (this.gp.pigs.length > 0) {
-          this.showToast('空棋盘才能被调整!');
+          this.showToast('有猪的情况下不能改变格子数量');
           return;
         }
         this.gp.cols = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
@@ -871,7 +955,7 @@ class EditorEngine {
     x = this._drawCompactStepper(x, btnY1, btnH, '行', this.gp.rows, 2, 20,
       (v) => {
         if (this.gp.pigs.length > 0) {
-          this.showToast('空棋盘才能被调整!');
+          this.showToast('有猪的情况下不能改变格子数量');
           return;
         }
         this.gp.rows = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
@@ -923,24 +1007,27 @@ class EditorEngine {
     // 直径 stepper（步长 5）
     x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 10, 100,
       (v) => {
-        if (this.gp.pigs.length > 0) { this.showToast('空棋盘才能被调整!'); return; }
-        this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+        this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this._adaptPigsToBoard();
+        this.markCurrentDirty();
       }, 5);
     x += 8;
 
     // 横向孔间距 stepper（步长 5）
     x = this._drawCompactStepper(x, btnY2, btnH, '横距', this.gp.hGap, 0, 60,
       (v) => {
-        if (this.gp.pigs.length > 0) { this.showToast('空棋盘才能被调整!'); return; }
-        this.gp.hGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+        this.gp.hGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this._adaptPigsToBoard();
+        this.markCurrentDirty();
       }, 5);
     x += 8;
 
     // 纵向孔间距 stepper（步长 5）
     x = this._drawCompactStepper(x, btnY2, btnH, '纵距', this.gp.vGap, 0, 60,
       (v) => {
-        if (this.gp.pigs.length > 0) { this.showToast('空棋盘才能被调整!'); return; }
-        this.gp.vGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+        this.gp.vGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this._adaptPigsToBoard();
+        this.markCurrentDirty();
       }, 5);
 
     // ============================
