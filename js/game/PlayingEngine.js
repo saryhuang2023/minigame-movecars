@@ -24,6 +24,7 @@ class PlayingEngine {
     const lv = databus.currentLevel;
     this.levelName = lv ? lv.name : '';
     this.steps = 0;
+    this.gp.effectiveWidth = databus.storedScreenWidth;
     this.loadLevel(lv ? lv.data : null);
     this.input.on('playing', (e) => this.handleEvent(e));
   }
@@ -73,7 +74,7 @@ class PlayingEngine {
     // 顶栏按钮
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
-      databus.gameState = 'levelSelect';
+      databus.gameState = databus.returnState || 'levelSelect';
       return;
     }
 

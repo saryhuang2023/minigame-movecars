@@ -42,7 +42,7 @@ class PigRenderer {
   }
 
   // ---- 猪身体尺寸 ----
-  get pigBodyWidth() { return this.e.diameter; }
+  get pigBodyWidth() { return this.e.scaledDiameter; }
   get pigBodyHalf()  { return this.pigBodyWidth / 2; }
 
   // ---- 拖拽中的显示角度（旋转追逐动画） ----
@@ -50,7 +50,6 @@ class PigRenderer {
     const ds = this.e.dragState;
     if (!ds || ds.displayAngle == null) return pig.angle;
     if (ds.type === 'rotate' && pig.id === ds.pigId) return ds.displayAngle;
-    if (ds.type === 'adjustAngle' && pig.id === ds.pendingId) return ds.displayAngle;
     return pig.angle;
   }
 
@@ -60,7 +59,7 @@ class PigRenderer {
     if (!r) return null;
     const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
     const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
-    return { cx, cy, rad: r.rad, totalLen: r.hw * 2 + this.e.diameter };
+    return { cx, cy, rad: r.rad, totalLen: r.hw * 2 + this.e.scaledDiameter };
   }
 
   // ---- 三图拼接绘制（头尾等比 + 中段拉伸） ----
@@ -119,102 +118,73 @@ class PigRenderer {
       ctx.strokeStyle = PIG_STROKE;
       ctx.lineWidth = 1.5;
       ctx.stroke();
-
-      const eyeX = c.totalLen / 2 - this.e.diameter * 0.35;
-      const eyeY = -bh * 0.45;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(eyeX, eyeY, this.e.diameter * 0.22, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#333';
-      ctx.beginPath();
-      ctx.arc(eyeX + 1, eyeY, this.e.diameter * 0.11, 0, Math.PI * 2);
-      ctx.fill();
     }
 
     ctx.restore();
   }
 
-  // ---- 碰撞闪烁效果 ----
-  drawFlash(ctx, pig, t) {
+  // ---- 头部中心绿点 ----
+  drawHeadDot(ctx, pig, offDx, offDy) {
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r) return;
+    const hsc = this.e._headSquareCenter(r);
+    const cx = this.e.boardOffsetX + hsc.x + (offDx || 0);
+    const cy = this.e.topBarH + this.e.boardOffsetY + hsc.y + (offDy || 0);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#00C853';
+    ctx.fill();
+  }
+
+  // ---- 被撞闪烁效果（棕色虚线，3次闪烁） ----
+  drawCollisionFlash(ctx, pig, elapsed) {
+    const cycle = 200;  // 每个闪烁周期 200ms
+    const maxCycles = 3;
+    const visible = (Math.floor(elapsed / cycle) % 2 === 0) && (elapsed < cycle * maxCycles);
+    if (!visible) return;
+
     const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
     if (!r) return;
     const cx = this.e.boardOffsetX + r.cx;
     const cy = this.e.topBarH + this.e.boardOffsetY + r.cy;
-    const totalLen = r.hw * 2;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
-    const flashAlpha = 0.7 * (1 - t) * (1 - t);
+    const hw = r.collisionHw;
+    const hh = r.collisionHh;
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-r.rad);
 
-    ctx.beginPath();
-    roundRect(ctx, -totalLen / 2, -bh, totalLen, bw, 6);
-    ctx.clip();
-
-    ctx.globalAlpha = flashAlpha;
-    ctx.fillStyle = '#FFF8E7';
-    ctx.fillRect(-totalLen / 2, -bh, totalLen, bw);
-
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  // ---- 非法位置红色遮罩 ----
-  drawInvalidOverlay(ctx, pig, offDx, offDy) {
-    const c = this._pigCenter(pig, offDx, offDy);
-    if (!c) return;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
-    ctx.save();
-    ctx.translate(c.cx, c.cy);
-    ctx.rotate(-c.rad);
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#FF4444';
-    roundRect(ctx, -c.totalLen / 2, -bh, c.totalLen, bw, 6);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-
-  // ---- 头部红色半透明遮罩（最后 1×diameter 范围） ----
-  drawHeadOverlay(ctx, pig) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    if (!r) return;
-    const offY = this.e.topBarH + this.e.boardOffsetY;
-    const bw = this.pigBodyWidth;
-    // 头部中心 = _headSquareCenter（OBB前端，正方形中心）
-    const hsc = this.e._headSquareCenter(r);
-    const headLen = this.e.diameter;  // 头部区域 = HEAD_ZONE_MULT × diameter
-    ctx.save();
-    ctx.translate(this.e.boardOffsetX + hsc.x, offY + hsc.y);
-    ctx.rotate(-r.rad);
-    ctx.globalAlpha = 0.2;
-    ctx.fillStyle = '#FF0000';
-    roundRect(ctx, -headLen / 2, -bw / 2, headLen, bw, 4);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  // ---- 选中高亮虚线框（OBB身体+头尾正方形） ----
-  drawSelection(ctx, pig) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    if (!r) return;
-    const offY = this.e.topBarH + this.e.boardOffsetY;
-    const R = this.e.diameter / 2;
-    const fullHw = r.hw + R;
-    ctx.save();
-    ctx.translate(this.e.boardOffsetX + r.cx, offY + r.cy);
-    ctx.rotate(-r.rad);
-    ctx.strokeStyle = SELECTED_COLOR;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = '#8B6914';
     ctx.lineWidth = 2;
-    ctx.setLineDash([4, 3]);
-    ctx.strokeRect(-fullHw, -r.hh, fullHw * 2, r.hh * 2);
+    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+
     ctx.setLineDash([]);
     ctx.restore();
   }
+
+  // ---- 碰撞区棕色虚线框 ----
+  drawCollisionBox(ctx, pig, offDx, offDy) {
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r) return;
+    const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
+    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
+    const hw = r.collisionHw;
+    const hh = r.collisionHh;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-r.rad);
+
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = '#8B6914';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
 }
 
 // ============================================================

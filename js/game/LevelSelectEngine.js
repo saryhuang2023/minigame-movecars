@@ -155,6 +155,7 @@ class LevelSelectEngine {
       if (t.x >= card.x && t.x <= card.x + card.w &&
           t.y >= card.y && t.y <= card.y + card.h) {
         databus.currentLevel = { name: card.level.name, data: card.level.data };
+        databus.returnState = 'levelSelect';
         databus.gameState = 'playing';
         return;
       }

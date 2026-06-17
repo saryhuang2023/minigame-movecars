@@ -10,7 +10,6 @@ const HOLE_EMPTY = 'rgba(255,255,255,0.22)';
 const HOLE_OCCUPIED = 'rgba(255,182,193,0.55)';
 const HOLE_STROKE = 'rgba(255,255,255,0.45)';
 const BG_COLOR = '#1a1a2e';
-const FLASH_DURATION = 500;
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
 const HEAD_ZONE_MULT = 1;  // 头部区域 = HEAD_ZONE_MULT × diameter 像素
@@ -27,7 +26,13 @@ class GameplayEngine {
     this.hGap = 10;
     this.vGap = 10;
     this.diameter = 30;
+    // ===== 屏幕适配 =====
+    this.effectiveWidth = SCREEN_WIDTH;
     // ===== 动态计算 =====
+    this.boardScale = 1;
+    this.scaledDiameter = 30;
+    this.scaledHalfDiameter = 15;
+    this.scaledHeadZone = 30;
     this.boardOffsetX = 0;
     this.boardOffsetY = 0;
     this.hSpacing = 0;
@@ -61,8 +66,16 @@ class GameplayEngine {
     const maxBoardW = SCREEN_WIDTH;
     const maxBoardH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
 
-    this.hSpacing = this.diameter + this.hGap;
-    this.vSpacing = this.diameter + this.vGap;
+    // 屏幕适配缩放：以 375 为基准
+    this.boardScale = Math.max(0.75, Math.min(1.5, this.effectiveWidth / 375));
+    const sd = this.diameter * this.boardScale;
+    const shg = this.hGap * this.boardScale;
+    const svg = this.vGap * this.boardScale;
+    this.scaledDiameter = sd;
+    this.scaledHalfDiameter = sd / 2;
+    this.scaledHeadZone = sd * HEAD_ZONE_MULT;
+    this.hSpacing = sd + shg;
+    this.vSpacing = sd + svg;
 
     // 棋盘超出屏幕时压缩间距
     if (this.cols * this.hSpacing > maxBoardW) {
@@ -77,10 +90,10 @@ class GameplayEngine {
   }
 
   // 碰撞检测射线推进步长 = 孔位半径（diameter/2）
-  get collisionStep() { return this.diameter / 2; }
+  get collisionStep() { return this.scaledHalfDiameter; }
 
   // 猪身体宽度 = 渲染对齐，碰撞也用这个值
-  get pigBodyWidth() { return this.diameter; }
+  get pigBodyWidth() { return this.scaledDiameter; }
 
   computeHoles() {
     this.holes = [];
@@ -164,7 +177,7 @@ class GameplayEngine {
     const rad = angle * Math.PI / 180;
     const cosL = Math.cos(rad);
     const sinL = -Math.sin(rad);       // canvas y-flip
-    const totalLen = length;  // length 即真实像素长度
+    const totalLen = length * this.boardScale;  // 逻辑长度 → 屏幕像素
     const hw = totalLen / 2;
     const hh = this.pigBodyWidth / 2;
     // OBB 锚定在孔心；尾正方形中心 = 孔心，头正方形中心 = _headSquareCenter
@@ -173,7 +186,12 @@ class GameplayEngine {
     // 垂直轴
     const cosP = Math.sin(rad);
     const sinP = Math.cos(rad);
-    return { cx, cy, hw, hh, cosL, sinL, cosP, sinP, rad };
+    // collisionHw = OBB 矩形覆盖整头猪（含头部半圆），用于碰撞检测
+    // hw 仅覆盖矩形身体部分，供渲染和落孔判定使用
+    const collisionHw = hw + this.scaledHalfDiameter;
+    // 碰撞区宽度 = 孔直径的 2/3（窄于视觉宽度，更贴近猪身）
+    const collisionHh = this.scaledDiameter * 2 / 3 / 2;
+    return { cx, cy, hw, hh, collisionHw, collisionHh, cosL, sinL, cosP, sinP, rad };
   }
 
   // 矩形头端中心点（用于落孔判定）
@@ -199,8 +217,8 @@ class GameplayEngine {
       [b.cosL, b.sinL], [b.cosP, b.sinP],
     ];
     for (const [ax, ay] of axes) {
-      const [minA, maxA] = proj(a.cx, a.cy, a.hw, a.hh, a.cosL, a.sinL, a.cosP, a.sinP, ax, ay);
-      const [minB, maxB] = proj(b.cx, b.cy, b.hw, b.hh, b.cosL, b.sinL, b.cosP, b.sinP, ax, ay);
+      const [minA, maxA] = proj(a.cx, a.cy, a.collisionHw, a.collisionHh, a.cosL, a.sinL, a.cosP, a.sinP, ax, ay);
+      const [minB, maxB] = proj(b.cx, b.cy, b.collisionHw, b.collisionHh, b.cosL, b.sinL, b.cosP, b.sinP, ax, ay);
       if (maxA < minB || maxB < minA) return false;
     }
     return true;
@@ -230,7 +248,7 @@ class GameplayEngine {
       // 逆变换到矩形局部坐标
       const lx = dx * Math.cos(r.rad) - dy * Math.sin(r.rad);
       const ly = dx * Math.sin(r.rad) + dy * Math.cos(r.rad);
-      if (Math.abs(lx) <= r.hw + 2 && Math.abs(ly) <= r.hh + 2) {
+      if (Math.abs(lx) <= r.collisionHw && Math.abs(ly) <= r.collisionHh) {
         occupied.push(hi);
       }
     }
@@ -248,17 +266,18 @@ class GameplayEngine {
       // 逆变换到矩形局部坐标
       const lx = px * Math.cos(r.rad) - py * Math.sin(r.rad);
       const ly = px * Math.sin(r.rad) + py * Math.cos(r.rad);
-      if (Math.abs(lx) <= r.hw + 4 && Math.abs(ly) <= r.hh + 4) {
+      if (Math.abs(lx) <= r.collisionHw && Math.abs(ly) <= r.collisionHh) {
         // 像素偏移（从尾部 0 → 头部 totalLen）
-        const offset = Math.max(0, Math.min(pig.length, lx + r.hw));
-        return { id: pig.id, offset, totalLen: pig.length };
+        const scaledLen = pig.length * this.boardScale;
+        const offset = Math.max(0, Math.min(scaledLen, lx + r.hw));
+        return { id: pig.id, offset, totalLen: scaledLen };
       }
     }
     return null;
   }
 
   getHoleAtPoint(x, y, margin) {
-    const r = this.diameter / 2 + (margin || 0);
+    const r = this.scaledHalfDiameter + (margin || 0);
     const offY = this.topBarH + this.boardOffsetY;
     for (let i = 0; i < this.holes.length; i++) {
       const hx = this.boardOffsetX + this.holes[i].x;
@@ -301,7 +320,7 @@ class GameplayEngine {
     const r = this.getPigRect(tailIndex, length, rawAngle);
     if (!r) return rawAngle;
     const center = this._headSquareCenter(r);
-    const thresh = this.diameter / 2;  // R
+    const thresh = this.scaledHalfDiameter;  // R
     const thresh2 = thresh * thresh;
     let bestHole = null;
     let bestDist = Infinity;
@@ -329,7 +348,7 @@ class GameplayEngine {
     const r = this.getPigRect(tailIndex, length, angle);
     if (!r) return -1;
     const center = this._headSquareCenter(r);
-    const thresh = this.diameter / 2;  // R
+    const thresh = this.scaledHalfDiameter;  // R
     const thresh2 = thresh * thresh;
     let bestIdx = -1, bestDist2 = Infinity;
     for (let i = 0; i < this.holes.length; i++) {
@@ -368,17 +387,26 @@ class GameplayEngine {
   }
 
   // ============================================================
-  // 碰撞效果
+  // 碰撞效果（棕色虚线闪烁3次）
   // ============================================================
   triggerCollisionEffect(pigId) {
     this.flashingPigs[pigId] = Date.now();
+  }
+
+  _cleanFlashingPigs() {
+    const now = Date.now();
+    const toDelete = [];
+    for (const [pid, st] of Object.entries(this.flashingPigs)) {
+      if (now - st > 600) toDelete.push(pid);
+    }
+    for (const pid of toDelete) delete this.flashingPigs[pid];
   }
 
   // ============================================================
   // 旋转追逐（核心玩法：三模式共享）
   // 小猪逐步向手指方向旋转，碰壁时一帧二分查找边界瞬间贴紧
   // ============================================================
-  // pendingId 可选：编辑模式下 adjustAngle 传入临时猪 ID
+  // pendingId 可选：编辑模式下 adjustHead 传入临时猪 ID
   handleRotateDrag(x, y, pendingId) {
     const ds = this.dragState;
     const targetId = pendingId || ds.pigId;
@@ -502,7 +530,7 @@ class GameplayEngine {
           const ldy = h.y - moved.cy;
           const lx = ldx * Math.cos(r0.rad) - ldy * Math.sin(r0.rad);
           const ly = ldx * Math.sin(r0.rad) + ldy * Math.cos(r0.rad);
-          if (Math.abs(lx) <= r0.hw + 2 && Math.abs(ly) <= r0.hh + 2) {
+          if (Math.abs(lx) <= r0.collisionHw && Math.abs(ly) <= r0.collisionHh) {
             return { canPush: false, reason: `碰到猪 #${this.holeOccupied[hi]}`, collidedPigId: this.holeOccupied[hi] };
           }
         }
@@ -535,11 +563,7 @@ class GameplayEngine {
       g.currentDx = g.dirX * g.totalDist * eased;
       g.currentDy = g.dirY * g.totalDist * eased;
     }
-    const toDelete = [];
-    for (const [pid, st] of Object.entries(this.flashingPigs)) {
-      if (now - st > FLASH_DURATION) toDelete.push(pid);
-    }
-    for (const pid of toDelete) delete this.flashingPigs[pid];
+    this._cleanFlashingPigs();
   }
 
   // ============================================================
@@ -549,7 +573,7 @@ class GameplayEngine {
   // 渲染完整棋盘：孔位 + 小猪 + 预览高亮 + 动画
   // options: { hintText, drawHint }
   renderBoard(ctx, options = {}) {
-    const r = this.diameter / 2;
+    const r = this.scaledHalfDiameter;
     const offY = this.topBarH + this.boardOffsetY;
 
     // 孔位
@@ -563,9 +587,6 @@ class GameplayEngine {
         ctx.fillStyle = HOLE_OCCUPIED;
       } else {
         ctx.fillStyle = HOLE_EMPTY;
-        ctx.strokeStyle = HOLE_STROKE;
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
       }
       ctx.fill();
     }
@@ -575,7 +596,7 @@ class GameplayEngine {
       const hh = this.holes[this.dragState.headHoleIdx];
       const hhx = this.boardOffsetX + hh.x, hhy = offY + hh.y;
       ctx.beginPath();
-      ctx.arc(hhx, hhy, r + 3, 0, Math.PI * 2);
+      ctx.arc(hhx, hhy, r, 0, Math.PI * 2);
       ctx.strokeStyle = '#FF3B30';
       ctx.lineWidth = 2.5;
       ctx.stroke();
@@ -591,19 +612,18 @@ class GameplayEngine {
       const isDragPig = this.dragState && (
         this.dragState.pigId === pig.id || pig.id === this.dragState.pendingId
       );
-      const isInvalidDrag = isDragPig && this.dragState.isValidNow === false;
       pr.draw(ctx, pig, off.dx, off.dy);
 
-      if (isInvalidDrag) {
-        pr.drawInvalidOverlay(ctx, pig, off.dx, off.dy);
+      // 被撞效果：棕色虚线闪烁3下（仅编辑模式）
+      if (options.showCollisionBox && this.flashingPigs[pig.id]) {
+        const elapsed = Date.now() - this.flashingPigs[pig.id];
+        pr.drawCollisionFlash(ctx, pig, elapsed);
       }
 
-      if (this.flashingPigs[pig.id]) {
-        const elapsed = Date.now() - this.flashingPigs[pig.id];
-        const t = elapsed / FLASH_DURATION;
-        if (t < 1) {
-          pr.drawFlash(ctx, pig, t);
-        }
+      // 拖拽中：头部绿点 + 碰撞区棕色虚线框（仅编辑模式）
+      if (options.showCollisionBox && isDragPig) {
+        pr.drawHeadDot(ctx, pig, off.dx, off.dy);
+        pr.drawCollisionBox(ctx, pig, off.dx, off.dy);
       }
     }
 
@@ -623,36 +643,12 @@ class GameplayEngine {
       pr.draw(ctx, fp, off.dx, off.dy);
     }
 
-    // 选中高亮（无拖拽时）
-    if (options.showSelection && this.selectedPigId != null && !this.dragState) {
+    // 选中时：碰撞区棕色虚线框 + 头部绿色圆点（仅编辑模式，无拖拽时）
+    if (options.showCollisionBox && options.showSelection && this.selectedPigId != null && !this.dragState) {
       const pig = this.pigs.find(p => p.id === this.selectedPigId);
       if (pig) {
-        pr.drawHeadOverlay(ctx, pig);
-        pr.drawSelection(ctx, pig);
-
-        // 调试：红线从头部正方形中心 → findHeadHole 命中的孔心
-        const hr = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
-        if (hr) {
-          const hsc = this._headSquareCenter(hr);
-          // 绿点：头部正方形中心 B
-          ctx.beginPath();
-          ctx.arc(this.boardOffsetX + hsc.x, offY + hsc.y, 5, 0, Math.PI * 2);
-          ctx.fillStyle = '#00FF00';
-          ctx.fill();
-          ctx.strokeStyle = '#008800';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-          const headHoleIdx = this.findHeadHole(pig.tailIndex, pig.length, pig.angle);
-          if (headHoleIdx >= 0) {
-            const hh = this.holes[headHoleIdx];
-            ctx.beginPath();
-            ctx.moveTo(this.boardOffsetX + hsc.x, offY + hsc.y);
-            ctx.lineTo(this.boardOffsetX + hh.x, offY + hh.y);
-            ctx.strokeStyle = '#FF0000';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          }
-        }
+        pr.drawCollisionBox(ctx, pig, 0, 0);
+        pr.drawHeadDot(ctx, pig, 0, 0);
       }
     }
 
