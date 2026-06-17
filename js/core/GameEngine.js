@@ -21,6 +21,7 @@ class GameEngine {
 
     // 菜单按钮
     this.menuButtons = [];
+    this._titleTapCount = 0; // 标题连击计数，满 5 次显示编辑器入口
 
     this.start();
   }
@@ -48,6 +49,22 @@ class GameEngine {
     this.input.on('menu', (e) => {
       if (e.type === 'touchstart' && e.touches[0]) {
         const t = e.touches[0];
+
+        // 标题连击检测（5 次解锁编辑器入口）
+        if (this._titleTapCount < 5) {
+          const titleW = 180, titleH = 44;
+          const titleX = (SCREEN_WIDTH - titleW) / 2;
+          const titleY = databus.safeTop + 40 - titleH / 2;
+          if (t.x >= titleX && t.x <= titleX + titleW &&
+              t.y >= titleY && t.y <= titleY + titleH) {
+            this._titleTapCount++;
+            if (this._titleTapCount >= 5) {
+              wx.showToast({ title: '编辑器已解锁', icon: 'none', duration: 1200 });
+            }
+            return;
+          }
+        }
+
         for (const btn of this.menuButtons) {
           if (t.x >= btn.x && t.x <= btn.x + btn.w &&
               t.y >= btn.y && t.y <= btn.y + btn.h) {
@@ -127,9 +144,12 @@ class GameEngine {
       databus.gameState = 'levelSelect';
     });
 
-    this.addMenuBtn(startX, btnBaseY + 64, btnW, btnH, '关卡编辑器', '#FF9800', () => {
-      databus.gameState = 'editor';
-    });
+    // 关卡编辑器（隐藏入口：点击标题 5 次解锁）
+    if (this._titleTapCount >= 5) {
+      this.addMenuBtn(startX, btnBaseY + 64, btnW, btnH, '关卡编辑器', '#FF9800', () => {
+        databus.gameState = 'editor';
+      });
+    }
 
     for (const btn of this.menuButtons) {
       if (!btn.text) continue; // 分享按钮已单独绘制
@@ -180,6 +200,9 @@ class GameEngine {
 
     // 激活新状态（menu 的输入在 setupMenuInput 已注册）
     switch (curr) {
+      case 'menu':
+        this._titleTapCount = 0; // 离开后再回来重新计数
+        break;
       case 'editor':      this.editor.activate();          break;
       case 'levelSelect': this.levelSelect.activate();     break;
       case 'playing':     this.playing.activate();         break;
