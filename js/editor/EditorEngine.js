@@ -17,7 +17,7 @@ const GameplayEngine = require('../core/GameplayEngine.js');
 const { roundRect } = require('../render/PigRenderer.js');
 const cloud = require('../cloud.js');
 
-const BG_COLOR = '#1a1a2e';
+
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
 
 class EditorEngine {
@@ -1076,7 +1076,12 @@ class EditorEngine {
   render() {
     this.gp.update();
     ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    ctx.fillStyle = BG_COLOR;
+    // 与游玩界面相同的渐变背景：淡紫 → 浅粉 → 米粉
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+    bgGrad.addColorStop(0, '#F0EAFA');
+    bgGrad.addColorStop(0.4, '#FDE8EF');
+    bgGrad.addColorStop(1, '#FDF2F8');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     // 计算提示文字
@@ -1203,7 +1208,7 @@ class EditorEngine {
     let x = 12;
 
     // 列控制 — 手指友好
-    x = this._drawCompactStepper(x, btnY1, btnH, '列', this.gp.cols, 2, 20,
+    x = this._drawCompactStepper(x, btnY1, btnH, '列', this.gp.cols, 2, 15,
       (v) => {
         if (this.gp.pigs.length > 0) {
           this.showToast('有猪的情况下不能改变格子数量');
@@ -1214,7 +1219,7 @@ class EditorEngine {
     x += 12;
 
     // 行控制
-    x = this._drawCompactStepper(x, btnY1, btnH, '行', this.gp.rows, 2, 20,
+    x = this._drawCompactStepper(x, btnY1, btnH, '行', this.gp.rows, 2, 15,
       (v) => {
         if (this.gp.pigs.length > 0) {
           this.showToast('有猪的情况下不能改变格子数量');
@@ -1267,7 +1272,7 @@ class EditorEngine {
     x = 12;
 
     // 直径 stepper（步长 5）
-    x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 10, 100,
+    x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 35, 50,
       (v) => {
         this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
@@ -1395,6 +1400,13 @@ class EditorEngine {
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x, midY);
     x += 30;
+
+    // 当前值
+    ctx.fillStyle = '#FF8C00';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(value), x + 18, midY);
+    x += 36;
 
     // 减号
     ctx.strokeStyle = '#ccc';

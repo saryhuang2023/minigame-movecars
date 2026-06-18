@@ -62,8 +62,8 @@ class PlayingEngine {
     this.steps = 0;
     this._victory = false;
     this._resetCombo();
-    // effectiveWidth = 棋盘卡片内宽（卡片总宽 - 左右内边距），让棋盘在此区域内居中缩放
-    this.gp.effectiveWidth = SCREEN_WIDTH - PADDING * 2 - CARD_PADDING * 2;
+    // effectiveWidth = 全屏宽度，与编辑器保持一致，确保棋盘缩放不变
+    this.gp.effectiveWidth = SCREEN_WIDTH;
     this.loadLevel(lv ? lv.data : null);
     // 记住当前关卡索引，供主界面"开始游戏"使用
     if (databus.currentLevelIndex >= 0) {

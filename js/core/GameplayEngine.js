@@ -96,7 +96,7 @@ class GameplayEngine {
   get collisionStep() { return this.scaledHalfDiameter; }
 
   // 猪身体宽度 = 渲染对齐，碰撞也用这个值
-  get pigBodyWidth() { return this.scaledDiameter; }
+  get pigBodyWidth() { return this.scaledDiameter * 1.3; }
 
   computeHoles() {
     this.holes = [];

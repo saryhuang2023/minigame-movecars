@@ -4,7 +4,6 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
 exports.main = async (event, context) => {
-  const { OPENID } = cloud.getWXContext();
   const { id, name } = event;
 
   try {
@@ -14,7 +13,7 @@ exports.main = async (event, context) => {
     }
     if (name) {
       const res = await db.collection('levels')
-        .where({ _openid: OPENID, name })
+        .where({ name })
         .get();
       if (res.data.length === 0) {
         return { code: -1, msg: '关卡不存在' };
