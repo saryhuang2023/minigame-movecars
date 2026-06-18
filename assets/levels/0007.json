@@ -1,0 +1,187 @@
+{
+  "board": {
+    "cols": 5,
+    "diameter": 36,
+    "hGap": 48,
+    "rows": 11,
+    "vGap": 17
+  },
+  "pigs": [
+    {
+      "angle": 90,
+      "id": 191,
+      "length": 43,
+      "tail": 62
+    },
+    {
+      "angle": 270,
+      "id": 192,
+      "length": 45,
+      "tail": 74
+    },
+    {
+      "angle": 270,
+      "id": 189,
+      "length": 139,
+      "tail": 4
+    },
+    {
+      "angle": 105.72283686772954,
+      "id": 194,
+      "length": 132,
+      "tail": 29
+    },
+    {
+      "angle": 90,
+      "id": 195,
+      "length": 209,
+      "tail": 54
+    },
+    {
+      "angle": 270,
+      "id": 196,
+      "length": 46,
+      "tail": 82
+    },
+    {
+      "angle": 270,
+      "id": 197,
+      "length": 46,
+      "tail": 90
+    },
+    {
+      "angle": 270,
+      "id": 204,
+      "length": 48,
+      "tail": 79
+    },
+    {
+      "angle": 270,
+      "id": 205,
+      "length": 46,
+      "tail": 87
+    },
+    {
+      "angle": 90,
+      "id": 206,
+      "length": 204,
+      "tail": 50
+    },
+    {
+      "angle": 270,
+      "id": 207,
+      "length": 42,
+      "tail": 20
+    },
+    {
+      "angle": 270,
+      "id": 208,
+      "length": 48,
+      "tail": 71
+    },
+    {
+      "angle": 90,
+      "id": 203,
+      "length": 152,
+      "tail": 51
+    },
+    {
+      "angle": 270,
+      "id": 209,
+      "length": 50,
+      "tail": 21
+    },
+    {
+      "angle": 90,
+      "id": 210,
+      "length": 44,
+      "tail": 67
+    },
+    {
+      "angle": 215.3913400790732,
+      "id": 211,
+      "length": 44,
+      "tail": 64
+    },
+    {
+      "angle": 0,
+      "id": 212,
+      "length": 73,
+      "tail": 68
+    },
+    {
+      "angle": 324.6086599209268,
+      "id": 213,
+      "length": 50,
+      "tail": 65
+    },
+    {
+      "angle": 270,
+      "id": 214,
+      "length": 101,
+      "tail": 3
+    },
+    {
+      "angle": 270,
+      "id": 215,
+      "length": 49,
+      "tail": 57
+    },
+    {
+      "angle": 270,
+      "id": 216,
+      "length": 104,
+      "tail": 2
+    },
+    {
+      "angle": 90,
+      "id": 217,
+      "length": 44,
+      "tail": 60
+    },
+    {
+      "angle": 270,
+      "id": 218,
+      "length": 99,
+      "tail": 1
+    },
+    {
+      "angle": 90,
+      "id": 219,
+      "length": 45,
+      "tail": 59
+    },
+    {
+      "angle": 270,
+      "id": 220,
+      "length": 154,
+      "tail": 0
+    },
+    {
+      "angle": 90,
+      "id": 198,
+      "length": 203,
+      "tail": 53
+    },
+    {
+      "angle": 90,
+      "id": 199,
+      "length": 209,
+      "tail": 93
+    },
+    {
+      "angle": 90,
+      "id": 200,
+      "length": 280,
+      "tail": 52
+    },
+    {
+      "angle": 90,
+      "id": 201,
+      "length": 274,
+      "tail": 92
+    }
+  ],
+  "ready": 1,
+  "version": 10
+}
