@@ -328,7 +328,7 @@ class GameplayEngine {
     const r = this.getPigRect(tailIndex, length, rawAngle);
     if (!r) return rawAngle;
     const center = this._headSquareCenter(r);
-    const thresh = this.scaledHalfDiameter;  // R
+    const thresh = this.scaledDiameter * 2 / 3;  // 孔的直径 * 2/3
     const thresh2 = thresh * thresh;
     let bestHole = null;
     let bestDist = Infinity;
@@ -436,7 +436,7 @@ class GameplayEngine {
     const r = this.getPigRect(tailIndex, length, angle);
     if (!r) return -1;
     const center = this._headSquareCenter(r);
-    const thresh = this.scaledHalfDiameter;  // R
+    const thresh = this.scaledDiameter * 2 / 3;  // 孔的直径 * 2/3
     const thresh2 = thresh * thresh;
     let bestIdx = -1, bestDist2 = Infinity;
     for (let i = 0; i < this.holes.length; i++) {

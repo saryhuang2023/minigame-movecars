@@ -684,11 +684,9 @@ class PlayingEngine {
       textAlpha = 0.5 + 0.5 * (progress / 0.25); // 0.25→0.0 映射 1→0.5
     }
 
-    // 计算位置：棋盘卡片内容区左上角 + 偏移
-    const contentX = this._boardCardX + CARD_PADDING;
-    const contentY = this._boardCardY + CARD_PADDING;
-    const wx = contentX + COMBO_WIDGET_OFFSET;
-    const wy = contentY + COMBO_WIDGET_OFFSET;
+    // 计算位置
+    const wx = 0;  // 屏幕最左边贴边
+    const wy = this._boardCardY;  // 上边缘贴着棋盘卡片
     const barWidth = COMBO_WIDGET_W * progress;
 
     ctx.save();
@@ -700,13 +698,19 @@ class PlayingEngine {
     ctx.scale(w.scale, w.scale);
     ctx.translate(-centerX, -centerY);
 
-    // 1. 暗色占位槽（进度条空余部分）
-    ctx.fillStyle = 'rgba(61, 61, 92, 0.4)';
+    // 1. 容器背景 — 主题粉 5%（最底层）
+    ctx.fillStyle = 'rgba(236, 72, 153, 0.05)';
     ctx.beginPath();
     this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
     ctx.fill();
 
-    // 2. 进度条填充（从右向左收拢 — clip 到容器圆角内确保不越界）
+    // 2. 暗色占位槽（进度条空余部分）
+    ctx.fillStyle = 'rgba(61, 61, 92, 0.12)';
+    ctx.beginPath();
+    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
+    ctx.fill();
+
+    // 3. 进度条填充（从右向左收拢 — clip 到容器圆角内确保不越界）
     ctx.save();
     ctx.beginPath();
     this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
@@ -714,12 +718,6 @@ class PlayingEngine {
     ctx.fillStyle = barColor;
     ctx.fillRect(wx, wy, barWidth, COMBO_WIDGET_H);
     ctx.restore();
-
-    // 3. 容器半透明背景 #1E1E2E 30%
-    ctx.fillStyle = 'rgba(30, 30, 46, 0.3)';
-    ctx.beginPath();
-    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
-    ctx.fill();
 
     // 4. 文字（居中覆盖）— 字号调小一号，Y 坐标下移 2px 修正视觉对齐
     ctx.globalAlpha = textAlpha;
