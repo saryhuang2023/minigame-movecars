@@ -1,0 +1,32 @@
+{
+  "board": {
+    "cols": 6,
+    "diameter": 50,
+    "hGap": 30,
+    "rows": 9,
+    "vGap": 20
+  },
+  "pigs": [
+    { "id": 0,  "tail": 0,  "length": 80, "angle": 0 },
+    { "id": 1,  "tail": 2,  "length": 80, "angle": 0 },
+    { "id": 2,  "tail": 4,  "length": 80, "angle": 0 },
+    { "id": 3,  "tail": 6,  "length": 80, "angle": 0 },
+    { "id": 4,  "tail": 8,  "length": 80, "angle": 0 },
+    { "id": 5,  "tail": 12, "length": 70, "angle": 90 },
+    { "id": 6,  "tail": 14, "length": 70, "angle": 90 },
+    { "id": 7,  "tail": 16, "length": 70, "angle": 90 },
+    { "id": 8,  "tail": 24, "length": 80, "angle": 0 },
+    { "id": 9,  "tail": 26, "length": 80, "angle": 0 },
+    { "id": 10, "tail": 28, "length": 80, "angle": 0 },
+    { "id": 11, "tail": 30, "length": 70, "angle": 90 },
+    { "id": 12, "tail": 31, "length": 70, "angle": 90 },
+    { "id": 13, "tail": 32, "length": 70, "angle": 90 },
+    { "id": 14, "tail": 33, "length": 70, "angle": 90 },
+    { "id": 15, "tail": 34, "length": 70, "angle": 90 },
+    { "id": 16, "tail": 42, "length": 80, "angle": 0 },
+    { "id": 17, "tail": 44, "length": 80, "angle": 0 },
+    { "id": 18, "tail": 48, "length": 80, "angle": 0 },
+    { "id": 19, "tail": 50, "length": 80, "angle": 0 },
+    { "id": 20, "tail": 52, "length": 80, "angle": 0 }
+  ]
+}

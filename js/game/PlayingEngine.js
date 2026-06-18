@@ -22,6 +22,7 @@ class PlayingEngine {
     this._victory = false;
     this._exitBtn = null;
     this._nextBtn = null;
+    this._quickPassBtn = null;
   }
 
   activate() {
@@ -94,6 +95,13 @@ class PlayingEngine {
   }
 
   onTouchStart(x, y) {
+    // 快速通过按钮（测试用）
+    if (this._quickPassBtn && x >= this._quickPassBtn.x && x <= this._quickPassBtn.x + this._quickPassBtn.w &&
+        y >= this._quickPassBtn.y && y <= this._quickPassBtn.y + this._quickPassBtn.h) {
+      this._quickPass();
+      return;
+    }
+
     // 顶栏按钮
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
@@ -221,7 +229,11 @@ class PlayingEngine {
       this.steps++;
       // 所有猪都逃脱 → 通关
       if (this.gp.pigs.length === 0) {
-        setTimeout(() => { this._victory = true; }, 400);
+        setTimeout(() => {
+          this._victory = true;
+          // 记录通关关卡
+          this._markCleared();
+        }, 400);
       }
       // 动画结束后清理渲染层
       setTimeout(() => {
@@ -236,6 +248,30 @@ class PlayingEngine {
   restartLevel() {
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
     this._victory = false;
+  }
+
+  _quickPass() {
+    // 测试用：清空所有猪，直接通关
+    this.gp.pigs = [];
+    this.gp.escapeQueue = [];
+    this.gp.flyingPigs = [];
+    this.gp.rebuildOccupancy();
+    this._victory = true;
+    // 也记录通关
+    this._markCleared();
+  }
+
+  _markCleared() {
+    var cleared = [];
+    try {
+      var raw = wx.getStorageSync('clearedLevels');
+      if (raw) cleared = JSON.parse(raw);
+    } catch (e) { cleared = []; }
+    var name = databus.currentLevel ? databus.currentLevel.name : '';
+    if (name && cleared.indexOf(name) === -1) {
+      cleared.push(name);
+      wx.setStorageSync('clearedLevels', JSON.stringify(cleared));
+    }
   }
 
   _goNextLevel() {
@@ -306,6 +342,25 @@ class PlayingEngine {
     ctx.fillStyle = ACCENT_YELLOW;
     ctx.font = 'bold 16px sans-serif';
     ctx.fillText(this.levelName, SCREEN_WIDTH / 2, barY + TOP_BAR_H / 2);
+
+    // 快速通过按钮（测试用）
+    const qpW = 52, qpH = 26;
+    const qpX = SCREEN_WIDTH - 14 - 72 - qpW - 6;
+    const qpY = barY + (TOP_BAR_H - qpH) / 2;
+    this._quickPassBtn = { x: qpX, y: qpY, w: qpW, h: qpH };
+
+    ctx.fillStyle = 'rgba(76, 175, 80, 0.2)';
+    this._roundRect(ctx, qpX, qpY, qpW, qpH, 5);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(76, 175, 80, 0.6)';
+    ctx.lineWidth = 1;
+    this._roundRect(ctx, qpX, qpY, qpW, qpH, 5);
+    ctx.stroke();
+    ctx.fillStyle = '#81C784';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('速通', qpX + qpW / 2, qpY + qpH / 2);
 
     // 步数
     ctx.fillStyle = 'rgba(255,255,255,0.7)';

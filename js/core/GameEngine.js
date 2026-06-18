@@ -448,8 +448,8 @@ class GameEngine {
     ctx.fillText('🎮 开始游戏', cx, mainBtnY + btnH / 2);
 
     // ===== 次按钮：关卡选择 =====
-    var secBtnH = 56;
-    var secBtnY = mainBtnY + btnH + 16;
+    var secBtnH = 52;
+    var secBtnY = mainBtnY + btnH + 12;
     this.drawClaySecondary(btnX, secBtnY, btnW, secBtnH, 28);
 
     ctx.fillStyle = C.primary;
@@ -459,8 +459,8 @@ class GameEngine {
     ctx.fillText('📋 关卡选择', cx, secBtnY + secBtnH / 2);
 
     // ===== 次按钮：竞技大厅（金色边框） =====
-    var arenaBtnH = 56;
-    var arenaBtnY = secBtnY + secBtnH + 16;
+    var arenaBtnH = 52;
+    var arenaBtnY = secBtnY + secBtnH + 12;
     this.drawClaySecondary(btnX, arenaBtnY, btnW, arenaBtnH, 28);
 
     // 覆盖边框为金色（而非默认粉色）
@@ -476,8 +476,8 @@ class GameEngine {
     ctx.fillText('🏆 竞技大厅', cx, arenaBtnY + arenaBtnH / 2);
 
     // ===== 统计卡片 =====
-    var cardY = arenaBtnY + arenaBtnH + 32;
-    var cardH = 80;
+    var cardY = arenaBtnY + arenaBtnH + 20;
+    var cardH = 70;
     this.drawScoreCard(btnX, cardY, btnW, cardH, 22);
 
     // 左边：最高分
@@ -486,47 +486,47 @@ class GameEngine {
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🏆 最高分', leftCX, cardY + 24);
+    ctx.fillText('🏆 最高分', leftCX, cardY + 21);
     ctx.fillStyle = C.textDark;
-    ctx.font = 'bold 30px sans-serif';
-    ctx.fillText('128', leftCX, cardY + 56);
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText('128', leftCX, cardY + 49);
 
     // 分隔线
     var dividerX = btnX + btnW * 0.5;
     ctx.strokeStyle = C.borderLight;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(dividerX, cardY + 16);
-    ctx.lineTo(dividerX, cardY + cardH - 16);
+    ctx.moveTo(dividerX, cardY + 14);
+    ctx.lineTo(dividerX, cardY + cardH - 14);
     ctx.stroke();
 
     // 右边：已通关
+    var clearedCount = 0;
+    try {
+      var clearedRaw = wx.getStorageSync('clearedLevels');
+      if (clearedRaw) clearedCount = JSON.parse(clearedRaw).length;
+    } catch (e) { clearedCount = 0; }
     var rightCX = btnX + btnW * 0.72;
     ctx.fillStyle = C.textMuted;
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🎯 已通关', rightCX, cardY + 24);
+    ctx.fillText('🎯 已通关', rightCX, cardY + 21);
     ctx.fillStyle = C.accent;
-    ctx.font = 'bold 30px sans-serif';
-    ctx.fillText('9 关', rightCX, cardY + 56);
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText(`${clearedCount} 关`, rightCX, cardY + 49);
 
-    // ===== 编辑器按钮（隐藏入口） =====
-    if (this._titleTapCount >= 5) {
-      var editY = cardY + cardH + 20;
-      this.drawClaySecondary(btnX, editY, btnW, 48, 24);
-      ctx.fillStyle = '#F59E0B';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🔧 关卡编辑器', cx, editY + 24);
-    }
-
-    // ===== 底部图标行：分享 + 设置 =====
+    // ===== 底部图标行：分享 + 设置 + 编辑（隐藏入口） =====
     var iconSize = 48;
     var bottomY = SCREEN_HEIGHT - iconSize - 56;
     var shareArea = this.drawIconBtn(cx - iconSize - 24, bottomY, iconSize, '📤', '分享');
     var setArea = this.drawIconBtn(cx + 24, bottomY, iconSize, '⚙️', '设置');
+
+    // 编辑器入口 — 屏幕右下角，连击标题 5 次后显示
+    var editArea = null;
+    if (this._titleTapCount >= 5) {
+      editArea = this.drawIconBtn(SCREEN_WIDTH - iconSize - 20, bottomY, iconSize, '🔧', '编辑');
+    }
 
     // ===== 注册按钮碰撞区域 =====
     var self = this;
@@ -543,10 +543,9 @@ class GameEngine {
     ];
 
     // 编辑器按钮碰撞区域
-    if (this._titleTapCount >= 5) {
-      var editYHit = cardY + cardH + 20;
+    if (editArea) {
       this.menuButtons.push({
-        x: btnX, y: editYHit, w: btnW, h: 48,
+        x: editArea.x, y: editArea.y, w: editArea.w, h: editArea.h,
         action: function() { databus.gameState = 'editor'; }
       });
     }
