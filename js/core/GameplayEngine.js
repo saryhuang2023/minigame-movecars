@@ -191,9 +191,11 @@ class GameplayEngine {
     const collisionHw = hw + this.scaledHalfDiameter;
     // 碰撞区宽度 = 孔直径的 2/3（窄于视觉宽度，更贴近猪身）
     const collisionHh = this.scaledDiameter * 2 / 3 / 2;
-    // 触控区：半高 = 孔半径（和孔的直径一样宽，方便手指点选）
-    const touchHh = this.scaledHalfDiameter;
-    return { cx, cy, hw, hh, collisionHw, collisionHh, touchHw: collisionHw, touchHh, cosL, sinL, cosP, sinP, rad };
+    // 触控区：半高 = 孔半径 × 1.5（孔直径的1.5倍宽，方便手指点选）
+    const touchHh = this.scaledHalfDiameter * 1.5;
+    // 触控区头部额外延伸 = 1/4 孔直径
+    const touchHeadExt = this.scaledHalfDiameter * 0.5;
+    return { cx, cy, hw, hh, collisionHw, collisionHh, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad };
   }
 
   // 矩形头端中心点（用于落孔判定）
@@ -268,7 +270,8 @@ class GameplayEngine {
       // 逆变换到矩形局部坐标
       const lx = px * Math.cos(r.rad) - py * Math.sin(r.rad);
       const ly = px * Math.sin(r.rad) + py * Math.cos(r.rad);
-      if (Math.abs(lx) <= r.touchHw && Math.abs(ly) <= r.touchHh) {
+      // 触控区：头部方向额外延伸 touchHeadExt，尾部方向不变
+      if (lx >= -r.touchHw && lx <= r.touchHw + r.touchHeadExt && Math.abs(ly) <= r.touchHh) {
         // 像素偏移（从尾部 0 → 头部 totalLen）
         const scaledLen = pig.length * this.boardScale;
         const offset = Math.max(0, Math.min(scaledLen, lx + r.hw));
@@ -712,10 +715,11 @@ class GameplayEngine {
       pr.draw(ctx, pig, off.dx, off.dy);
       ctx.globalAlpha = 1;
 
-      // 拖拽中：头部绿点 + 碰撞区棕色虚线框（仅编辑模式）
+      // 拖拽中：头部绿点 + 碰撞区棕色虚线框 + 触控区蓝色虚线框（仅编辑模式）
       if (options.showCollisionBox && isDragPig) {
         pr.drawHeadDot(ctx, pig, off.dx, off.dy);
         pr.drawCollisionBox(ctx, pig, off.dx, off.dy);
+        pr.drawTouchBox(ctx, pig, off.dx, off.dy);
       }
     }
 
@@ -735,11 +739,12 @@ class GameplayEngine {
       pr.draw(ctx, fp, off.dx, off.dy);
     }
 
-    // 选中时：碰撞区棕色虚线框 + 头部绿色圆点（仅编辑模式，无拖拽时）
+    // 选中时：碰撞区棕色虚线框 + 触控区蓝色虚线框 + 头部绿色圆点（仅编辑模式，无拖拽时）
     if (options.showCollisionBox && options.showSelection && this.selectedPigId != null && !this.dragState) {
       const pig = this.pigs.find(p => p.id === this.selectedPigId);
       if (pig) {
         pr.drawCollisionBox(ctx, pig, 0, 0);
+        pr.drawTouchBox(ctx, pig, 0, 0);
         pr.drawHeadDot(ctx, pig, 0, 0);
       }
     }

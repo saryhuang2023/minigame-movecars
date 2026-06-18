@@ -157,6 +157,34 @@ class PigRenderer {
     ctx.restore();
   }
 
+  // ---- 触控区蓝色虚线框（比碰撞区宽，头部额外延伸） ----
+  drawTouchBox(ctx, pig, offDx, offDy) {
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!r) return;
+    const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
+    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
+    const hw = r.touchHw;
+    const hh = r.touchHh;
+    const headExt = r.touchHeadExt;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-r.rad);
+
+    // 触控区矩形：尾部端 hw，头部端 hw + headExt（非对称，需分两半）
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#4A90D9';
+    ctx.lineWidth = 1.5;
+
+    // 尾部半边（-hw → 0）
+    ctx.strokeRect(-hw, -hh, hw, hh * 2);
+    // 头部半边（0 → hw + headExt）
+    ctx.strokeRect(0, -hh, hw + headExt, hh * 2);
+
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
 }
 
 // ============================================================

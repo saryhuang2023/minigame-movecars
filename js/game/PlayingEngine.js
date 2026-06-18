@@ -9,7 +9,7 @@ const TOP_BAR_H = 48;
 const BOTTOM_H = 60;
 const ACCENT_YELLOW = '#FFD700';
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
-const SNAP_ANGLE_PUSH_THRESHOLD = 20; // 对齐角度变化阈值：低于此值执行逃脱
+const SNAP_ANGLE_PUSH_THRESHOLD = 45; // 对齐角度变化阈值：低于此值执行逃脱
 
 class PlayingEngine {
   constructor(input) {
