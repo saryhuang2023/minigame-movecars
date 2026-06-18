@@ -1,32 +1,211 @@
 {
   "board": {
-    "cols": 6,
-    "diameter": 50,
-    "hGap": 30,
-    "rows": 9,
-    "vGap": 20
+    "cols": 5,
+    "diameter": 36,
+    "hGap": 50,
+    "rows": 11,
+    "vGap": 15
   },
   "pigs": [
-    { "id": 0,  "tail": 0,  "length": 80, "angle": 0 },
-    { "id": 1,  "tail": 2,  "length": 80, "angle": 0 },
-    { "id": 2,  "tail": 4,  "length": 80, "angle": 0 },
-    { "id": 3,  "tail": 6,  "length": 80, "angle": 0 },
-    { "id": 4,  "tail": 8,  "length": 80, "angle": 0 },
-    { "id": 5,  "tail": 12, "length": 70, "angle": 90 },
-    { "id": 6,  "tail": 14, "length": 70, "angle": 90 },
-    { "id": 7,  "tail": 16, "length": 70, "angle": 90 },
-    { "id": 8,  "tail": 24, "length": 80, "angle": 0 },
-    { "id": 9,  "tail": 26, "length": 80, "angle": 0 },
-    { "id": 10, "tail": 28, "length": 80, "angle": 0 },
-    { "id": 11, "tail": 30, "length": 70, "angle": 90 },
-    { "id": 12, "tail": 31, "length": 70, "angle": 90 },
-    { "id": 13, "tail": 32, "length": 70, "angle": 90 },
-    { "id": 14, "tail": 33, "length": 70, "angle": 90 },
-    { "id": 15, "tail": 34, "length": 70, "angle": 90 },
-    { "id": 16, "tail": 42, "length": 80, "angle": 0 },
-    { "id": 17, "tail": 44, "length": 80, "angle": 0 },
-    { "id": 18, "tail": 48, "length": 80, "angle": 0 },
-    { "id": 19, "tail": 50, "length": 80, "angle": 0 },
-    { "id": 20, "tail": 52, "length": 80, "angle": 0 }
-  ]
+    {
+      "angle": 270,
+      "id": 89,
+      "length": 149,
+      "tail": 16
+    },
+    {
+      "angle": 34.35755282065006,
+      "id": 90,
+      "length": 84,
+      "tail": 89
+    },
+    {
+      "angle": 90,
+      "id": 91,
+      "length": 44,
+      "tail": 54
+    },
+    {
+      "angle": 270,
+      "id": 92,
+      "length": 91,
+      "tail": 34
+    },
+    {
+      "angle": 270,
+      "id": 93,
+      "length": 47,
+      "tail": 24
+    },
+    {
+      "angle": 325.6424471793499,
+      "id": 94,
+      "length": 46,
+      "tail": 66
+    },
+    {
+      "angle": 270,
+      "id": 95,
+      "length": 55,
+      "tail": 4
+    },
+    {
+      "angle": 90,
+      "id": 96,
+      "length": 36,
+      "tail": 62
+    },
+    {
+      "angle": 270,
+      "id": 97,
+      "length": 43,
+      "tail": 8
+    },
+    {
+      "angle": 270,
+      "id": 98,
+      "length": 86,
+      "tail": 57
+    },
+    {
+      "angle": 270,
+      "id": 99,
+      "length": 202,
+      "tail": 2
+    },
+    {
+      "angle": 270,
+      "id": 101,
+      "length": 145,
+      "tail": 27
+    },
+    {
+      "angle": 90,
+      "id": 102,
+      "length": 41,
+      "tail": 52
+    },
+    {
+      "angle": 90,
+      "id": 103,
+      "length": 43,
+      "tail": 53
+    },
+    {
+      "angle": 270,
+      "id": 104,
+      "length": 45,
+      "tail": 90
+    },
+    {
+      "angle": 214.35755282065,
+      "id": 105,
+      "length": 36,
+      "tail": 38
+    },
+    {
+      "angle": 270,
+      "id": 106,
+      "length": 147,
+      "tail": 70
+    },
+    {
+      "angle": 90,
+      "id": 107,
+      "length": 144,
+      "tail": 33
+    },
+    {
+      "angle": 270,
+      "id": 108,
+      "length": 144,
+      "tail": 69
+    },
+    {
+      "angle": 90,
+      "id": 109,
+      "length": 42,
+      "tail": 51
+    },
+    {
+      "angle": 270,
+      "id": 110,
+      "length": 45,
+      "tail": 87
+    },
+    {
+      "angle": 90,
+      "id": 111,
+      "length": 41,
+      "tail": 50
+    },
+    {
+      "angle": 325.6424471793499,
+      "id": 112,
+      "length": 82,
+      "tail": 83
+    },
+    {
+      "angle": 325.64244717935,
+      "id": 113,
+      "length": 45,
+      "tail": 36
+    },
+    {
+      "angle": 90,
+      "id": 114,
+      "length": 146,
+      "tail": 80
+    },
+    {
+      "angle": 270,
+      "id": 115,
+      "length": 92,
+      "tail": 56
+    },
+    {
+      "angle": 270,
+      "id": 116,
+      "length": 44,
+      "tail": 6
+    },
+    {
+      "angle": 90,
+      "id": 117,
+      "length": 36,
+      "tail": 59
+    },
+    {
+      "angle": 270,
+      "id": 118,
+      "length": 44,
+      "tail": 0
+    },
+    {
+      "angle": 214.35755282065006,
+      "id": 119,
+      "length": 37,
+      "tail": 63
+    },
+    {
+      "angle": 90,
+      "id": 120,
+      "length": 151,
+      "tail": 79
+    },
+    {
+      "angle": 270,
+      "id": 121,
+      "length": 38,
+      "tail": 20
+    },
+    {
+      "angle": 270,
+      "id": 122,
+      "length": 92,
+      "tail": 30
+    }
+  ],
+  "ready": 1,
+  "version": 14
 }
