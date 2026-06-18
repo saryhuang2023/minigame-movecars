@@ -6,9 +6,12 @@ const { ctx, canvas, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const { PigRenderer, roundRect } = require('../render/PigRenderer.js');
 
 // ========== 常量 ==========
-const HOLE_EMPTY = '#C4A882';
-const HOLE_OCCUPIED = '#6B3A20';
-const HOLE_STROKE = 'rgba(255,255,255,0.45)';
+// Claymorphism 风格：格子 = 棋盘上的凹陷引导，非独立视觉元素
+// 用内阴影制造浮雕感，颜色贴近白色但不消失
+const HOLE_EMPTY = '#EAE3EF';       // 空闲格子：淡紫灰 + 内阴影 0.3
+const HOLE_OCCUPIED = '#E8DFF0';    // 已占用：略浅 + 内阴影 0.25
+const HOLE_SHADOW_EMPTY = '#D4C5DF';   // 空闲内阴影边缘色（向 rgba(112,97,120,0.3) 方向）
+const HOLE_SHADOW_OCCUPIED = '#D9CBE8'; // 已占用内阴影边缘色（向 rgba(112,97,120,0.25) 方向）
 const BG_COLOR = '#1a1a2e';
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
@@ -671,17 +674,29 @@ class GameplayEngine {
     const r = this.scaledHalfDiameter;
     const offY = this.topBarH + this.boardOffsetY;
 
-    // 孔位
+    // 孔位（Claymorphism 凹陷效果：径向渐变内阴影）
     for (let i = 0; i < this.holes.length; i++) {
       const h = this.holes[i];
       const occ = this.holeOccupied[i];
       const hx = this.boardOffsetX + h.x, hy = offY + h.y;
+
       ctx.beginPath();
       ctx.arc(hx, hy, r, 0, Math.PI * 2);
+
       if (occ !== -1) {
-        ctx.fillStyle = HOLE_OCCUPIED;
+        // 已占用：浅色 + 弱内阴影，猪身之上隐约可见
+        const grad = ctx.createRadialGradient(hx - 1, hy - 1, r * 0.1, hx, hy, r);
+        grad.addColorStop(0, HOLE_OCCUPIED);
+        grad.addColorStop(0.7, HOLE_OCCUPIED);
+        grad.addColorStop(1, HOLE_SHADOW_OCCUPIED);
+        ctx.fillStyle = grad;
       } else {
-        ctx.fillStyle = HOLE_EMPTY;
+        // 空闲：凹陷引导，内阴影更明显
+        const grad = ctx.createRadialGradient(hx - 1, hy - 1, r * 0.1, hx, hy, r);
+        grad.addColorStop(0, HOLE_EMPTY);
+        grad.addColorStop(0.65, HOLE_EMPTY);
+        grad.addColorStop(1, HOLE_SHADOW_EMPTY);
+        ctx.fillStyle = grad;
       }
       ctx.fill();
     }
