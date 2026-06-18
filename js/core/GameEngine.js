@@ -425,7 +425,7 @@ class GameEngine {
     ctx.font = 'bold 34px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('小猪推推乐', cx, titleY);
+    ctx.fillText('猪了个猪呀', cx, titleY);
 
     ctx.fillStyle = C.textMuted;
     ctx.font = '14px sans-serif';
