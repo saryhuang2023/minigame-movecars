@@ -23,8 +23,17 @@ const CARD_RADIUS = 32;     // 棋盘卡片圆角
 
 const DRAG_THRESHOLD = 20;
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;
-const COMBO_WINDOW = 2000;
-const COMBO_FLOAT_DURATION = 1200;
+const COMBO_WINDOW = 3000;             // 连击窗口（毫秒）
+const COMBO_WIDGET_W = 138;            // 连击组件宽度
+const COMBO_WIDGET_H = 40;             // 连击组件高度
+const COMBO_WIDGET_R = 20;             // 连击组件圆角
+const COMBO_WIDGET_OFFSET = 12;        // 距卡片内容区边缘偏移
+const COMBO_ENTRANCE_DURATION = 200;   // 入场弹性动画时长（毫秒）
+const COMBO_EXPIRE_FLASH = 200;        // 到期闪烁时长（毫秒）
+// 进度条颜色阈值
+const COMBO_COLOR_SAFE = '#4ADE80';   // >50% 绿色
+const COMBO_COLOR_WARN = '#F59E0B';   // 25-50% 黄色
+const COMBO_COLOR_DANGER = '#EF4444'; // <25% 红色
 
 class PlayingEngine {
   constructor(input) {
@@ -40,10 +49,11 @@ class PlayingEngine {
     this._nextBtn = null;
     this._quickPassBtn = null;
     // 连击系统
-    this._comboCount = 0;
-    this._comboTimer = null;
-    this._maxCombo = 0;
-    this._comboFloats = []; // [{count, x, y, startTime, duration}]
+    this._comboCount = 0;           // 当前连击数
+    this._comboTimer = null;        // 重置窗口定时器
+    this._maxCombo = 0;             // 本局最大连击
+    this._comboStartTime = 0;       // 当前连击窗口起始时间
+    this._comboWidget = { visible: false, scale: 1, count: 0, createdAt: 0 };
   }
 
   activate() {
@@ -269,7 +279,7 @@ class PlayingEngine {
       this.steps++;
 
       // 连击系统 ——— 每次逃脱触发
-      this._triggerCombo(headX, headY);
+      this._triggerCombo();
 
       // 所有猪都逃脱 → 通关
       if (this.gp.pigs.length === 0) {
@@ -364,8 +374,8 @@ class PlayingEngine {
     this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
     this.gp.renderBoard(ctx, 0, 0);
 
-    // 3. 连击浮字（棋盘之上、UI 之下）
-    this._renderComboFloats();
+    // 3. 连击组件（棋盘卡片内左上角）
+    this._renderComboWidget();
 
     // 4. 顶栏
     this._drawTopBar(safeTop);
@@ -410,7 +420,7 @@ class PlayingEngine {
   }
 
   _drawTopBar(safeTop) {
-    const barY = safeTop + PADDING;
+    const barY = safeTop + PADDING - 60;
     const barW = this._boardCardW;
 
     // === 返回按钮（左侧）===
@@ -453,12 +463,12 @@ class PlayingEngine {
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.fillText('\u6B65\u6570 ' + this.steps, PADDING + barW - 60, barY + TOP_BAR_H / 2);
+    ctx.fillText('\u6B65\u6570 ' + this.steps, PADDING + barW - 60, barY + TOP_BAR_H / 2 + 80);
 
     // === 速通按钮（最右）===
     const qpW = 40, qpH = 31;
     const qpX = PADDING + barW - qpW;
-    const qpY = barY + (TOP_BAR_H - qpH) / 2;
+    const qpY = barY + (TOP_BAR_H - qpH) / 2 + 80;
     this._quickPassBtn = { x: qpX, y: qpY, w: qpW, h: qpH };
 
     ctx.fillStyle = AMBER;
@@ -527,6 +537,8 @@ class PlayingEngine {
   }
 
   _roundRectPath(ctx, x, y, w, h, r) {
+    // 防止半径超过矩形宽/高的一半，避免 arcTo 坐标异常导致图形越界
+    r = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.lineTo(x + w - r, y);
@@ -612,79 +624,119 @@ class PlayingEngine {
     this._comboCount = 0;
     if (this._comboTimer) { clearTimeout(this._comboTimer); this._comboTimer = null; }
     this._maxCombo = 0;
-    this._comboFloats = [];
+    this._comboStartTime = 0;
+    this._comboWidget = { visible: false, scale: 1, count: 0, createdAt: 0 };
   }
 
-  _triggerCombo(headX, headY) {
+  _triggerCombo() {
     this._comboCount++;
     if (this._comboCount > this._maxCombo) this._maxCombo = this._comboCount;
+    this._comboStartTime = Date.now();
 
     // 重置窗口计时器
     if (this._comboTimer) clearTimeout(this._comboTimer);
     this._comboTimer = setTimeout(() => {
       this._comboCount = 0;
+      this._comboWidget.visible = false;
       this._comboTimer = null;
     }, COMBO_WINDOW);
 
-    // 2 连及以上才展示浮字
+    // 2 连及以上才展示组件
     if (this._comboCount >= 2) {
-      this._comboFloats.push({
-        count: this._comboCount,
-        x: headX,
-        y: headY,
-        startTime: Date.now(),
-        duration: COMBO_FLOAT_DURATION
-      });
+      this._comboWidget.visible = true;
+      this._comboWidget.count = this._comboCount;
+      this._comboWidget.scale = 0;   // 入场从 0 开始
+      this._comboWidget.createdAt = Date.now();
     }
   }
 
-  _renderComboFloats() {
+  _renderComboWidget() {
+    const w = this._comboWidget;
+    if (!w.visible) return;
+
     const now = Date.now();
-    this._comboFloats = this._comboFloats.filter(f => {
-      const elapsed = now - f.startTime;
-      if (elapsed > f.duration) return false;
+    const remaining = COMBO_WINDOW - (now - this._comboStartTime);
+    if (remaining <= 0) return;
 
-      const progress = elapsed / f.duration;
+    const progress = remaining / COMBO_WINDOW;  // 1.0 → 0.0
 
-      // Scale: 0.5 → 1.2 (at 30%) → 1.0
-      let scale;
-      if (progress < 0.3) scale = 0.5 + (1.2 - 0.5) * (progress / 0.3);
-      else scale = 1.2 - (1.2 - 1.0) * ((progress - 0.3) / 0.7);
+    // 入场弹性动画：scale 0→1.15→1.0 持续 200ms
+    const age = now - w.createdAt;
+    if (age < COMBO_ENTRANCE_DURATION) {
+      const t = age / COMBO_ENTRANCE_DURATION;
+      // easeOutBack: overshoot then settle
+      w.scale = 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
+      w.scale = Math.max(0, Math.min(w.scale, 1.15));
+    } else {
+      w.scale = 1;
+    }
 
-      // Alpha: 1 → 0
-      const alpha = clamp(1 - progress, 0, 1);
+    // 进度条颜色
+    let barColor, textAlpha;
+    if (progress > 0.5) {
+      barColor = COMBO_COLOR_SAFE;
+      textAlpha = 1;
+    } else if (progress > 0.25) {
+      barColor = COMBO_COLOR_WARN;
+      textAlpha = 1;
+    } else {
+      barColor = COMBO_COLOR_DANGER;
+      textAlpha = 0.5 + 0.5 * (progress / 0.25); // 0.25→0.0 映射 1→0.5
+    }
 
-      // Y offset: upward 30px
-      const yOffset = progress * 30;
+    // 计算位置：棋盘卡片内容区左上角 + 偏移
+    const contentX = this._boardCardX + CARD_PADDING;
+    const contentY = this._boardCardY + CARD_PADDING;
+    const wx = contentX + COMBO_WIDGET_OFFSET;
+    const wy = contentY + COMBO_WIDGET_OFFSET;
+    const barWidth = COMBO_WIDGET_W * progress;
 
-      // Color & size based on combo count
-      let color, fontSize, shadowColor;
-      if (f.count >= 10) {
-        color = '#EC4899'; fontSize = 36; shadowColor = 'rgba(236,72,153,0.4)';
-      } else if (f.count >= 7) {
-        color = '#EF4444'; fontSize = 28; shadowColor = 'rgba(239,68,68,0.4)';
-      } else if (f.count >= 4) {
-        color = '#F97316'; fontSize = 22; shadowColor = 'rgba(249,115,22,0.4)';
-      } else {
-        color = '#F59E0B'; fontSize = 18; shadowColor = 'rgba(245,158,11,0.4)';
-      }
+    ctx.save();
 
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = color;
-      ctx.font = 'bold ' + Math.floor(fontSize * scale) + 'px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.shadowColor = shadowColor;
-      ctx.shadowBlur = 8;
-      ctx.fillText(f.count + ' 连击！', f.x, f.y - yOffset);
-      ctx.restore();
+    // 入场缩放变换（围绕组件中心）
+    const centerX = wx + COMBO_WIDGET_W / 2;
+    const centerY = wy + COMBO_WIDGET_H / 2;
+    ctx.translate(centerX, centerY);
+    ctx.scale(w.scale, w.scale);
+    ctx.translate(-centerX, -centerY);
 
-      return true;
-    });
+    // 1. 暗色占位槽（进度条空余部分）
+    ctx.fillStyle = 'rgba(61, 61, 92, 0.4)';
+    ctx.beginPath();
+    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
+    ctx.fill();
+
+    // 2. 进度条填充（从右向左收拢 — clip 到容器圆角内确保不越界）
+    ctx.save();
+    ctx.beginPath();
+    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
+    ctx.clip();
+    ctx.fillStyle = barColor;
+    ctx.fillRect(wx, wy, barWidth, COMBO_WIDGET_H);
+    ctx.restore();
+
+    // 3. 容器半透明背景 #1E1E2E 30%
+    ctx.fillStyle = 'rgba(30, 30, 46, 0.3)';
+    ctx.beginPath();
+    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
+    ctx.fill();
+
+    // 4. 文字（居中覆盖）— 字号调小一号，Y 坐标下移 2px 修正视觉对齐
+    ctx.globalAlpha = textAlpha;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('连击 X', wx + 10, wy + COMBO_WIDGET_H / 2 + 2);
+
+    // 数字用金色
+    const labelW = ctx.measureText('连击 X').width;
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText(String(w.count), wx + 10 + labelW + 2, wy + COMBO_WIDGET_H / 2 + 2);
+
+    ctx.restore();
   }
 }
-
-function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 module.exports = PlayingEngine;
