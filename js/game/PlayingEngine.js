@@ -31,6 +31,10 @@ class PlayingEngine {
     this._victory = false;
     this.gp.effectiveWidth = databus.storedScreenWidth;
     this.loadLevel(lv ? lv.data : null);
+    // 记住当前关卡索引，供主界面"开始游戏"使用
+    if (databus.currentLevelIndex >= 0) {
+      wx.setStorageSync('lastLevelIndex', databus.currentLevelIndex);
+    }
     this.input.on('playing', (e) => this.handleEvent(e));
   }
 
@@ -248,6 +252,7 @@ class PlayingEngine {
       const data = JSON.parse(raw);
       databus.currentLevel = { name: next.name, data };
       databus.currentLevelIndex = idx;
+      wx.setStorageSync('lastLevelIndex', idx);
       // 直接加载到当前引擎（gameState 不变，checkStateTransition 不会重新 activate）
       this.levelName = next.name;
       this.loadLevel(data);

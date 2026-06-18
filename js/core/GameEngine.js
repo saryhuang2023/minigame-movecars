@@ -44,18 +44,336 @@ class GameEngine {
     this.loop();
   }
 
+  // ========== 设计常量 ==========
+  // 黏土拟态颜色体系 (Claymorphism — 小猪推推乐品牌色)
+  get COLORS() {
+    return {
+      primary: '#EC4899',      // 蜜桃粉 — 主按钮
+      primaryDark: '#DB2777',   // 深粉 — 按钮底部
+      secondary: '#FFFFFF',     // 白色 — 次按钮底色
+      accent: '#F59E0B',        // 金色 — 强调数字/通关
+      bgTop: '#F0EAFA',         // 天空渐变顶 — 淡紫
+      bgMid: '#FDE8EF',         // 天空渐变中 — 浅粉
+      bgBottom: '#FDF2F8',      // 天空渐变底 — 米粉
+      cardBg: '#FFFFFF',        // 卡片底色
+      textDark: '#0F172A',      // 深色文字
+      textMuted: '#94A3B8',     // 灰色文字
+      borderLight: '#F9D8E6',   // 浅粉边框
+      shadowPink: 'rgba(236, 72, 153, 0.35)',  // 粉色投影
+      shadowPinkLight: 'rgba(236, 72, 153, 0.12)', // 浅粉投影
+    };
+  }
+
+  // ========== Canvas 绘图工具 ==========
+
+  /**
+   * 画黏土拟态主按钮（Claymorphism CTA）
+   * 双层阴影：外扩散投影 + 内高光，营造 3D 立体手感
+   */
+  drawClayButton(x, y, w, h, r) {
+    var C = this.COLORS;
+
+    // 第1层：外扩散投影（tinted outer shadow）
+    ctx.save();
+    ctx.shadowColor = C.shadowPink;
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 8;
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = C.primary;
+    ctx.fill();
+    ctx.restore();
+
+    // 第2层：深压感阴影（近身紧贴投影）
+    ctx.save();
+    ctx.shadowColor = 'rgba(236, 72, 153, 0.18)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 4;
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = C.primary;
+    ctx.fill();
+    ctx.restore();
+
+    // 第3层：主体填充 + 内高光
+    // 底部稍深，模拟体积
+    var bottomGrad = ctx.createLinearGradient(0, y + h * 0.3, 0, y + h);
+    bottomGrad.addColorStop(0, 'rgba(219, 39, 119, 0)');   // 透明
+    bottomGrad.addColorStop(1, 'rgba(219, 39, 119, 0.4)');  // 深粉40%
+
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = C.primary;
+    ctx.fill();
+
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = bottomGrad;
+    ctx.fill();
+
+    // 内高光（顶部白色描边，模拟3D凸起）
+    ctx.save();
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 2;
+    this.roundRect(ctx, x + 2, y + 2, w - 4, h - 4, r - 1);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * 画黏土拟态次按钮（白底 + 粉色边框 + 柔投影）
+   */
+  drawClaySecondary(x, y, w, h, r) {
+    var C = this.COLORS;
+
+    // 柔投影
+    ctx.save();
+    ctx.shadowColor = C.shadowPinkLight;
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 4;
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = C.secondary;
+    ctx.fill();
+    ctx.restore();
+
+    // 主体白色填充
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = C.secondary;
+    ctx.fill();
+
+    // 内高光
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, x + 2, y + 2, w - 4, h - 4, r - 1);
+    ctx.stroke();
+
+    // 外边框（粉色3px厚描边 — 黏土拟态特征）
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.strokeStyle = C.borderLight;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  /**
+   * 画统计数字卡片
+   */
+  drawScoreCard(x, y, w, h, r) {
+    var C = this.COLORS;
+
+    // 柔投影
+    ctx.save();
+    ctx.shadowColor = 'rgba(236, 72, 153, 0.08)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 3;
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = C.cardBg;
+    ctx.fill();
+    ctx.restore();
+
+    // 白色卡片主体
+    this.roundRect(ctx, x, y, w, h, r);
+    ctx.fillStyle = C.cardBg;
+    ctx.fill();
+
+    // 微内高光
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, x + 2, y + 2, w - 4, h - 4, r - 1);
+    ctx.stroke();
+  }
+
+  /**
+   * 画底部图标按钮（图标 + 文字标签）
+   */
+  drawIconBtn(x, y, iconSize, emoji, label) {
+    var C = this.COLORS;
+
+    // 图标圆形背景
+    var cx = x + iconSize / 2;
+    var cy = y + iconSize / 2;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(236, 72, 153, 0.08)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = C.cardBg;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = C.cardBg;
+    ctx.fill();
+
+    // Emoji
+    ctx.fillStyle = '#333';
+    ctx.font = Math.round(iconSize * 0.45) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, cx, cy);
+
+    // 标签文字
+    if (label) {
+      ctx.fillStyle = C.textMuted;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(label, cx, cy + iconSize / 2 + 6);
+    }
+
+    // 返回整个按钮的碰撞区域
+    return { x: x, y: y, w: iconSize, h: iconSize + 22 };
+  }
+
+  /**
+   * 画猪鼻子 Logo
+   */
+  drawPigNoseLogo(cx, cy, size) {
+    var C = this.COLORS;
+
+    // Logo 圆角方形背景（渐变色）
+    var r = size * 0.28;
+    ctx.save();
+    ctx.shadowColor = 'rgba(236, 72, 153, 0.2)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 6;
+    var grad = ctx.createLinearGradient(cx, cy - size / 2, cx, cy + size / 2);
+    grad.addColorStop(0, '#FFC3D8');
+    grad.addColorStop(1, '#EC4899');
+    this.roundRect(ctx, cx - size / 2, cy - size / 2, size, size, r);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+
+    // 立体感：底部加深 + 顶部高光
+    var bottomGrad = ctx.createLinearGradient(0, cy - size * 0.1, 0, cy + size / 2);
+    bottomGrad.addColorStop(0, 'rgba(219, 39, 119, 0)');
+    bottomGrad.addColorStop(1, 'rgba(219, 39, 119, 0.35)');
+    this.roundRect(ctx, cx - size / 2, cy - size / 2, size, size, r);
+    ctx.fillStyle = bottomGrad;
+    ctx.fill();
+
+    // 顶部高光
+    ctx.save();
+    this.roundRect(ctx, cx - size / 2, cy - size / 2, size, size, r);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 2;
+    this.roundRect(ctx, cx - size / 2 + 2, cy - size / 2 + 2, size - 4, size - 4, r - 1);
+    ctx.stroke();
+    ctx.restore();
+
+    // 猪鼻子本体（椭圆）
+    var noseW = size * 0.55;
+    var noseH = size * 0.35;
+    ctx.fillStyle = '#F472B6';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, noseW / 2, noseH / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 鼻孔（两个深粉色圆）
+    var nostrilR = size * 0.065;
+    var nostrilGap = size * 0.13;
+    ctx.fillStyle = '#BE185D';
+    ctx.beginPath();
+    ctx.arc(cx - nostrilGap, cy, nostrilR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + nostrilGap, cy, nostrilR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 鼻孔高光点
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.beginPath();
+    ctx.arc(cx - nostrilGap - 1, cy - 2, nostrilR * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + nostrilGap - 1, cy - 2, nostrilR * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // ========== 菜单 ==========
+
+  /**
+   * "开始游戏"：直接读取上次游玩的关卡并开始
+   */
+  startLastLevel() {
+    var fs = wx.getFileSystemManager();
+    var levelIndex = 0;
+    var projectLevels = [];
+
+    // 读取关卡索引文件
+    try {
+      var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
+      var indexData = JSON.parse(indexRaw);
+      // 兼容两种格式：纯数组 或 { files: [...] }
+      var files = Array.isArray(indexData) ? indexData : (indexData.files || []);
+      projectLevels = [];
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        var file = typeof f === 'string' ? f : f.file;
+        if (!file || file === 'index.json' || !file.endsWith('.json')) continue;
+        var name = file.replace('.json', '');
+        var extra = typeof f === 'object' ? Object.assign({}, f) : {};
+        delete extra.file;
+        projectLevels.push(Object.assign({ name: name, file: file }, extra));
+      }
+    } catch (e) {
+      console.warn('[GameEngine] 读取 index.json 失败:', e);
+      // 降级：跳转关卡选择
+      databus.gameState = 'levelSelect';
+      return;
+    }
+
+    if (projectLevels.length === 0) {
+      wx.showToast({ title: '没有关卡', icon: 'none', duration: 1500 });
+      return;
+    }
+
+    // 读取上次关卡索引
+    try {
+      var saved = wx.getStorageSync('lastLevelIndex');
+      if (saved !== '' && saved !== undefined && saved !== null) {
+        levelIndex = Math.min(parseInt(saved, 10), projectLevels.length - 1);
+        levelIndex = Math.max(levelIndex, 0);
+      }
+    } catch (e) {
+      levelIndex = 0;
+    }
+
+    var lv = projectLevels[levelIndex];
+    try {
+      var raw = fs.readFileSync('assets/levels/' + lv.file, 'utf8');
+      var data = JSON.parse(raw);
+      databus.currentLevel = { name: lv.name, data: data };
+      databus.currentLevelIndex = levelIndex;
+      databus.projectLevels = projectLevels;
+      databus.returnState = 'menu';
+      databus.gameState = 'playing';
+    } catch (err) {
+      console.warn('[GameEngine] 加载关卡 ' + lv.file + ' 失败:', err);
+      wx.showToast({ title: '加载关卡失败', icon: 'none', duration: 1500 });
+    }
+  }
+
   setupMenuInput() {
     this.input.on('menu', (e) => {
       if (e.type === 'touchstart' && e.touches[0]) {
-        const t = e.touches[0];
+        var t = e.touches[0];
 
-        // 标题连击检测（5 次解锁编辑器入口）
+        // 标题连击检测（5 次解锁编辑器入口 — 点击猪鼻Logo区域）
         if (this._titleTapCount < 5) {
-          const titleW = 180, titleH = 44;
-          const titleX = (SCREEN_WIDTH - titleW) / 2;
-          const titleY = databus.safeTop + 40 - titleH / 2;
-          if (t.x >= titleX && t.x <= titleX + titleW &&
+          var titleX = this._titleHitX;
+          var titleY = this._titleHitY;
+          var titleW = this._titleHitW || 120;
+          var titleH = this._titleHitH || 120;
+          if (titleX !== undefined && t.x >= titleX && t.x <= titleX + titleW &&
               t.y >= titleY && t.y <= titleY + titleH) {
             this._titleTapCount++;
             if (this._titleTapCount >= 5) {
@@ -65,7 +383,8 @@ class GameEngine {
           }
         }
 
-        for (const btn of this.menuButtons) {
+        for (var i = 0; i < this.menuButtons.length; i++) {
+          var btn = this.menuButtons[i];
           if (t.x >= btn.x && t.x <= btn.x + btn.w &&
               t.y >= btn.y && t.y <= btn.y + btn.h) {
             if (btn.action) btn.action();
@@ -77,95 +396,160 @@ class GameEngine {
   }
 
   renderMenu() {
-    const safeTop = databus.safeTop;
-    const titleY = safeTop + 40;
+    var C = this.COLORS;
+    var safeTop = databus.safeTop;
+    var cx = SCREEN_WIDTH / 2;
 
-    // 标题
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 40px sans-serif';
+    // ===== 天空渐变背景 =====
+    var bgGrad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+    bgGrad.addColorStop(0, C.bgTop);
+    bgGrad.addColorStop(0.4, C.bgMid);
+    bgGrad.addColorStop(1, C.bgBottom);
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    // ===== 猪鼻子 Logo =====
+    var logoSize = 72;
+    var logoY = safeTop + 70;
+    this.drawPigNoseLogo(cx, logoY, logoSize);
+
+    // 记录标题碰撞区域（用于5连击解锁编辑器）
+    this._titleHitX = cx - logoSize / 2;
+    this._titleHitY = logoY - logoSize / 2;
+    this._titleHitW = logoSize;
+    this._titleHitH = logoSize;
+
+    // ===== 游戏标题 + 副标题 =====
+    var titleY = logoY + logoSize / 2 + 28;
+    ctx.fillStyle = C.textDark;
+    ctx.font = 'bold 34px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('猪了个猪呀', SCREEN_WIDTH / 2, titleY);
+    ctx.fillText('小猪推推乐', cx, titleY);
 
-    // 三图拼接小猪 — 屏幕正中央，等比例缩放至屏宽 65%
-    const pigSize = getComposedPigSize();
-    let pigX = 0, pigY = 0, pigDrawH = 0, pigW = 0;
-    if (pigSize) {
-      const scale = (SCREEN_WIDTH * 0.65) / pigSize.naturalW;
-      pigW = pigSize.naturalW * scale;
-      pigDrawH = pigSize.naturalH * scale;
-      pigX = (SCREEN_WIDTH - pigW) / 2;
-      pigY = (SCREEN_HEIGHT - pigDrawH) / 2;
+    ctx.fillStyle = C.textMuted;
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('推一推，消除烦恼', cx, titleY + 22);
 
-      // 漂浮效果
-      const floatOffset = Math.sin(databus.frame * 0.16) * 2.5;
-      const swayAngle = Math.sin(databus.frame * 0.02) * 1.5;
-      pigY += floatOffset;
+    // ===== 主按钮：开始游戏（黏土拟态） =====
+    var btnW = SCREEN_WIDTH - 64; // 两侧各留32px
+    var btnH = 64;
+    var btnX = (SCREEN_WIDTH - btnW) / 2;
+    var mainBtnY = titleY + 80;
+    this.drawClayButton(btnX, mainBtnY, btnW, btnH, 32);
 
-      const cx = pigX + pigW / 2;
-      const cy = pigY + pigDrawH / 2;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(swayAngle * Math.PI / 180);
-      ctx.translate(-cx, -cy);
-      drawComposedPig(ctx, pigX, pigY, scale);
-      ctx.restore();
-    }
+    // 按钮文字
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🎮 开始游戏', cx, mainBtnY + btnH / 2);
 
-    // 分享按钮
-    const shareW = 80, shareH = 34;
-    const shareX = (SCREEN_WIDTH - shareW) / 2;
-    const shareY = titleY + 28;
-    this.menuButtons = [{
-      x: shareX, y: shareY, w: shareW, h: shareH,
-      action: () => {
-        wx.shareAppMessage({ title: '猪了个猪呀，快来一起推猪猪！' });
-      }
-    }];
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    this.roundRect(ctx, shareX, shareY, shareW, shareH, 8);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 1;
-    this.roundRect(ctx, shareX, shareY, shareW, shareH, 8);
+    // ===== 次按钮：关卡选择 =====
+    var secBtnH = 56;
+    var secBtnY = mainBtnY + btnH + 16;
+    this.drawClaySecondary(btnX, secBtnY, btnW, secBtnH, 28);
+
+    ctx.fillStyle = C.primary;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📋 关卡选择', cx, secBtnY + secBtnH / 2);
+
+    // ===== 次按钮：竞技大厅（金色边框） =====
+    var arenaBtnH = 56;
+    var arenaBtnY = secBtnY + secBtnH + 16;
+    this.drawClaySecondary(btnX, arenaBtnY, btnW, arenaBtnH, 28);
+
+    // 覆盖边框为金色（而非默认粉色）
+    ctx.strokeStyle = '#FBE0B3';
+    ctx.lineWidth = 3;
+    this.roundRect(ctx, btnX, arenaBtnY, btnW, arenaBtnH, 28);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.font = '13px sans-serif';
+
+    ctx.fillStyle = '#D97706';
+    ctx.font = 'bold 18px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🔗 分享', shareX + shareW / 2, shareY + shareH / 2);
+    ctx.fillText('🏆 竞技大厅', cx, arenaBtnY + arenaBtnH / 2);
 
-    // 按钮 — 底部区域
-    const btnW = 200, btnH = 52;
-    const startX = (SCREEN_WIDTH - btnW) / 2;
-    const btnBaseY = SCREEN_HEIGHT * 0.78;
+    // ===== 统计卡片 =====
+    var cardY = arenaBtnY + arenaBtnH + 32;
+    var cardH = 80;
+    this.drawScoreCard(btnX, cardY, btnW, cardH, 22);
 
-    this.addMenuBtn(startX, btnBaseY, btnW, btnH, '开始游戏', '#4CAF50', () => {
-      databus.gameState = 'levelSelect';
-    });
+    // 左边：最高分
+    var leftCX = btnX + btnW * 0.28;
+    ctx.fillStyle = C.textMuted;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🏆 最高分', leftCX, cardY + 24);
+    ctx.fillStyle = C.textDark;
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText('128', leftCX, cardY + 56);
 
-    // 关卡编辑器（隐藏入口：点击标题 5 次解锁）
+    // 分隔线
+    var dividerX = btnX + btnW * 0.5;
+    ctx.strokeStyle = C.borderLight;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(dividerX, cardY + 16);
+    ctx.lineTo(dividerX, cardY + cardH - 16);
+    ctx.stroke();
+
+    // 右边：已通关
+    var rightCX = btnX + btnW * 0.72;
+    ctx.fillStyle = C.textMuted;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🎯 已通关', rightCX, cardY + 24);
+    ctx.fillStyle = C.accent;
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText('9 关', rightCX, cardY + 56);
+
+    // ===== 编辑器按钮（隐藏入口） =====
     if (this._titleTapCount >= 5) {
-      this.addMenuBtn(startX, btnBaseY + 64, btnW, btnH, '关卡编辑器', '#FF9800', () => {
-        databus.gameState = 'editor';
-      });
-    }
-
-    for (const btn of this.menuButtons) {
-      if (!btn.text) continue; // 分享按钮已单独绘制
-      ctx.fillStyle = btn.color;
-      this.roundRect(ctx, btn.x, btn.y, btn.w, btn.h, 10);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 18px sans-serif';
+      var editY = cardY + cardH + 20;
+      this.drawClaySecondary(btnX, editY, btnW, 48, 24);
+      ctx.fillStyle = '#F59E0B';
+      ctx.font = 'bold 16px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 2);
+      ctx.fillText('🔧 关卡编辑器', cx, editY + 24);
     }
-  }
 
-  addMenuBtn(x, y, w, h, text, color, action) {
-    this.menuButtons.push({ x, y, w, h, text, color, action });
+    // ===== 底部图标行：分享 + 设置 =====
+    var iconSize = 48;
+    var bottomY = SCREEN_HEIGHT - iconSize - 56;
+    var shareArea = this.drawIconBtn(cx - iconSize - 24, bottomY, iconSize, '📤', '分享');
+    var setArea = this.drawIconBtn(cx + 24, bottomY, iconSize, '⚙️', '设置');
+
+    // ===== 注册按钮碰撞区域 =====
+    var self = this;
+    this.menuButtons = [
+      { x: btnX, y: mainBtnY, w: btnW, h: btnH, action: function() { self.startLastLevel(); } },
+      { x: btnX, y: secBtnY, w: btnW, h: secBtnH, action: function() { databus.gameState = 'levelSelect'; } },
+      { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH, action: function() { /* 竞技大厅 — 暂未开放 */ } },
+      { x: shareArea.x, y: shareArea.y, w: shareArea.w, h: shareArea.h,
+        action: function() { wx.shareAppMessage({ title: '猪了个猪呀，快来一起推猪猪！' }); }
+      },
+      { x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
+        action: function() { wx.showToast({ title: '设置', icon: 'none', duration: 1000 }); }
+      }
+    ];
+
+    // 编辑器按钮碰撞区域
+    if (this._titleTapCount >= 5) {
+      var editYHit = cardY + cardH + 20;
+      this.menuButtons.push({
+        x: btnX, y: editYHit, w: btnW, h: 48,
+        action: function() { databus.gameState = 'editor'; }
+      });
+    }
   }
 
   // ========== 主循环 ==========
@@ -230,15 +614,13 @@ class GameEngine {
   }
 
   drawBackground() {
-    if (this.bgImg.width) {
-      ctx.drawImage(this.bgImg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    } else {
-      const grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
-      grad.addColorStop(0, '#1a1a2e');
-      grad.addColorStop(1, '#16213e');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    }
+    var C = this.COLORS;
+    var grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+    grad.addColorStop(0, C.bgTop);
+    grad.addColorStop(0.4, C.bgMid);
+    grad.addColorStop(1, C.bgBottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
   }
 
   loop() {
