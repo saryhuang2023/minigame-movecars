@@ -202,13 +202,14 @@ class PlayingEngine {
 
       // 对齐归位后，仅角度变化 < 阈值时执行逃脱
       if (pig && this._shouldPushAfterSnap) {
-        this.tryPushPig(pigId);
+        this.tryPushPig(pigId, { silentBlock: true });
       }
       this._shouldPushAfterSnap = false;
     }
   }
 
-  tryPushPig(pigId) {
+  tryPushPig(pigId, opts) {
+    opts = opts || {};
     const result = this.gp.canPushPig(pigId);
     const pig = this.gp.pigs.find(p => p.id === pigId);
     if (!pig) return;
@@ -241,7 +242,9 @@ class PlayingEngine {
         this.gp.animations = this.gp.animations.filter(a => a.pigId !== pigId);
       }, 6500);
     } else if (result.collidedPigId !== undefined) {
-      this.gp.triggerCollisionEffect(result.collidedPigId);
+      if (!opts.silentBlock) {
+        this.gp.triggerCollisionEffect(result.collidedPigId);
+      }
     }
   }
 
