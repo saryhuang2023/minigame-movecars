@@ -167,6 +167,7 @@ class PlayingEngine {
         // 记录松手时手指的真实方向（未受拖拽追逐/落孔修正的原始角度）
         const releaseAngle = ds.targetAngle;
         // 三点共线对齐归位
+        this.gp.rebuildOccupancy();
         const snapped = this.gp.snapAlignPig(ds.tailIndex, pig.length, ds.lastValid.angle, pigId);
         if (snapped) {
           pig.length = snapped.length;

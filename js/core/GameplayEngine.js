@@ -355,43 +355,73 @@ class GameplayEngine {
     const tailHole = this.holes[tailIndex];
     if (!tailHole) return null;
 
-    // 找到离头部最近的未占用孔（跳过尾孔 + 被其他猪占用的孔）
-    let bestIdx = -1, bestD2 = Infinity;
+    // 收集所有候选头孔（未被其他猪占用，按距离排序）
+    const candidates = [];
     for (let i = 0; i < this.holes.length; i++) {
       if (i === tailIndex) continue;
       if (this.holeOccupied[i] !== -1 && this.holeOccupied[i] !== excludeId) continue;
       const dx = this.holes[i].x - headCenter.x;
       const dy = this.holes[i].y - headCenter.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+      candidates.push({ idx: i, d2: dx * dx + dy * dy });
     }
-    if (bestIdx < 0) return null;
+    candidates.sort((a, b) => a.d2 - b.d2);
 
-    // 计算尾孔 → 最近孔的精确角度（三点共线）
-    const bestHole = this.holes[bestIdx];
-    let snapAngle = Math.atan2(-(bestHole.y - tailHole.y), bestHole.x - tailHole.x) * 180 / Math.PI;
-    if (snapAngle < 0) snapAngle += 360;
+    // 对每个候选头孔，尝试对齐并校验全孔占用（避免尾孔/中间孔冲突）
+    for (const cand of candidates) {
+      const bestHole = this.holes[cand.idx];
+      let snapAngle = Math.atan2(-(bestHole.y - tailHole.y), bestHole.x - tailHole.x) * 180 / Math.PI;
+      if (snapAngle < 0) snapAngle += 360;
 
-    // 尝试让头部真正落孔（优先原长度）
-    if (this.findHeadHole(tailIndex, length, snapAngle) >= 0) {
-      return { tailIndex, length, angle: snapAngle };
+      // 尝试原长度
+      if (this.findHeadHole(tailIndex, length, snapAngle) >= 0) {
+        if (this._checkConfigValid(tailIndex, length, snapAngle, excludeId)) {
+          return { tailIndex, length, angle: snapAngle };
+        }
+      }
+      // 缩短
+      for (let dl = -1; dl >= -5; dl--) {
+        const tryLen = length + dl;
+        if (tryLen < 1) break;
+        if (this.findHeadHole(tailIndex, tryLen, snapAngle) >= 0) {
+          if (this._checkConfigValid(tailIndex, tryLen, snapAngle, excludeId)) {
+            return { tailIndex, length: tryLen, angle: snapAngle };
+          }
+        }
+      }
+      // 加长
+      for (let dl = 1; dl <= 5; dl++) {
+        const tryLen = length + dl;
+        if (this.findHeadHole(tailIndex, tryLen, snapAngle) >= 0) {
+          if (this._checkConfigValid(tailIndex, tryLen, snapAngle, excludeId)) {
+            return { tailIndex, length: tryLen, angle: snapAngle };
+          }
+        }
+      }
+      // 该候选头孔在任意长度下头都无法落孔 → 跳过，试下一个
     }
-    for (let dl = -1; dl >= -5; dl--) {
-      const tryLen = length + dl;
-      if (tryLen < 1) break;
-      if (this.findHeadHole(tailIndex, tryLen, snapAngle) >= 0) {
-        return { tailIndex, length: tryLen, angle: snapAngle };
+
+    return null;
+  }
+
+  // 检查配置是否合法（孔位占用 + OBB 碰撞），使用 getPigOccupiedHoles 而非连续索引假设
+  _checkConfigValid(tailIndex, length, angle, excludeId) {
+    // ① 孔位占用：计算猪真正占据的孔（OBB 几何，处理对角方向）
+    const occ = this.getPigOccupiedHoles(tailIndex, length, angle);
+    for (const hi of occ) {
+      if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== excludeId) {
+        return false;
       }
     }
-    for (let dl = 1; dl <= 5; dl++) {
-      const tryLen = length + dl;
-      if (this.findHeadHole(tailIndex, tryLen, snapAngle) >= 0) {
-        return { tailIndex, length: tryLen, angle: snapAngle };
-      }
+    // ② OBB 碰撞：检测与所有其他猪的矩形碰撞
+    const pr = this.getPigRect(tailIndex, length, angle);
+    if (!pr) return false;
+    for (const other of this.pigs) {
+      if (other.id === excludeId) continue;
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+      if (!ob) continue;
+      if (this.obbIntersect(pr, ob)) return false;
     }
-
-    // 长度对不上孔也不管了，角度优先 —— 三点共线对齐
-    return { tailIndex, length, angle: snapAngle };
+    return true;
   }
 
   // ============================================================

@@ -413,6 +413,7 @@ class EditorEngine {
     if (this.gp.dragState.type === 'rotate') {
       const pig = this.gp.pigs.find(p => p.id === this.gp.dragState.pigId);
       if (pig && lv) {
+        this.gp.rebuildOccupancy();
         const snapped = this._snapWithLengthFallback(
           this.gp.dragState.tailIndex, pig.length, lv.angle, pig.id
         );
@@ -764,7 +765,7 @@ class EditorEngine {
 
   getDefaultLevelData() {
     return {
-      board: { cols: 5, rows: 5, hGap: 10, vGap: 10, diameter: 30 },
+      board: { cols: 3, hGap: 60, rows: 5, vGap: 20, diameter: 50 },
       pigs: [],
       ready: 0
     };
