@@ -1099,7 +1099,7 @@ class EditorEngine {
     this.gp.renderBoard(ctx, { hintText, showSelection: true, showCollisionBox: true });
     if (this.showRedFrame) this._renderEffectiveArea();
     this.renderTopBar();
-    this.renderWidthPanel();
+    // this.renderWidthPanel(); // 屏幕宽度面板暂时隐藏
     this.renderBottomStrip();
     this.renderToast();
 
@@ -1271,31 +1271,31 @@ class EditorEngine {
 
     x = 12;
 
-    // 直径 stepper（步长 5）
+    // 直径 stepper（步长 2）
     x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 30, 50,
       (v) => {
         this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
-      }, 5);
+      }, 2);
     x += 12;
 
-    // 横向孔间距 stepper（步长 5）
+    // 横向孔间距 stepper（步长 2）
     x = this._drawCompactStepper(x, btnY2, btnH, '横距', this.gp.hGap, 0, 60,
       (v) => {
         this.gp.hGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
-      }, 5);
+      }, 2);
     x += 12;
 
-    // 纵向孔间距 stepper（步长 5）
+    // 纵向孔间距 stepper（步长 2）
     x = this._drawCompactStepper(x, btnY2, btnH, '纵距', this.gp.vGap, 0, 60,
       (v) => {
         this.gp.vGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
-      }, 5);
+      }, 2);
 
     // ============================
     // 关卡管理

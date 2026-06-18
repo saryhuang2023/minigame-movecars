@@ -189,16 +189,23 @@ class GameplayEngine {
     // 垂直轴
     const cosP = Math.sin(rad);
     const sinP = Math.cos(rad);
-    // collisionHw = OBB 矩形覆盖整头猪（含头部半圆），用于碰撞检测
-    // hw 仅覆盖矩形身体部分，供渲染和落孔判定使用
-    const collisionHw = hw + this.scaledHalfDiameter;
-    // 碰撞区宽度 = 孔直径的 2/3（窄于视觉宽度，更贴近猪身）
-    const collisionHh = this.scaledDiameter * 2 / 3 / 2;
+    // 胶囊碰撞体（矩形身体 + 两端半圆，消除 OBB 旋转尖角误判）
+    // 胶囊半径 = 孔直径的 1/3（与旧版 collisionHh 一致，窄于视觉宽度）
+    const capRadius = this.scaledDiameter / 3;
+    // 胶囊线段端点（尾部孔心 → 头部正方形中心）
+    const capTailX = tail.x;
+    const capTailY = tail.y;
+    const capHeadX = cx + hw * cosL;
+    const capHeadY = cy + hw * sinL;
     // 触控区：半高 = 孔半径 × 1.5（孔直径的1.5倍宽，方便手指点选）
     const touchHh = this.scaledHalfDiameter * 1.5;
     // 触控区头部额外延伸 = 1/4 孔直径
     const touchHeadExt = this.scaledHalfDiameter * 0.5;
-    return { cx, cy, hw, hh, collisionHw, collisionHh, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad };
+    // 保留 OBB 数据供触控和兼容代码使用
+    const collisionHw = hw + this.scaledHalfDiameter;
+    const collisionHh = capRadius;
+    return { cx, cy, hw, hh, collisionHw, collisionHh, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,
+      capTailX, capTailY, capHeadX, capHeadY, capRadius };
   }
 
   // 矩形头端中心点（用于落孔判定）
@@ -212,7 +219,70 @@ class GameplayEngine {
     };
   }
 
-  // ---- OBB 碰撞（分离轴定理） ----
+  // ---- 胶囊碰撞体（矩形 + 两端半圆） ----
+  // 替换 OBB SAT 碰撞，消除旋转时矩形尖角误判
+
+  // 点到线段最近点 + 距离平方
+  _pointToSegment(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) {
+      const ex = px - ax, ey = py - ay;
+      return { t: 0, dist2: ex * ex + ey * ey, cx: ax, cy: ay };
+    }
+    let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const cx = ax + t * dx, cy = ay + t * dy;
+    const ex = px - cx, ey = py - cy;
+    return { t, dist2: ex * ex + ey * ey, cx, cy };
+  }
+
+  // 线段到线段最近点对（距离平方）
+  _segmentSegmentClosest(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
+    const dax = ax2 - ax1, day = ay2 - ay1;
+    const dbx = bx2 - bx1, dby = by2 - by1;
+    // 检查端点对端点
+    let bestDist2 = Infinity;
+    let best = { ax: 0, ay: 0, bx: 0, by: 0 };
+    const testPt = (px, py) => {
+      const r = this._pointToSegment(px, py, ax1, ay1, ax2, ay2);
+      if (r.dist2 < bestDist2) {
+        bestDist2 = r.dist2;
+        best = { ax: r.cx, ay: r.cy, bx: px, by: py };
+      }
+    };
+    // B 端点 → A 线段
+    testPt(bx1, by1);
+    testPt(bx2, by2);
+    // A 端点 → B 线段
+    const revTest = (px, py) => {
+      const r = this._pointToSegment(px, py, bx1, by1, bx2, by2);
+      if (r.dist2 < bestDist2) {
+        bestDist2 = r.dist2;
+        best = { ax: px, ay: py, bx: r.cx, by: r.cy };
+      }
+    };
+    revTest(ax1, ay1);
+    revTest(ax2, ay2);
+    return best;
+  }
+
+  _capsuleIntersect(a, b) {
+    const cp = this._segmentSegmentClosest(
+      a.capTailX, a.capTailY, a.capHeadX, a.capHeadY,
+      b.capTailX, b.capTailY, b.capHeadX, b.capHeadY
+    );
+    const dx = cp.ax - cp.bx, dy = cp.ay - cp.by;
+    const r = a.capRadius + b.capRadius;
+    return dx * dx + dy * dy <= r * r;
+  }
+
+  _capsuleContainsPoint(r, px, py) {
+    const cp = this._pointToSegment(px, py, r.capTailX, r.capTailY, r.capHeadX, r.capHeadY);
+    return cp.dist2 <= r.capRadius * r.capRadius;
+  }
+
+  // ---- OBB 碰撞（分离轴定理） — 保留给触控检测 ----
   obbIntersect(a, b) {
     const proj = (cx, cy, hw, hh, cosL, sinL, cosP, sinP, ax, ay) => {
       const cp = cx * ax + cy * ay;
@@ -231,31 +301,30 @@ class GameplayEngine {
     return true;
   }
 
-  // ---- OBB 位移后的碰撞检测 ----
+  // ---- 胶囊位移后的碰撞检测 ----
   _shiftedObbCollision(rect, dx, dy, excludeId) {
-    const moved = { ...rect, cx: rect.cx + dx, cy: rect.cy + dy };
+    const moved = {
+      capTailX: rect.capTailX + dx, capTailY: rect.capTailY + dy,
+      capHeadX: rect.capHeadX + dx, capHeadY: rect.capHeadY + dy,
+      capRadius: rect.capRadius
+    };
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
       const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
       if (!ob) continue;
-      if (this.obbIntersect(moved, ob)) return other.id;
+      if (this._capsuleIntersect(moved, ob)) return other.id;
     }
     return -1;
   }
 
-  // ---- 孔位占用（矩形版） ----
+  // ---- 孔位占用（胶囊版） ----
   getPigOccupiedHoles(tailIndex, length, angle) {
     const r = this.getPigRect(tailIndex, length, angle);
     if (!r) return [];
     const occupied = [];
     for (let hi = 0; hi < this.holes.length; hi++) {
       const h = this.holes[hi];
-      const dx = h.x - r.cx;
-      const dy = h.y - r.cy;
-      // 逆变换到矩形局部坐标
-      const lx = dx * Math.cos(r.rad) - dy * Math.sin(r.rad);
-      const ly = dx * Math.sin(r.rad) + dy * Math.cos(r.rad);
-      if (Math.abs(lx) <= r.collisionHw && Math.abs(ly) <= r.collisionHh) {
+      if (this._capsuleContainsPoint(r, h.x, h.y)) {
         occupied.push(hi);
       }
     }
@@ -299,7 +368,7 @@ class GameplayEngine {
   // ============================================================
   // 碰撞检测 & snap
   // ============================================================
-  // 碰撞检测（OBB 矩形版）
+  // 碰撞检测（胶囊版）
   checkAngleValid(tailIdx, len, excludeId, angle, requireHeadOnHole = true) {
     const r = this.getPigRect(tailIdx, len, angle);
     if (!r) return { valid: false };
@@ -310,12 +379,12 @@ class GameplayEngine {
         return { valid: false, collidedId: this.holeOccupied[hi] };
       }
     }
-    // ② OBB 碰撞
+    // ② 胶囊碰撞
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
       const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
       if (!ob) continue;
-      if (this.obbIntersect(r, ob)) return { valid: false, collidedId: other.id };
+      if (this._capsuleIntersect(r, ob)) return { valid: false, collidedId: other.id };
     }
     if (!requireHeadOnHole) return { valid: true };
     // ③ 头部落孔
@@ -409,23 +478,23 @@ class GameplayEngine {
     return null;
   }
 
-  // 检查配置是否合法（孔位占用 + OBB 碰撞），使用 getPigOccupiedHoles 而非连续索引假设
+  // 检查配置是否合法（孔位占用 + 胶囊碰撞）
   _checkConfigValid(tailIndex, length, angle, excludeId) {
-    // ① 孔位占用：计算猪真正占据的孔（OBB 几何，处理对角方向）
+    // ① 孔位占用
     const occ = this.getPigOccupiedHoles(tailIndex, length, angle);
     for (const hi of occ) {
       if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== excludeId) {
         return false;
       }
     }
-    // ② OBB 碰撞：检测与所有其他猪的矩形碰撞
+    // ② 胶囊碰撞
     const pr = this.getPigRect(tailIndex, length, angle);
     if (!pr) return false;
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
       const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
       if (!ob) continue;
-      if (this.obbIntersect(pr, ob)) return false;
+      if (this._capsuleIntersect(pr, ob)) return false;
     }
     return true;
   }
@@ -599,7 +668,7 @@ class GameplayEngine {
   // ============================================================
   // 推出检测
   // ============================================================
-  // 推出检测（OBB 矩形版）
+  // 推出检测（胶囊版）
   canPushPig(pigId) {
     const pig = this.pigs.find(p => p.id === pigId);
     if (!pig) return { canPush: false, reason: '猪不存在' };
@@ -615,20 +684,14 @@ class GameplayEngine {
     for (let step = 1; step <= maxSteps; step++) {
       const dx = step * stepSize * dirX;
       const dy = step * stepSize * dirY;
-      // 孔位碰撞
-      const moved = {
-        cx: r0.cx + dx, cy: r0.cy + dy,
-        hw: r0.hw, hh: r0.hh,
-        cosL: r0.cosL, sinL: r0.sinL, cosP: r0.cosP, sinP: r0.sinP
-      };
+      // 孔位碰撞（胶囊 vs 点）
       for (let hi = 0; hi < this.holes.length; hi++) {
         if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== pigId) {
           const h = this.holes[hi];
-          const ldx = h.x - moved.cx;
-          const ldy = h.y - moved.cy;
-          const lx = ldx * Math.cos(r0.rad) - ldy * Math.sin(r0.rad);
-          const ly = ldx * Math.sin(r0.rad) + ldy * Math.cos(r0.rad);
-          if (Math.abs(lx) <= r0.collisionHw && Math.abs(ly) <= r0.collisionHh) {
+          const ep = this._pointToSegment(h.x, h.y,
+            r0.capTailX + dx, r0.capTailY + dy,
+            r0.capHeadX + dx, r0.capHeadY + dy);
+          if (ep.dist2 <= r0.capRadius * r0.capRadius) {
             return { canPush: false, reason: `碰到猪 #${this.holeOccupied[hi]}`, collidedPigId: this.holeOccupied[hi] };
           }
         }
