@@ -69,8 +69,12 @@ class GameplayEngine {
     const maxBoardW = SCREEN_WIDTH;
     const maxBoardH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
 
-    // 屏幕适配缩放：以 375 为基准
-    this.boardScale = Math.max(0.75, Math.min(1.5, this.effectiveWidth / 375));
+    // 屏幕适配缩放：宽+高双约束，取较小者，保证棋盘等比缩放不压扁
+    const widthScale = this.effectiveWidth / 375;
+    const heightScale = this.rows > 0
+      ? maxBoardH / (this.rows * (this.diameter + this.vGap))
+      : widthScale;
+    this.boardScale = Math.max(0.75, Math.min(1.5, Math.min(widthScale, heightScale)));
     const sd = this.diameter * this.boardScale;
     const shg = this.hGap * this.boardScale;
     const svg = this.vGap * this.boardScale;
@@ -80,7 +84,7 @@ class GameplayEngine {
     this.hSpacing = sd + shg;
     this.vSpacing = sd + svg;
 
-    // 棋盘超出屏幕时压缩间距
+    // 安全兜底：极端情况（例如 boardScale 触及 0.75 floor 后仍溢出）压缩间距
     if (this.cols * this.hSpacing > maxBoardW) {
       this.hSpacing = Math.floor(maxBoardW / this.cols);
     }

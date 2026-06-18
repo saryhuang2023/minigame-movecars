@@ -507,7 +507,8 @@ class EditorEngine {
   // 跳转控制
   // ============================================================
   _goToPlaying() {
-    databus.currentLevel = { name: '试玩', data: this.getLevelData() };
+    var lv = this.getLevelData();
+    databus.currentLevel = { name: '试玩', data: lv };
     databus.returnState = 'editor';
     databus.gameState = 'playing';
   }

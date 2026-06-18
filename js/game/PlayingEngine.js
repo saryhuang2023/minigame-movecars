@@ -17,8 +17,8 @@ const RED = '#DC2626';      // 重置按钮
 const TOP_BAR_H = 48;
 const BOTTOM_BAR_H = 56;
 const PADDING = 16;         // 内容区外边距
-const CARD_GAP = 20;        // 卡片之间的间距
-const CARD_PADDING = 24;    // 棋盘卡片内边距
+const CARD_GAP = 8;         // 卡片之间的间距
+const CARD_PADDING = 12;    // 棋盘卡片内边距
 const CARD_RADIUS = 32;     // 棋盘卡片圆角
 
 const DRAG_THRESHOLD = 20;
@@ -366,7 +366,7 @@ class PlayingEngine {
 
     // 计算布局参数
     this._boardCardX = PADDING;
-    this._boardCardY = safeTop + PADDING + TOP_BAR_H + CARD_GAP;
+    this._boardCardY = safeTop + PADDING + TOP_BAR_H + CARD_GAP - 30;
     this._boardCardW = SCREEN_WIDTH - PADDING * 2;
     this._bottomBarY = SCREEN_HEIGHT - BOTTOM_BAR_H - PADDING;
     this._boardCardH = this._bottomBarY - CARD_GAP - this._boardCardY;
@@ -468,12 +468,12 @@ class PlayingEngine {
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.fillText('\u6B65\u6570 ' + this.steps, PADDING + barW - 60, barY + TOP_BAR_H / 2 + 80);
+    ctx.fillText('\u6B65\u6570 ' + this.steps, PADDING + barW - 60, barY + TOP_BAR_H / 2 + 50);
 
     // === 速通按钮（最右）===
     const qpW = 40, qpH = 31;
     const qpX = PADDING + barW - qpW;
-    const qpY = barY + (TOP_BAR_H - qpH) / 2 + 80;
+    const qpY = barY + (TOP_BAR_H - qpH) / 2 + 50;
     this._quickPassBtn = { x: qpX, y: qpY, w: qpW, h: qpH };
 
     ctx.fillStyle = AMBER;
