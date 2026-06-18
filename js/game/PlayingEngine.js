@@ -215,20 +215,21 @@ class PlayingEngine {
     const pigId = ds.pigId;
     if (ds.type === 'rotate') {
       const pig = this.gp.pigs.find(p => p.id === pigId);
+      let snapResult = false;
       if (pig && ds.lastValid) {
         // 记录松手时手指的真实方向（未受拖拽追逐/落孔修正的原始角度）
         const releaseAngle = ds.targetAngle;
         // 三点共线对齐归位
         this.gp.rebuildOccupancy();
-        const snapped = this.gp.snapAlignPig(ds.tailIndex, pig.length, ds.lastValid.angle, pigId);
-        if (snapped) {
-          pig.length = snapped.length;
-          pig.angle = snapped.angle;
-          this.gp.updatePigOccupancy(pigId, snapped.tailIndex, snapped.length, snapped.angle);
+        snapResult = this.gp.snapAlignPig(ds.tailIndex, pig.length, ds.lastValid.angle, pigId);
+        if (snapResult) {
+          pig.length = snapResult.length;
+          pig.angle = snapResult.angle;
+          this.gp.updatePigOccupancy(pigId, snapResult.tailIndex, snapResult.length, snapResult.angle);
           // 手指方向 vs 落孔方向，变化 < 阈值 → 执行逃脱
           const angleDelta = Math.min(
-            Math.abs(snapped.angle - releaseAngle),
-            360 - Math.abs(snapped.angle - releaseAngle)
+            Math.abs(snapResult.angle - releaseAngle),
+            360 - Math.abs(snapResult.angle - releaseAngle)
           );
           this._shouldPushAfterSnap = (angleDelta < SNAP_ANGLE_PUSH_THRESHOLD);
         } else {
@@ -240,9 +241,13 @@ class PlayingEngine {
       }
       this.gp.dragState = null;
 
-      // 对齐归位后，仅角度变化 < 阈值时执行逃脱
+      // snap 成功 = 猪换了位置 → 计步
+      if (pig && snapResult) {
+        this.steps++;
+      }
+      // 自动推出时 tryPushPig 内 skipStep 防重复计步
       if (pig && this._shouldPushAfterSnap) {
-        this.tryPushPig(pigId, { silentBlock: true });
+        this.tryPushPig(pigId, { silentBlock: true, skipStep: true });
       }
       this._shouldPushAfterSnap = false;
     }
@@ -276,7 +281,7 @@ class PlayingEngine {
       this.gp.flyingPigs.push(this.gp.pigs[idx]);
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
-      this.steps++;
+      if (!opts.skipStep) this.steps++;
 
       // 连击系统 ——— 每次逃脱触发
       this._triggerCombo();

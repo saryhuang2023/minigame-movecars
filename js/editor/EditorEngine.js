@@ -1272,7 +1272,7 @@ class EditorEngine {
     x = 12;
 
     // 直径 stepper（步长 5）
-    x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 35, 50,
+    x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 30, 50,
       (v) => {
         this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
@@ -1405,8 +1405,8 @@ class EditorEngine {
     ctx.fillStyle = '#FF8C00';
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(String(value), x + 18, midY);
-    x += 36;
+    ctx.fillText(String(value), x + 9, midY);
+    x += 18;
 
     // 减号
     ctx.strokeStyle = '#ccc';
