@@ -1,7 +1,7 @@
 // 游戏主循环引擎
 
 const databus = require('../databus.js');
-const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
+const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
 const LevelSelectEngine = require('../game/LevelSelectEngine.js');
@@ -595,6 +595,7 @@ class GameEngine {
   }
 
   render() {
+    beginFrame();
     this.drawBackground();
     switch (databus.gameState) {
       case 'menu':
@@ -610,6 +611,7 @@ class GameEngine {
         this.editor.render();
         break;
     }
+    present();
   }
 
   drawBackground() {
