@@ -42,7 +42,7 @@ class PigRenderer {
   }
 
   // ---- 猪身体尺寸 ----
-  get pigBodyWidth() { return this.e.scaledDiameter; }
+  get pigBodyWidth() { return this.e.scaledDiameter * 1.3; }
   get pigBodyHalf()  { return this.pigBodyWidth / 2; }
 
   // ---- 拖拽中的显示角度（旋转追逐动画） ----
@@ -104,7 +104,6 @@ class PigRenderer {
   draw(ctx, pig, offDx, offDy) {
     const c = this._pigCenter(pig, offDx, offDy);
     if (!c) return;
-    const bw = this.pigBodyWidth, bh = this.pigBodyHalf;
 
     ctx.save();
     ctx.translate(c.cx, c.cy);
