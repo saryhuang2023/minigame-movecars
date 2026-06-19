@@ -6,6 +6,8 @@ const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
 const LevelSelectEngine = require('../game/LevelSelectEngine.js');
 const PlayingEngine = require('../game/PlayingEngine.js');
+const BugReporter = require('../debug/BugReporter.js');
+const DebugPanel = require('../debug/DebugPanel.js');
 const { drawComposedPig, getComposedPigSize } = require('../render/PigRenderer.js');
 
 class GameEngine {
@@ -611,6 +613,8 @@ class GameEngine {
         this.editor.render();
         break;
     }
+    // 开发者调试面板 — 最顶层渲染
+    DebugPanel.render(databus, this);
     present();
   }
 
@@ -625,6 +629,19 @@ class GameEngine {
   }
 
   loop() {
+    // === FPS 追踪 ===
+    var now = Date.now();
+    var timestamps = databus.frameTimestamps;
+    timestamps.push(now);
+    // 只保留最近 90 帧（按 30fps 基准约 3 秒）
+    while (timestamps.length > 90) timestamps.shift();
+    if (timestamps.length >= 2) {
+      var duration = timestamps[timestamps.length - 1] - timestamps[0];
+      databus.currentFPS = duration > 0 ? Math.round((timestamps.length - 1) / (duration / 1000)) : 60;
+    }
+    // 卡顿检测
+    BugReporter.checkLag(now);
+
     this.update();
     this.render();
     requestAnimationFrame(this.loop.bind(this));

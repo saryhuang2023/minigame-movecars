@@ -128,6 +128,14 @@ async function deleteLevel(id, name) {
   return callFunction('deleteLevel', { id, name });
 }
 
+/**
+ * 上报 Bug 诊断快照
+ * @param {object} snapshot BugReporter 生成的快照对象
+ */
+async function reportBug(snapshot) {
+  return callFunction('reportBug', { report: snapshot });
+}
+
 module.exports = {
   initCloud,
   callFunction,
@@ -137,4 +145,5 @@ module.exports = {
   listLevels,
   downloadLevel,
   deleteLevel,
+  reportBug
 };

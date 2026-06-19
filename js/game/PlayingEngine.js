@@ -60,6 +60,7 @@ class PlayingEngine {
     const lv = databus.currentLevel;
     this.levelName = lv ? lv.name : '';
     this.steps = 0;
+    databus.currentStep = 0;
     this._victory = false;
     this._resetCombo();
     // effectiveWidth = 全屏宽度，与编辑器保持一致，确保棋盘缩放不变
@@ -247,6 +248,7 @@ class PlayingEngine {
       // snap 成功 = 猪换了位置 → 计步
       if (pig && snapResult) {
         this.steps++;
+        databus.currentStep = this.steps;
       }
       // 自动推出时 tryPushPig 内 skipStep 防重复计步
       if (pig && this._shouldPushAfterSnap) {
@@ -284,7 +286,7 @@ class PlayingEngine {
       this.gp.flyingPigs.push(this.gp.pigs[idx]);
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
-      if (!opts.skipStep) this.steps++;
+      if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
 
       // 连击系统 ——— 每次逃脱触发
       this._triggerCombo();
