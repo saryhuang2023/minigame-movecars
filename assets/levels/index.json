@@ -5,5 +5,6 @@
   { "file": "0004.json", "type": 1, "progress": 10 },
   { "file": "0005.json", "type": 1, "progress": 10 },
   { "file": "0006.json", "type": 1, "progress": 10 },
-  { "file": "0007.json", "type": 1, "progress": 10 }
+  { "file": "0007.json", "type": 1, "progress": 10 },
+  { "file": "0008.json", "type": 1, "progress": 10 }
 ]

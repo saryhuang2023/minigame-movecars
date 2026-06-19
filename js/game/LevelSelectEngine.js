@@ -260,7 +260,6 @@ LevelSelectEngine.prototype._getCardStatus = function (cardIndex) {
   if (cardIndex === completed) return 'current';   // 当前可玩
   // 第0关永远可玩
   if (cardIndex === 0 && completed < 0) return 'current';
-  if (cardIndex === completed + 1) return 'current';
   return 'locked';
 };
 

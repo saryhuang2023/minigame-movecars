@@ -65,9 +65,12 @@ class PlayingEngine {
     // effectiveWidth = 全屏宽度，与编辑器保持一致，确保棋盘缩放不变
     this.gp.effectiveWidth = SCREEN_WIDTH;
     this.loadLevel(lv ? lv.data : null);
-    // 记住当前关卡索引，供主界面"开始游戏"使用
+    // 记住当前关卡索引，供主界面"开始游戏"使用（只升不降）
     if (databus.currentLevelIndex >= 0) {
-      wx.setStorageSync('lastLevelIndex', databus.currentLevelIndex);
+      var old = wx.getStorageSync('lastLevelIndex') || -1;
+      if (databus.currentLevelIndex > old) {
+        wx.setStorageSync('lastLevelIndex', databus.currentLevelIndex);
+      }
     }
     this.input.on('playing', (e) => this.handleEvent(e));
   }
