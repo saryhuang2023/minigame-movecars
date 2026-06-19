@@ -1,7 +1,6 @@
 // 关卡选择界面引擎
 // 正式关卡：读取工程目录 assets/levels/index.json
-// 待发布关卡：云端 ready=1 的关卡
-// 设计中的关卡：云端 ready=0 的关卡（调试用）
+// 设计中的关卡：所有云端关卡（与正式关卡去重后）
 
 var databus = require('../databus.js');
 var renderModule = require('../render.js');
@@ -39,18 +38,18 @@ var COLS = 4;
 var PADDING_X = 20;
 var CARD_RADIUS = 16;
 
+// 模块级缓存：云端关卡列表（null = 未拉取）
+var _cloudListCache = null;
+
 function LevelSelectEngine(input) {
   this.input = input;
   this.projectLevels = [];    // 正式关卡
-  this.readyLevels = [];      // 待发布关卡（云端 ready=1）
-  this.cloudLevels = [];      // 设计中的关卡（云端 ready=0）
+  this.cloudLevels = [];      // 设计中的关卡（所有云端关卡）
   this.projectCards = [];     // 正式关卡卡片
-  this.readyCards = [];       // 待发布关卡卡片
   this.cloudCards = [];       // 设计中关卡卡片
   this.backBtn = null;
   this.titleCenterX = 0;
   this.titleCenterY = 0;
-  this.readySectionTop = 0;
   this.cloudSectionTop = 0;
   this._scrollTop = 0;
   this._maxScrollTop = 0;
@@ -69,15 +68,20 @@ function LevelSelectEngine(input) {
 LevelSelectEngine.prototype.activate = function () {
   this.loadProjectLevels();
   this.buildProjectCards();
-  this.buildReadyCards();
   this.buildCloudCards();
   this.input.on('levelSelect', this._handleEvent.bind(this));
-  // 异步拉取云端关卡
-  this._cloudLoading = true;
-  this._cloudLoadingMsg = '同步云端关卡中...';
-  this._fetchCloudLevels().finally(function () {
-    this._cloudLoading = false;
-  }.bind(this));
+
+  if (_cloudListCache === null) {
+    // 首次：异步拉取云端关卡
+    this._cloudLoading = true;
+    this._cloudLoadingMsg = '同步云端关卡中...';
+    this._fetchCloudLevels().finally(function () {
+      this._cloudLoading = false;
+    }.bind(this));
+  } else {
+    // 已有缓存：直接使用
+    this._fetchCloudLevels();
+  }
 };
 
 LevelSelectEngine.prototype.deactivate = function () {
@@ -113,42 +117,44 @@ LevelSelectEngine.prototype.loadProjectLevels = function () {
 };
 
 // ============================================================
-// 云端关卡：按 ready 拆分为"待发布"和"设计中"
+// 云端关卡：全部归入"设计中"分类
 // ============================================================
 LevelSelectEngine.prototype._fetchCloudLevels = function () {
   var self = this;
+  if (_cloudListCache !== null) {
+    // 已有缓存：直接应用
+    self._applyCloudList(_cloudListCache);
+    self.buildCloudCards();
+    return Promise.resolve();
+  }
+  // 无缓存：拉取云端
   return cloud.listLevels().then(function (list) {
-    self.readyLevels = [];
-    self.cloudLevels = [];
-    var projectNames = {};
-    for (var i = 0; i < self.projectLevels.length; i++) {
-      projectNames[self.projectLevels[i].name] = true;
-    }
-    for (var j = 0; j < list.length; j++) {
-      var item = list[j];
-      // 跳过与正式关卡同名的云端关卡
-      if (projectNames[item.name]) continue;
-      var lv = {
-        name: item.name,
-        _id: item._id,
-        pigCount: item.pigCount,
-        updatedAt: item.updatedAt,
-        _needsDownload: true,
-      };
-      if (((item.data && item.data.ready) || 0) === 1) {
-        self.readyLevels.push(lv);
-      } else {
-        self.cloudLevels.push(lv);
-      }
-    }
+    _cloudListCache = list;
+    self._applyCloudList(list);
   }).catch(function (e) {
     console.warn('[LevelSelect] 拉取云端关卡失败:', e);
-    self.readyLevels = [];
     self.cloudLevels = [];
   }).then(function () {
-    self.buildReadyCards();
     self.buildCloudCards();
   });
+};
+
+// 将云端原始列表与正式关卡去重后写入 cloudLevels
+LevelSelectEngine.prototype._applyCloudList = function (list) {
+  var projectNames = {};
+  for (var i = 0; i < this.projectLevels.length; i++) {
+    projectNames[this.projectLevels[i].name] = true;
+  }
+  this.cloudLevels = [];
+  for (var j = 0; j < list.length; j++) {
+    var item = list[j];
+    if (projectNames[item.name]) continue;
+    this.cloudLevels.push({
+      name: item.name,
+      _id: item._id,
+      _needsDownload: true,
+    });
+  }
 };
 
 // ============================================================
@@ -179,36 +185,22 @@ LevelSelectEngine.prototype._buildCardsForLevels = function (levels, gridTop) {
 };
 
 LevelSelectEngine.prototype.buildProjectCards = function () {
-  this.readySectionTop = 0;
   this.cloudSectionTop = 0;
   var gridTop = this._getGridTop();
   this.projectCards = this._buildCardsForLevels(this.projectLevels, gridTop);
   this._scrollTop = 0;
 };
 
-LevelSelectEngine.prototype.buildReadyCards = function () {
-  var projectRows = Math.ceil(this.projectLevels.length / COLS) || 0;
-  var sectionHeaderH = 28;
-  this.readySectionTop = this._getGridTop()
-    + projectRows * (CARD_H + ROW_GAP)
-    + sectionHeaderH + 12;
-  this.readyCards = this._buildCardsForLevels(this.readyLevels, this.readySectionTop);
-  this._updateCloudSectionTop();
-  this._updateScrollBounds();
-};
-
 LevelSelectEngine.prototype._updateCloudSectionTop = function () {
   var projectRows = Math.ceil(this.projectLevels.length / COLS) || 0;
-  var readyRows = Math.ceil(this.readyLevels.length / COLS) || 0;
   var sectionHeaderH = 28;
   this.cloudSectionTop = this._getGridTop()
     + projectRows * (CARD_H + ROW_GAP)
-    + sectionHeaderH + 12    // 正式关卡区域结束
-    + (this.readyLevels.length > 0 ? readyRows * (CARD_H + ROW_GAP) + sectionHeaderH + 12 : 0);
+    + sectionHeaderH + 12;    // 正式关卡区域结束
 };
 
 LevelSelectEngine.prototype._updateScrollBounds = function () {
-  var allCards = this.projectCards.concat(this.readyCards).concat(this.cloudCards);
+  var allCards = this.projectCards.concat(this.cloudCards);
   if (allCards.length === 0) {
     this._maxScrollTop = 0;
     return;
@@ -336,15 +328,6 @@ LevelSelectEngine.prototype._hitTestCards = function (t) {
     }
   }
 
-  // 待发布关卡卡片
-  for (var j = 0; j < this.readyCards.length; j++) {
-    var rCard = this.readyCards[j];
-    if (this._hitCardAt(rCard, t.x, ly)) {
-      this._playCloudLevel(rCard.level);
-      return;
-    }
-  }
-
   // 设计中的关卡卡片
   for (var k = 0; k < this.cloudCards.length; k++) {
     var cCard = this.cloudCards[k];
@@ -391,7 +374,6 @@ LevelSelectEngine.prototype.render = function () {
   ctx.save();
   ctx.translate(0, -this._scrollTop);
   this._renderProjectSection();
-  this._renderReadySection();
   this._renderCloudSection();
   ctx.restore();
 
@@ -478,17 +460,6 @@ LevelSelectEngine.prototype._renderProjectSection = function () {
   }
 };
 
-LevelSelectEngine.prototype._renderReadySection = function () {
-  if (this.readyCards.length === 0) return;
-
-  var labelY = this.readySectionTop - 16;
-  this._renderSectionLabel('📦 待发布', this.readyCards.length + ' 关', labelY);
-
-  for (var i = 0; i < this.readyCards.length; i++) {
-    this._renderCard(this.readyCards[i], 'waiting');
-  }
-};
-
 LevelSelectEngine.prototype._renderCloudSection = function () {
   if (this.cloudCards.length === 0) return;
 
@@ -519,7 +490,7 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
     ? String(card.index + 1)
     : (card.level && card.level.name ? card.level.name : '');
 
-  // === waiting（待发布/设计中）：虚线边框 ===
+  // === waiting（设计中）：虚线边框 ===
   if (status === 'waiting') {
     // 柔投影
     ctx.save();
