@@ -8,7 +8,7 @@ const { PigRenderer, roundRect } = require('../render/PigRenderer.js');
 // ========== 常量 ==========
 // Claymorphism 风格：格子 = 棋盘上的凹陷引导，非独立视觉元素
 // 用内阴影制造浮雕感，颜色贴近白色但不消失
-const HOLE_EMPTY = '#EAE3EF';       // 空闲格子：淡紫灰 + 内阴影 0.3
+const HOLE_EMPTY = '#FFFFFF';       // 空闲格子：淡紫灰 + 内阴影 0.3
 const HOLE_OCCUPIED = '#E8DFF0';    // 已占用：略浅 + 内阴影 0.25
 const HOLE_SHADOW_EMPTY = '#D4C5DF';   // 空闲内阴影边缘色（向 rgba(112,97,120,0.3) 方向）
 const HOLE_SHADOW_OCCUPIED = '#D9CBE8'; // 已占用内阴影边缘色（向 rgba(112,97,120,0.25) 方向）
@@ -145,7 +145,10 @@ class GameplayEngine {
       const occ = this.getPigOccupiedHoles(pig.tailIndex, pig.length, pig.angle);
       for (const hi of occ) {
         if (hi >= 0 && hi < this.holeOccupied.length) {
-          this.holeOccupied[hi] = pig.id;
+          if (this.holeOccupied[hi] === -1) {
+            this.holeOccupied[hi] = pig.id;
+          }
+          // 不覆盖已被其他猪占据的孔，防止两猪共占一孔
         }
       }
     }
@@ -391,8 +394,13 @@ class GameplayEngine {
       if (this._capsuleIntersect(r, ob)) return { valid: false, collidedId: other.id };
     }
     if (!requireHeadOnHole) return { valid: true };
-    // ③ 头部落孔
-    return { valid: this.findHeadHole(tailIdx, len, angle) >= 0 };
+    // ③ 头部落孔（同时检查孔未被其他猪占据）
+    const headHole = this.findHeadHole(tailIdx, len, angle);
+    if (headHole < 0) return { valid: false };
+    if (this.holeOccupied[headHole] !== -1 && this.holeOccupied[headHole] !== excludeId) {
+      return { valid: false };
+    }
+    return { valid: true };
   }
 
   snapAngleToHoles(tailIndex, length, rawAngle) {
@@ -757,15 +765,19 @@ class GameplayEngine {
         grad.addColorStop(0.7, HOLE_OCCUPIED);
         grad.addColorStop(1, HOLE_SHADOW_OCCUPIED);
         ctx.fillStyle = grad;
+        ctx.fill();
       } else {
-        // 空闲：凹陷引导，内阴影更明显
+        // 空闲：凹陷引导，内阴影更明显，透明度 70%
+        ctx.save();
+        ctx.globalAlpha = 0.7;
         const grad = ctx.createRadialGradient(hx - 1, hy - 1, r * 0.1, hx, hy, r);
         grad.addColorStop(0, HOLE_EMPTY);
         grad.addColorStop(0.65, HOLE_EMPTY);
         grad.addColorStop(1, HOLE_SHADOW_EMPTY);
         ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.restore();
       }
-      ctx.fill();
     }
 
     // 拖拽中头部占孔 → 红色外边框高亮
