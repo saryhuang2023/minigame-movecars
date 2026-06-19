@@ -2,6 +2,7 @@
 // Canvas 渲染半屏卡片，显示运行时诊断信息 + 操作按钮
 
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
+const BugReporter = require('./BugReporter.js');
 
 // ========== 配置 ==========
 const CONFIG = {
@@ -444,7 +445,6 @@ class DebugPanel {
       {
         label: '📋 复制报告',
         action: function () {
-          var BugReporter = require('./BugReporter.js');
           var str = BugReporter.copyDiagnostic();
           wx.showToast({ title: '已复制 ' + Math.min(str.length, 10000) + ' 字符', icon: 'success', duration: 1500 });
         }
