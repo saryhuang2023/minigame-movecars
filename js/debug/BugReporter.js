@@ -106,7 +106,8 @@ class BugReporter {
         self._originalConsole[lv] = console[lv];
         console[lv] = function () {
           // 写入环形缓冲
-          var ts = new Date().toISOString().slice(11, 23);
+          var d = new Date();
+          var ts = pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + '.' + pad3(d.getMilliseconds());
           var args = [];
           for (var j = 0; j < arguments.length; j++) {
             args.push(String(arguments[j]));
@@ -431,6 +432,10 @@ class BugReporter {
     return str;
   }
 }
+
+// 位补齐工具函数
+function pad2(n) { return ('0' + n).slice(-2); }
+function pad3(n) { return ('00' + n).slice(-3); }
 
 // 导出单例
 module.exports = new BugReporter();
