@@ -110,15 +110,7 @@ class PigRenderer {
     ctx.translate(c.cx, c.cy);
     ctx.rotate(-c.rad);
 
-    if (!this._drawPigImage(ctx, c.totalLen)) {
-      // 图片未加载 → 矩形 fallback
-      ctx.fillStyle = PIG_COLOR;
-      roundRect(ctx, -c.totalLen / 2, -bh, c.totalLen, bw, 6);
-      ctx.fill();
-      ctx.strokeStyle = PIG_STROKE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
+    this._drawPigImage(ctx, c.totalLen);
 
     ctx.restore();
   }
@@ -262,6 +254,9 @@ function drawComposedPig(ctx, x, y, scale = 1) {
 
   return (tw + mw + hw - 2) * scale;
 }
+
+// 模块加载时立即触发猪图片预加载，避免首帧渲染时图片未就绪出现黄色 fallback 矩形
+_loadPigParts();
 
 module.exports.PigRenderer = PigRenderer;
 module.exports.roundRect = roundRect;
