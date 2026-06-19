@@ -335,6 +335,12 @@ class GameplayEngine {
         occupied.push(hi);
       }
     }
+    // 补充头孔：findHeadHole 落孔阈值（2*diameter/3）大于胶囊半径（diameter/3），
+    // 头孔可能不被胶囊覆盖，导致 visually snapped but not occupied 的 bug
+    const headIdx = this.findHeadHole(tailIndex, length, angle);
+    if (headIdx >= 0 && !occupied.includes(headIdx)) {
+      occupied.push(headIdx);
+    }
     return occupied;
   }
 
