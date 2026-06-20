@@ -88,6 +88,14 @@ class PlayingEngine {
     var rawRec = wx.getStorageSync(recKey);
     this._myRecord = (rawRec != null && rawRec !== '') ? rawRec : null;
     console.log('[关主] activate levelName=' + JSON.stringify(this.levelName) + ' recKey=' + recKey + ' rawRec=' + JSON.stringify(rawRec) + ' _myRecord=' + JSON.stringify(this._myRecord));
+    // 加载缓存的用户信息（避免每次都弹授权按钮）
+    var cachedUserInfo = wx.getStorageSync('userinfo_cache');
+    if (cachedUserInfo && cachedUserInfo.avatarUrl) {
+      this._userInfo = cachedUserInfo;
+      console.log('[关主] 从缓存加载用户信息 avatarUrl=' + (cachedUserInfo.avatarUrl ? '有' : '空') + ' nickName=' + cachedUserInfo.nickName);
+    } else {
+      this._userInfo = null;
+    }
     // 异步拉取关主（fire-and-forget，不阻塞玩家操作）
     this._masterLoading = false;  // 重置，防止上次请求未完成导致跳过
     this._fetchMyOpenId();
@@ -491,8 +499,10 @@ _tryClaimMaster() {
     this._updateMyRecord();
     if (this.steps >= currentMin) return; // 持平不夺
 
-    // ✅ 乐观 UI：立即弹出授权按钮，不等服务器确认
-    this._showMasterAuthButton();
+    // ✅ 乐观 UI：已有真实头像则跳过授权按钮，否则立即弹出
+    if (!this._userInfo || !this._userInfo.avatarUrl) {
+      this._showMasterAuthButton();
+    }
 
     // 后台异步夺位上报（静默，不阻塞玩家）
     this._getUserInfo().then(userInfo => {
@@ -606,6 +616,9 @@ _tryClaimMaster() {
       if (info.nickName || info.avatarUrl) {
         console.log('[关主] onTap 获取到真实头像昵称，开始重传关主');
         that._userInfo = { nickName: info.nickName || '', avatarUrl: info.avatarUrl || '' };
+        // 持久化，杀进程后再进游戏不会重复弹授权
+        wx.setStorageSync('userinfo_cache', that._userInfo);
+        console.log('[关主] 已缓存用户信息 avatarUrl=' + (that._userInfo.avatarUrl ? '有' : '空') + ' nickName=' + that._userInfo.nickName);
         // 重新上传关主信息（这次带真实头像昵称）
         var cloud = require('../cloud.js');
         cloud.claimLevelMaster(that.levelName, that.steps, info.avatarUrl || '', info.nickName || '')
