@@ -57,6 +57,7 @@ class GameplayEngine {
     this.ghostAnimations = [];
     this.flyingPigs = [];
     this.flashingPigs = {};
+    this._hintOC = null;  // 提示粉色遮罩专用离屏画布（复用）
 
     // ===== 渲染 =====
     this.pigRenderer = new PigRenderer(this);
@@ -809,11 +810,49 @@ class GameplayEngine {
       );
       // 被撞效果：全身闪烁 500ms（通过透明度实现，全模式生效）
       const flashAlpha = this._getFlashAlpha(pig.id);
-      if (flashAlpha < 1) {
-        ctx.globalAlpha = flashAlpha;
-      }
+
+      // 正常绘制
+      if (flashAlpha < 1) ctx.globalAlpha = flashAlpha;
       pr.draw(ctx, pig, off.dx, off.dy);
       ctx.globalAlpha = 1;
+
+      // 提示目标染色：仅静止时染，拖拽/旋转中保持原色
+      if (options.hintPigId != null && options.hintPigId === pig.id && !isDragPig) {
+        var pigR = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+        if (pigR) {
+          var totalLen = Math.ceil(pigR.hw * 2 + this.scaledDiameter);
+          var bodyH = Math.ceil(this.scaledDiameter * 1.3);
+          var pad = 8;
+          var ocW = totalLen + pad * 2;
+          var ocH = bodyH * 2 + pad * 2;  // 猪头耳朵/尾巴会超出 bodyH，留足高度
+
+          if (!this._hintOC) this._hintOC = wx.createCanvas();
+          var oc = this._hintOC;
+          oc.width = ocW; oc.height = ocH;
+          var octx = oc.getContext('2d');
+          octx.clearRect(0, 0, ocW, ocH);
+
+          // 离屏画布：画猪（旋转后居中）
+          octx.save();
+          octx.translate(ocW / 2, ocH / 2);
+          octx.rotate(-pigR.rad);
+          if (flashAlpha < 1) octx.globalAlpha = flashAlpha;
+          pr._drawPigImage(octx, totalLen);
+          octx.globalAlpha = 1;
+
+          // 粉色染色（source-atop，离屏背景透明 → 只染猪像素）
+          octx.globalCompositeOperation = 'source-atop';
+          octx.globalAlpha = 0.35;
+          octx.fillStyle = '#FF80A8';
+          octx.fillRect(-totalLen / 2, -bodyH * 0.8, totalLen, bodyH * 1.6);
+          octx.restore();
+
+          // 叠到主画布（离屏已旋转，只需平移）
+          var pigCx = this.boardOffsetX + pigR.cx + off.dx;
+          var pigCy = offY + pigR.cy + off.dy;
+          ctx.drawImage(oc, pigCx - ocW / 2, pigCy - ocH / 2);
+        }
+      }
 
       // 拖拽中：头部绿点 + 碰撞区棕色虚线框 + 触控区蓝色虚线框（仅编辑模式）
       if (options.showCollisionBox && isDragPig) {
@@ -823,13 +862,16 @@ class GameplayEngine {
       }
     }
 
-    // 幽灵动画
+    // 幽灵动画（面向 hintAngle 飞行）
     for (const g of this.ghostAnimations) {
       const pig = this.pigs.find(p => p.id === g.pigId);
       if (pig) {
-        ctx.globalAlpha = 0.25;
+        const savedAngle = pig.angle;
+        pig.angle = g.hintAngle != null ? g.hintAngle : pig.angle;
+        ctx.globalAlpha = 0.70;
         pr.draw(ctx, pig, g.currentDx, g.currentDy);
         ctx.globalAlpha = 1;
+        pig.angle = savedAngle;
       }
     }
 

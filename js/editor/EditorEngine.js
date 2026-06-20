@@ -40,6 +40,8 @@ class EditorEngine {
     this.levelBtns = [];
     this.showPigSheet = false;
     this.showLevelSheet = false;
+    this.hintMode = false;              // 提示编辑模式
+    this.hintHintBtns = [];             // 提示模式下底部栏按钮
 
     // ===== Toast =====
     this.toastText = '';
@@ -118,7 +120,11 @@ class EditorEngine {
       }
       // 屏幕宽度面板（左上角浮动）
       if (this.widthPanelBtns && this.checkWidthPanelBtns(x, y)) return;
-      // 棋盘
+      // 棋盘（提示模式有独立处理）
+      if (this.hintMode) {
+        this._onHintTouchStart(x, y);
+        return;
+      }
       this.onBoardTouchStart(x, y);
     } else if (e.type === 'touchmove') {
       // 有暂存触摸 → 检查是否超过拖拽阈值
@@ -146,6 +152,76 @@ class EditorEngine {
   onBoardTouchStart(x, y) {
     if (y < this.gp.topBarH || y > SCREEN_HEIGHT - this.gp.bottomStripH) return;
     this.handleEditTouchStart(x, y);
+  }
+
+  // ============================================================
+  // === 提示模式触摸处理 ===
+  // ============================================================
+  _onHintTouchStart(x, y) {
+    // 1. 命中徽章 → 切换 hintId
+    for (var i = 0; i < this.hintHintBtns.length; i++) {
+      var b = this.hintHintBtns[i];
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+        this._toggleHintId(b.pigId);
+        return;
+      }
+    }
+
+    // 2. 命中猪身体 → 选中
+    var pigInfo = this.gp.getPigAtPoint(x, y);
+    if (pigInfo) {
+      this.gp.selectedPigId = pigInfo.id;
+      this.gp.dragState = null;
+      return;
+    }
+
+    // 3. 空白区域 + 已选中猪 → 调整 hintAngle
+    if (this.gp.selectedPigId != null) {
+      var pig = this.gp.pigs.find(function(p) { return p.id === this.gp.selectedPigId; }.bind(this));
+      if (pig) {
+        var tailHole = this.gp.holes[pig.tailIndex];
+        if (tailHole) {
+          var tx = this.gp.boardOffsetX + tailHole.x;
+          var ty = this.gp.topBarH + this.gp.boardOffsetY + tailHole.y;
+          var angle = Math.atan2(-(y - ty), x - tx) * 180 / Math.PI;
+          if (angle < 0) angle += 360;
+          pig.hintAngle = Math.round(angle);
+          this.markCurrentDirty();
+        }
+      }
+      return;
+    }
+
+    // 4. 空白区域 + 未选中 → 取消选中
+    this.gp.selectedPigId = null;
+  }
+
+  _toggleHintId(pigId) {
+    var pig = this.gp.pigs.find(function(p) { return p.id === pigId; });
+    if (!pig) return;
+
+    if (pig.hintId != null) {
+      // 关闭提示
+      pig.hintId = null;
+      pig.hintAngle = pig.angle; // 重置为猪朝向
+      this.showToast('已取消提示');
+    } else {
+      // 自动分配：找最小未被占用的自然数（从1开始）
+      var used = [];
+      for (var i = 0; i < this.gp.pigs.length; i++) {
+        var hid = this.gp.pigs[i].hintId;
+        if (hid != null) used.push(hid);
+      }
+      var nextId = 1;
+      while (used.indexOf(nextId) >= 0) nextId++;
+      pig.hintId = nextId;
+      if (pig.hintAngle == null) pig.hintAngle = pig.angle;
+      this.showToast('提示编号 ' + nextId + ' | 点击空白调方向');
+    }
+    // 选中该猪
+    this.gp.selectedPigId = pigId;
+    this.gp.dragState = null;
+    this.markCurrentDirty();
   }
 
   // ============================================================
@@ -441,7 +517,10 @@ class EditorEngine {
         );
         if (snapped) {
           const realId = this.gp.dragState.pigId;
-          this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
+          const orig = this.gp.dragState.originalPig;
+          this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle,
+            hintId: (orig && orig.hintId != null) ? orig.hintId : null,
+            hintAngle: (orig && orig.hintAngle != null) ? orig.hintAngle : snapped.angle });
           this.gp.selectedPigId = realId;
           for (let i = 0; i < this.gp.holeOccupied.length; i++) {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
@@ -471,7 +550,11 @@ class EditorEngine {
           let realId;
           if (this.gp.dragState.pigId != null) {
             realId = this.gp.dragState.pigId;
-            this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
+            // 保留原猪的 hintId/hintAngle
+            var origPig = this.gp.dragState.originalPig;
+            this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle,
+              hintId: (origPig && origPig.hintId != null) ? origPig.hintId : null,
+              hintAngle: (origPig && origPig.hintAngle != null) ? origPig.hintAngle : snapped.angle });
             this.gp.selectedPigId = realId;
             this.showToast(`小猪 #${realId} 已调整 (${snapped.length}px, ${snapped.angle}°)`);
           } else {
@@ -538,7 +621,12 @@ class EditorEngine {
       ? this.levelList[this.currentLevelIdx].data : null;
     return {
       board: { cols: this.gp.cols, hGap: this.gp.hGap, rows: this.gp.rows, vGap: this.gp.vGap, diameter: this.gp.diameter },
-      pigs: this.gp.pigs.map(p => ({ id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle })),
+      pigs: this.gp.pigs.map(p => {
+        const obj = { id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle };
+        if (p.hintId != null) obj.hintId = p.hintId;
+        if (p.hintAngle != null && p.hintAngle !== p.angle) obj.hintAngle = p.hintAngle;
+        return obj;
+      }),
       ready: (curData && curData.ready != null) ? curData.ready : 0
     };
   }
@@ -552,7 +640,9 @@ class EditorEngine {
       this.gp.diameter = data.board.diameter || 30;
     }
     this.gp.pigs = (data.pigs || []).map(p => ({
-      id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle
+      id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
+      hintId: p.hintId != null ? p.hintId : null,
+      hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
     }));
     this.gp.nextPigId = this.gp.pigs.length > 0 ? Math.max(...this.gp.pigs.map(p => p.id)) + 1 : 0;
     this.gp.selectedPigId = null;
@@ -924,7 +1014,8 @@ class EditorEngine {
 
     // 1. 快照所有猪
     const snapshot = this.gp.pigs.map(p => ({
-      id: p.id, tailIndex: p.tailIndex, length: p.length, angle: p.angle
+      id: p.id, tailIndex: p.tailIndex, length: p.length, angle: p.angle,
+      hintId: p.hintId, hintAngle: p.hintAngle
     }));
 
     // 2. 清空
@@ -957,7 +1048,9 @@ class EditorEngine {
       }
 
       if (bestAngle !== null) {
-        this.gp.pigs.push({ id: snap.id, tailIndex: snap.tailIndex, length: bestLength, angle: bestAngle });
+        this.gp.pigs.push({ id: snap.id, tailIndex: snap.tailIndex, length: bestLength, angle: bestAngle,
+          hintId: (snap.hintId != null) ? snap.hintId : null,
+          hintAngle: (snap.hintAngle != null) ? snap.hintAngle : bestAngle });
         this.gp.updatePigOccupancy(snap.id, snap.tailIndex, bestLength, bestAngle);
       } else {
         lostPigs.push(snap.id);
@@ -985,7 +1078,9 @@ class EditorEngine {
               const a = sign === 0 ? snap.angle : snap.angle + sign * 22.5;
               const sa = this.gp.snapAngleToHoles(newTail, tryLen, a);
               if (sa !== null) {
-                this.gp.pigs.push({ id: snap.id, tailIndex: newTail, length: tryLen, angle: sa });
+                this.gp.pigs.push({ id: snap.id, tailIndex: newTail, length: tryLen, angle: sa,
+                  hintId: (snap.hintId != null) ? snap.hintId : null,
+                  hintAngle: (snap.hintAngle != null) ? snap.hintAngle : sa });
                 this.gp.updatePigOccupancy(snap.id, newTail, tryLen, sa);
                 found = true;
                 break;
@@ -1085,24 +1180,31 @@ class EditorEngine {
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // 计算提示文字
+    // 计算提示文字（提示模式下不显示操作提示）
     let hintText = '';
-    if (this.gp.selectedPigId != null && !this.gp.dragState) {
-      const pig = this.gp.pigs.find(p => p.id === this.gp.selectedPigId);
-      if (pig) {
-        hintText = `小猪 #${pig.id} | 长度:${Math.round(pig.length)}px | 角度:${pig.angle}°`;
+    var opts = { hintText, showSelection: !this.hintMode, showCollisionBox: !this.hintMode };
+    if (!this.hintMode) {
+      if (this.gp.selectedPigId != null && !this.gp.dragState) {
+        const pig = this.gp.pigs.find(p => p.id === this.gp.selectedPigId);
+        if (pig) {
+          hintText = `小猪 #${pig.id} | 长度:${Math.round(pig.length)}px | 角度:${pig.angle}°`;
+        }
+      }
+      if (!hintText) {
+        hintText = '按住小猪头部调长度 | 按住身体/尾部调方向 | 点击空孔放置';
       }
     }
-    if (!hintText) {
-      hintText = '按住小猪头部调长度 | 按住身体/尾部调方向 | 点击空孔放置';
-    }
+    opts.hintText = hintText;
 
-    this.gp.renderBoard(ctx, { hintText, showSelection: true, showCollisionBox: true });
+    this.gp.renderBoard(ctx, opts);
     if (this.showRedFrame) this._renderEffectiveArea();
     this.renderTopBar();
     // this.renderWidthPanel(); // 屏幕宽度面板暂时隐藏
     this.renderBottomStrip();
     this.renderToast();
+
+    // 提示模式：渲染 hintId 徽章和方向指示器
+    if (this.hintMode) this._renderHintOverlays();
 
     if (this.showPigSheet) this.renderPigSheet();
     if (this.showLevelSheet) this.renderLevelSheet();
@@ -1110,6 +1212,78 @@ class EditorEngine {
 
     // 云端同步加载遮罩
     if (this._cloudLoading) this.renderCloudLoading();
+  }
+
+  // ============================================================
+  // === 提示模式 — 叠加渲染 ===
+  // ============================================================
+  _renderHintOverlays() {
+    var offY = this.gp.topBarH + this.gp.boardOffsetY;
+    var badgeR = 14;
+    var arrowLen = 38;
+
+    this.hintHintBtns = []; // 清空上一帧的按钮
+
+    for (var i = 0; i < this.gp.pigs.length; i++) {
+      var pig = this.gp.pigs[i];
+      var tailHole = this.gp.holes[pig.tailIndex];
+      if (!tailHole) continue;
+      var tx = this.gp.boardOffsetX + tailHole.x;
+      var ty = offY + tailHole.y;
+      var isSelected = (pig.id === this.gp.selectedPigId);
+      var hasHintId = (pig.hintId != null);
+
+      // hintId 徽章
+      var label = hasHintId ? '' + pig.hintId : '--';
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(tx, ty, badgeR, 0, Math.PI * 2);
+      ctx.fillStyle = hasHintId ? (isSelected ? '#8B5CF6' : 'rgba(139,92,246,0.75)') : 'rgba(0,0,0,0.3)';
+      ctx.fill();
+      ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, tx, ty);
+      ctx.restore();
+
+      // 记录徽章点击区域
+      var badgeRect = { x: tx - badgeR, y: ty - badgeR, w: badgeR * 2, h: badgeR * 2, pigId: pig.id };
+      this.hintHintBtns.push(badgeRect);
+
+      // 方向指示器（仅在有 hintId 时绘制）
+      if (hasHintId) {
+        var ha = (pig.hintAngle != null ? pig.hintAngle : pig.angle);
+        var rad = ha * Math.PI / 180;
+        var ax = tx + Math.cos(rad) * arrowLen;
+        var ay = ty - Math.sin(rad) * arrowLen;
+
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = isSelected ? '#8B5CF6' : 'rgba(139,92,246,0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(ax, ay);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 箭头
+        var arrowSize = 8;
+        var arrowRad = rad + Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ax + Math.cos(rad - 2.5) * arrowSize, ay - Math.sin(rad - 2.5) * arrowSize);
+        ctx.lineTo(ax + Math.cos(rad + 2.5) * arrowSize, ay - Math.sin(rad + 2.5) * arrowSize);
+        ctx.closePath();
+        ctx.fillStyle = isSelected ? '#8B5CF6' : 'rgba(139,92,246,0.5)';
+        ctx.fill();
+        ctx.restore();
+      }
+    }
   }
 
   // ============================================================
@@ -1194,6 +1368,37 @@ class EditorEngine {
     this.bottomBtns = [];
     this.levelBtns = [];
 
+    // 提示模式：仅显示模式切换按钮
+    if (this.hintMode) {
+      var btnH2 = 30;
+      var row1Y2 = baseY + 3;
+      var row1H2 = 38;
+      var btnYHint = row1Y2 + (row1H2 - btnH2) / 2;
+      var midYHint = row1Y2 + row1H2 / 2;
+
+      var x2 = 12;
+      // 关卡管理按钮（保留）
+      x2 = this._drawCompactStepper(x2, btnYHint, btnH2, '关卡', this.currentLevelIdx >= 0 ? this.levelList[this.currentLevelIdx].name : '--', 0, 0,
+        function() {}, 0, false); // 只显示，不操作
+      // 提示模式按钮
+      x2 += 60;
+      var hintBtnW = 80;
+      ctx.fillStyle = '#8B5CF6';
+      roundRect(ctx, x2, btnYHint, hintBtnW, btnH2, 6);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('退出提示', x2 + hintBtnW / 2, midYHint);
+      this.bottomBtns.push({ x: x2, y: btnYHint, w: hintBtnW, h: btnH2, onClick: function() {
+        this.hintMode = false;
+        this.gp.selectedPigId = null;
+        this.showToast('已退出提示模式');
+      }.bind(this) });
+      return;
+    }
+
     const row1H = 38;
     const row1Y = baseY + 3;
     const row2H = 38;
@@ -1255,6 +1460,28 @@ class EditorEngine {
         return;
       }
       this.showPigSheet = !this.showPigSheet;
+    }});
+    x += pigW + 12;
+
+    // 提示模式按钮
+    const hintModeW = 66;
+    ctx.fillStyle = this.hintMode ? '#8B5CF6' : 'rgba(139, 92, 246, 0.2)';
+    roundRect(ctx, x, btnY1, hintModeW, btnH, 6);
+    ctx.fill();
+    ctx.fillStyle = this.hintMode ? '#fff' : '#8B5CF6';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('提示', x + hintModeW / 2, midY1);
+    this.bottomBtns.push({ x, y: btnY1, w: hintModeW, h: btnH, onClick: () => {
+      this.hintMode = !this.hintMode;
+      if (this.hintMode) {
+        this.gp.selectedPigId = null;
+        this.gp.dragState = null;
+        this.showPigSheet = false;
+        this.showLevelSheet = false;
+      }
+      this.showToast(this.hintMode ? '提示模式：选中猪后点击编号或方向' : '退出提示模式');
     }});
 
     // ============================

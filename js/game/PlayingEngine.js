@@ -63,6 +63,11 @@ class PlayingEngine {
     this._authBtn = null;           // wx.createUserInfoButton 授权按钮
     this._authShown = false;        // 本局是否已弹出过授权按钮
     this._isNewMaster = false;      // 本局是否成为新关主（用于结算界面文案）
+    // 提示系统
+    this._hintTarget = null;        // 当前被提示的猪
+    this._hintTimer = null;         // 幽灵动画定时器 ID
+    this._hasUsedRemove = false;    // 本局是否用过移除按钮
+    this._removeBtn = null;         // 移除按钮碰撞区
   }
 
   activate() {
@@ -72,6 +77,9 @@ class PlayingEngine {
     databus.currentStep = 0;
     this._victory = false;
     this._resetCombo();
+    // 提示系统重置
+    this._clearHint();
+    this._hasUsedRemove = false;
     // effectiveWidth = 全屏宽度，与编辑器保持一致，确保棋盘缩放不变
     this.gp.effectiveWidth = SCREEN_WIDTH;
     this.loadLevel(lv ? lv.data : null);
@@ -118,7 +126,9 @@ class PlayingEngine {
       this.gp.diameter = data.board.diameter || 30;
     }
     this.gp.pigs = (data && data.pigs ? data.pigs : []).map(p => ({
-      id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle
+      id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
+      hintId: p.hintId != null ? p.hintId : null,
+      hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
     }));
     this.gp.dragState = null;
     this.gp.flashingPigs = {};
@@ -182,9 +192,15 @@ class PlayingEngine {
       this.restartLevel();
       return;
     }
-    if (this.hintBtn && x >= this.hintBtn.x && x <= this.hintBtn.x + this.hintBtn.w &&
+    if (this.hintBtn && !this._hintTarget && x >= this.hintBtn.x && x <= this.hintBtn.x + this.hintBtn.w &&
         y >= this.hintBtn.y && y <= this.hintBtn.y + this.hintBtn.h) {
       this._showHint();
+      return;
+    }
+    // 移除按钮
+    if (this._removeBtn && x >= this._removeBtn.x && x <= this._removeBtn.x + this._removeBtn.w &&
+        y >= this._removeBtn.y && y <= this._removeBtn.y + this._removeBtn.h) {
+      this._removeHintedPig();
       return;
     }
 
@@ -328,6 +344,10 @@ class PlayingEngine {
       this.gp.flyingPigs.push(this.gp.pigs[idx]);
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
+      // 如果推出的是提示目标 → 清除提示
+      if (this._hintTarget && this._hintTarget.id === pigId) {
+        this._clearHint();
+      }
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
 
       // 连击系统 ——— 每次逃脱触发
@@ -354,6 +374,8 @@ class PlayingEngine {
   }
 
   restartLevel() {
+    this._clearHint();
+    this._hasUsedRemove = false;
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
     this._victory = false;
     this._isNewMaster = false;
@@ -394,8 +416,12 @@ class PlayingEngine {
         console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
       }
     }
-    // 尝试夺关主
-    this._tryClaimMaster();
+    // 尝试夺关主（用过移除则跳过）
+    if (!this._hasUsedRemove) {
+      this._tryClaimMaster();
+    } else {
+      console.log('[关主] 使用了移除按钮，跳过关主判定');
+    }
   }
 
   _goNextLevel() {
@@ -420,6 +446,9 @@ class PlayingEngine {
       this._authShown = false;
       this._destroyAuthBtn();
       this._isNewMaster = false;
+      // 提示系统重置
+      this._clearHint();
+      this._hasUsedRemove = false;
       // 关主信息切换
       this._levelMaster = null;
       this._masterLoading = false;
@@ -778,7 +807,7 @@ _tryClaimMaster() {
     // 2. 棋盘主体
     this.gp.topBarH = this._boardCardY + CARD_PADDING;
     this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
-    this.gp.renderBoard(ctx, 0, 0);
+    this.gp.renderBoard(ctx, { hintPigId: this._hintTarget ? this._hintTarget.id : null });
 
     // 3. 连击组件（棋盘卡片内左上角）
     this._renderComboWidget();
@@ -904,13 +933,26 @@ _tryClaimMaster() {
     ctx.fillText('\u91CD\u7F6E', resetX + btnW / 2, btnY + btnH / 2);
 
     // === 提示按钮 ===
-    const hintX = resetX - btnW - gap;
+    var hintX = resetX - btnW - gap;
     this.hintBtn = { x: hintX, y: btnY, w: btnW, h: btnH };
 
+    var hintDisabled = !!this._hintTarget;
     this._whiteBtn(hintX, btnY, btnW, btnH);
-    ctx.fillStyle = PURPLE;
+    ctx.fillStyle = hintDisabled ? 'rgba(139,92,246,0.3)' : PURPLE;
     ctx.font = 'bold 13px sans-serif';
     ctx.fillText('\u63D0\u793A', hintX + btnW / 2, btnY + btnH / 2);
+
+    // === 移除按钮（提示激活时出现）===
+    if (this._hintTarget) {
+      var removeX = hintX - btnW - gap;
+      this._removeBtn = { x: removeX, y: btnY, w: btnW, h: btnH };
+      this._whiteBtn(removeX, btnY, btnW, btnH);
+      ctx.fillStyle = '#FF5252';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('\u79FB\u9664', removeX + btnW / 2, btnY + btnH / 2);
+    } else {
+      this._removeBtn = null;
+    }
   }
 
   _whiteBtn(x, y, w, h) {
@@ -926,11 +968,89 @@ _tryClaimMaster() {
     ctx.restore();
   }
 
+  // ============================================================
+  // 提示系统
+  // ============================================================
   _showHint() {
-    // 提示功能占位 — 后续实现
-    if (typeof wx !== 'undefined' && wx.showToast) {
-      wx.showToast({ title: '\u63D0\u793A\u529F\u80FD\u5F00\u53D1\u4E2D', icon: 'none', duration: 1500 });
+    if (this._hintTarget) return; // 已经有提示进行中
+
+    // 找出未逃脱 + 有 hintId 的猪中，hintId 最小的
+    var best = null;
+    for (var i = 0; i < this.gp.pigs.length; i++) {
+      var p = this.gp.pigs[i];
+      if (p.hintId == null) continue;
+      if (!best || p.hintId < best.hintId) best = p;
     }
+    if (!best) {
+      wx.showToast({ title: '本关无提示', icon: 'none', duration: 1500 });
+      return;
+    }
+    this._hintTarget = best;
+    this._startGhostTimer();
+  }
+
+  _startGhostTimer() {
+    if (this._hintTimer) clearInterval(this._hintTimer);
+    this._hintTimer = setInterval(this._playGhostAnimation.bind(this), 2000);
+    this._playGhostAnimation(); // 立即播一次
+  }
+
+  _playGhostAnimation() {
+    if (!this._hintTarget) return;
+    var pig = this._hintTarget;
+    // 确保猪还在（未被移除）
+    if (this.gp.pigs.indexOf(pig) < 0) return;
+    var ha = pig.hintAngle != null ? pig.hintAngle : pig.angle;
+    var r = this.gp.getPigRect(pig.tailIndex, pig.length, ha);
+    if (!r) return;
+
+    var rad = ha * Math.PI / 180;
+    var dirX = Math.cos(rad), dirY = -Math.sin(rad);
+    // 距离和正常逃脱相同（100 × collisionStep），时长翻倍 = 半速
+    var totalDist = 100 * this.gp.collisionStep;
+    this.gp.ghostAnimations.push({
+      pigId: pig.id,
+      hintAngle: ha,
+      dirX: dirX, dirY: dirY,
+      totalDist: totalDist, currentDx: 0, currentDy: 0,
+      startTime: Date.now(), duration: 12800
+    });
+    setTimeout(function() {
+      if (this._hintTarget) {
+        this.gp.ghostAnimations = [];
+      }
+    }.bind(this), 12900);
+  }
+
+  _removeHintedPig() {
+    if (!this._hintTarget) return;
+    var pig = this._hintTarget;
+    // 从棋盘移除（不急步数）
+    var idx = this.gp.pigs.indexOf(pig);
+    if (idx >= 0) {
+      this.gp.pigs.splice(idx, 1);
+      this.gp.clearPigOccupancy(pig.id);
+    }
+    this._hasUsedRemove = true;
+    this._clearHint();
+
+    // 所有猪都消失 → 通关
+    if (this.gp.pigs.length === 0) {
+      setTimeout(function() {
+        this._victory = true;
+        this._markCleared();
+      }.bind(this), 400);
+    }
+    wx.showToast({ title: '已移除', icon: 'none', duration: 1000 });
+  }
+
+  _clearHint() {
+    if (this._hintTimer) {
+      clearInterval(this._hintTimer);
+      this._hintTimer = null;
+    }
+    this.gp.ghostAnimations = [];
+    this._hintTarget = null;
   }
 
   _roundRect(ctx, x, y, w, h, r) {
