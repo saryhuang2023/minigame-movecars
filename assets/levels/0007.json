@@ -183,14 +183,6 @@
     },
     {
       "angle": 90,
-      "hintAngle": 100,
-      "hintId": 16,
-      "id": 199,
-      "length": 209,
-      "tail": 93
-    },
-    {
-      "angle": 90,
       "id": 200,
       "length": 280,
       "tail": 52
@@ -209,8 +201,16 @@
       "id": 194,
       "length": 145,
       "tail": 29
+    },
+    {
+      "angle": 90,
+      "hintAngle": 100,
+      "hintId": 16,
+      "id": 199,
+      "length": 234,
+      "tail": 93
     }
   ],
   "ready": 1,
-  "version": 13
+  "version": 14
 }

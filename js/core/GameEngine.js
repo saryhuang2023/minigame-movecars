@@ -586,7 +586,8 @@ class GameEngine {
     // 激活新状态（menu 的输入在 setupMenuInput 已注册）
     switch (curr) {
       case 'menu':
-        this._titleTapCount = 0; // 离开后再回来重新计数
+        // 未解锁时重置连击计数（已解锁则保持，入口不再隐藏）
+        if (this._titleTapCount < 5) this._titleTapCount = 0;
         break;
       case 'editor':      this.editor.activate();          break;
       case 'levelSelect': this.levelSelect.activate();     break;

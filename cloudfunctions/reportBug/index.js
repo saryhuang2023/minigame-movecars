@@ -50,7 +50,9 @@ exports.main = async (event, context) => {
       }
     }
 
-    // 写入新记录
+    // 写入新记录 — 用服务器时间覆盖客户端时间戳（手机时钟可能不准）
+    report.meta.clientTime = report.meta.timestamp;  // 保留原始客户端时间供诊断
+    report.meta.timestamp = now;
     report.meta.lastSeen = now;
     report.meta.dupCount = 1;
 

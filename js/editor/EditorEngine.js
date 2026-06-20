@@ -66,12 +66,18 @@ class EditorEngine {
     this.loadLevelList();
     this.dirty = false;
     this.showRedFrame = false;
-    this._cloudLoading = true;
     this.input.on('editor', (e) => this.handleEvent(e));
-    // 异步从云端拉取关卡列表，完成后解除 loading
-    this._pullCloudLevels().finally(() => {
+
+    // 云端同步只在第一次 activate 时执行，之后跳过（_cloudSynced 在 deactivate 中不清除）
+    if (!this._cloudSynced) {
+      this._cloudSynced = true;
+      this._cloudLoading = true;
+      this._pullCloudLevels().finally(() => {
+        this._cloudLoading = false;
+      });
+    } else {
       this._cloudLoading = false;
-    });
+    }
   }
 
   deactivate() {
@@ -685,7 +691,10 @@ class EditorEngine {
       }).filter(Boolean);
 
       if (this.levelList.length > 0) {
-        this.currentLevelIdx = this.levelList.length - 1;
+        // 从试玩返回时保持原关卡不动，只在首次进入时自动选最后一关
+        if (this.currentLevelIdx == null || this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
+          this.currentLevelIdx = this.levelList.length - 1;
+        }
         this.loadLevelData(this.levelList[this.currentLevelIdx].data);
       } else {
         this.newLevel();
