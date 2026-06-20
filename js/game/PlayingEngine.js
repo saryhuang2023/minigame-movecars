@@ -383,6 +383,17 @@ class PlayingEngine {
       cleared.push(name);
       wx.setStorageSync('clearedLevels', JSON.stringify(cleared));
     }
+    // 推进 lastLevelIndex：通关后无论点"退出"还是"下一关"，下次"开始游戏"都进下一关
+    var currentIdx = databus.currentLevelIndex;
+    var savedRaw = wx.getStorageSync('lastLevelIndex');
+    var savedIdx = (savedRaw !== '' && savedRaw !== undefined && savedRaw !== null) ? parseInt(savedRaw, 10) : -1;
+    if (currentIdx >= 0 && currentIdx >= savedIdx) {
+      var nextIdx = currentIdx + 1;
+      if (nextIdx < databus.projectLevels.length) {
+        wx.setStorageSync('lastLevelIndex', nextIdx);
+        console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
+      }
+    }
     // 尝试夺关主
     this._tryClaimMaster();
   }
@@ -691,27 +702,23 @@ _tryClaimMaster() {
     var isMe = this._levelMaster && this._myOpenId && this._levelMaster.userId === this._myOpenId;
     ctx.fillStyle = isMe ? '#EC4899' : '#334155';
     ctx.font = 'bold 10px sans-serif';
-    ctx.fillText(isMe ? '我是关主' : '⭐关主', leftCx, badgeY + 8);
+    ctx.fillText(isMe ? '我是关主' : '⭐关主', leftCx, badgeY + 11);
 
     if (this._levelMaster) {
       // 头像（圆形裁剪）
+      var badgeHeadY = badgeY + 23;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(leftCx, badgeY + 36, 14, 0, Math.PI * 2);
+      ctx.arc(leftCx, badgeHeadY + 18, 18, 0, Math.PI * 2);
       ctx.clip();
       if (this._levelMaster.avatarImg) {
-        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 14, badgeY + 22, 28, 28);
+        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 18, badgeHeadY, 36, 36);
       } else {
         // 头像未加载完成 → 粉色占位
         ctx.fillStyle = '#FCE9F2';
-        ctx.fillRect(leftCx - 14, badgeY + 22, 28, 28);
+        ctx.fillRect(leftCx - 18, badgeHeadY, 36, 36);
       }
       ctx.restore();
-
-      // 步数
-      ctx.fillStyle = '#0F172A';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.fillText(this._levelMaster.minSteps + '步', leftCx, badgeY + 55);
     } else {
       // 无管主 → 显示「无」
       ctx.fillStyle = '#94A3B8';
@@ -734,16 +741,22 @@ _tryClaimMaster() {
     var rightX = divX + 8;
     ctx.textAlign = 'left';
 
+    // 关主步数
+    ctx.fillStyle = '#334155';
+    ctx.font = '12px sans-serif';
+    var recText = this._levelMaster != null ? ('关主步数:' + this._levelMaster.minSteps + '步') : '关主步数:无';
+    ctx.fillText(recText, rightX, badgeY + 10);
+
     // 我的记录
     ctx.fillStyle = '#334155';
     ctx.font = '12px sans-serif';
     var recText = this._myRecord != null ? ('我的记录:' + this._myRecord + '步') : '我的记录:无';
-    ctx.fillText(recText, rightX, badgeY + 20);
+    ctx.fillText(recText, rightX, badgeY + 30);
 
     // 当前步数（金色强调）
     ctx.fillStyle = '#F59E0B';
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 40);
+    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 48);
 
     ctx.textAlign = 'center'; // 复位
   }
@@ -816,13 +829,13 @@ _tryClaimMaster() {
   }
 
   _drawTopBar(safeTop) {
-    const barY = safeTop + PADDING - 60;
+    const barY = safeTop;
     const barW = this._boardCardW;
 
     // === 返回按钮（左侧）===
     const backW = 49, backH = 47;
     const backX = PADDING;
-    const backY = barY + (TOP_BAR_H - backH) / 2;
+    const backY = PADDING;
     this.backBtn = { x: backX, y: backY, w: backW, h: backH };
 
     // 白色半透明底 + 圆角 18
