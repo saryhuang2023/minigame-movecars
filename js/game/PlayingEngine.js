@@ -488,9 +488,9 @@ class PlayingEngine {
     }
 
     var badgeW = 180;
-    var badgeH = 68;
-    var badgeX = cardX + CARD_PADDING;
-    var badgeY = cardY + cardH - badgeH - 10;
+    var badgeH = 70;
+    var badgeX = 5;
+    var badgeY = SCREEN_HEIGHT - badgeH-5;
 
     // 半透明白底 + 浅粉边框 + 微弱阴影
     ctx.save();
@@ -508,39 +508,39 @@ class PlayingEngine {
     ctx.restore();
 
     // === 左栏：关主信息 ===
-    var leftCx = badgeX + 26; // 左栏中心 X
+    var leftCx = badgeX + 30; // 左栏中心 X
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
     // 标签「关主记录」
-    ctx.fillStyle = '#94A3B8';
+    ctx.fillStyle = '#334155';
     ctx.font = '12px sans-serif';
-    ctx.fillText('关主记录', leftCx, badgeY + 8);
+    ctx.fillText('关主记录', leftCx, badgeY + 12);
 
     if (this._levelMaster) {
       // 头像（圆形裁剪）
       ctx.save();
       ctx.beginPath();
-      ctx.arc(leftCx, badgeY + 30, 16, 0, Math.PI * 2);
+      ctx.arc(leftCx, badgeY + 40, 16, 0, Math.PI * 2);
       ctx.clip();
       if (this._levelMaster.avatarImg) {
-        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 16, badgeY + 14, 32, 32);
+        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 16, badgeY + 22, 32, 32);
       } else {
         // 头像图未加载完成 → 粉色占位
         ctx.fillStyle = '#FCE9F2';
-        ctx.fillRect(leftCx - 16, badgeY + 14, 32, 32);
+        ctx.fillRect(leftCx - 16, badgeY + 22, 32, 32);
       }
       ctx.restore();
 
       // 步数
       ctx.fillStyle = '#0F172A';
       ctx.font = 'bold 13px sans-serif';
-      ctx.fillText(this._levelMaster.minSteps + '步', leftCx, badgeY + 48);
+      ctx.fillText(this._levelMaster.minSteps + '步', leftCx, badgeY + 55);
     } else {
       // 无管主 → 显示「无」
       ctx.fillStyle = '#94A3B8';
       ctx.font = '11px sans-serif';
-      ctx.fillText('无', leftCx, badgeY + 30);
+      ctx.fillText('无人通关', leftCx, badgeY + 35);
     }
 
     // === 分隔线 ===
