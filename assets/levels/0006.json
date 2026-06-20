@@ -9,12 +9,14 @@
   "pigs": [
     {
       "angle": 214.35755282065006,
+      "hintId": 20,
       "id": 123,
       "length": 38,
       "tail": 4
     },
     {
       "angle": 90,
+      "hintId": 21,
       "id": 124,
       "length": 82,
       "tail": 19
@@ -33,60 +35,77 @@
     },
     {
       "angle": 270,
+      "hintId": 3,
       "id": 127,
       "length": 47,
       "tail": 90
     },
     {
       "angle": 214.35755282065006,
+      "hintAngle": 330,
+      "hintId": 4,
       "id": 128,
       "length": 41,
       "tail": 86
     },
     {
       "angle": 90,
+      "hintId": 22,
       "id": 129,
       "length": 43,
       "tail": 53
     },
     {
       "angle": 214.35755282065006,
+      "hintAngle": 146,
+      "hintId": 13,
       "id": 133,
       "length": 37,
       "tail": 23
     },
     {
       "angle": 325.6424471793499,
+      "hintAngle": 229,
+      "hintId": 15,
       "id": 135,
       "length": 165,
       "tail": 56
     },
     {
       "angle": 325.6424471793499,
+      "hintAngle": 230,
+      "hintId": 14,
       "id": 134,
       "length": 155,
       "tail": 60
     },
     {
       "angle": 145.64244717934994,
+      "hintAngle": 213,
+      "hintId": 18,
       "id": 136,
       "length": 36,
       "tail": 62
     },
     {
       "angle": 214.35755282065006,
+      "hintAngle": 213,
+      "hintId": 19,
       "id": 137,
       "length": 37,
       "tail": 3
     },
     {
       "angle": 270,
+      "hintAngle": 328,
+      "hintId": 23,
       "id": 138,
       "length": 38,
       "tail": 1
     },
     {
       "angle": 90,
+      "hintId": 1,
       "id": 139,
       "length": 36,
       "tail": 59
@@ -99,30 +118,40 @@
     },
     {
       "angle": 34.357552820650085,
+      "hintAngle": 89,
+      "hintId": 2,
       "id": 141,
       "length": 40,
       "tail": 63
     },
     {
       "angle": 34.35755282065014,
+      "hintAngle": 327,
+      "hintId": 8,
       "id": 145,
       "length": 36,
       "tail": 31
     },
     {
       "angle": 145.64244717934994,
+      "hintAngle": 90,
+      "hintId": 16,
       "id": 146,
       "length": 167,
       "tail": 89
     },
     {
       "angle": 145.64244717934994,
+      "hintAngle": 90,
+      "hintId": 17,
       "id": 147,
       "length": 171,
       "tail": 93
     },
     {
       "angle": 325.6424471793499,
+      "hintAngle": 90,
+      "hintId": 11,
       "id": 148,
       "length": 43,
       "tail": 87
@@ -141,24 +170,32 @@
     },
     {
       "angle": 34.35755282065007,
+      "hintAngle": 327,
+      "hintId": 7,
       "id": 132,
       "length": 157,
       "tail": 80
     },
     {
       "angle": 214.35755282065006,
+      "hintAngle": 270,
+      "hintId": 6,
       "id": 153,
       "length": 120,
       "tail": 78
     },
     {
       "angle": 34.35755282065006,
+      "hintAngle": 329,
+      "hintId": 5,
       "id": 154,
       "length": 72,
       "tail": 85
     },
     {
       "angle": 90,
+      "hintAngle": 36,
+      "hintId": 24,
       "id": 155,
       "length": 146,
       "tail": 30
@@ -171,23 +208,29 @@
     },
     {
       "angle": 214.35755282065006,
+      "hintAngle": 153,
+      "hintId": 12,
       "id": 144,
       "length": 152,
       "tail": 69
     },
     {
       "angle": 34.35755282065006,
+      "hintAngle": 89,
+      "hintId": 10,
       "id": 157,
       "length": 102,
       "tail": 71
     },
     {
       "angle": 214.35755282065006,
+      "hintAngle": 148,
+      "hintId": 9,
       "id": 158,
       "length": 74,
       "tail": 64
     }
   ],
   "ready": 1,
-  "version": 8
+  "version": 10
 }

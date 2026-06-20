@@ -9,18 +9,21 @@
   "pigs": [
     {
       "angle": 270,
+      "hintId": 2,
       "id": 20,
       "length": 42,
       "tail": 90
     },
     {
       "angle": 210.96375653207357,
+      "hintId": 23,
       "id": 21,
       "length": 36,
       "tail": 39
     },
     {
       "angle": 270,
+      "hintId": 13,
       "id": 22,
       "length": 35,
       "tail": 78
@@ -51,6 +54,7 @@
     },
     {
       "angle": 270,
+      "hintId": 14,
       "id": 27,
       "length": 127,
       "tail": 62
@@ -69,155 +73,213 @@
     },
     {
       "angle": 90,
+      "hintId": 10,
       "id": 30,
       "length": 84,
       "tail": 69
     },
     {
       "angle": 270,
+      "hintAngle": 330,
+      "hintId": 16,
       "id": 31,
       "length": 38,
       "tail": 23
     },
     {
       "angle": 90,
+      "hintAngle": 30,
+      "hintId": 15,
       "id": 32,
       "length": 37,
       "tail": 38
     },
     {
       "angle": 210.96375653207357,
+      "hintAngle": 212,
+      "hintId": 22,
       "id": 33,
       "length": 42,
       "tail": 43
     },
     {
       "angle": 90,
+      "hintAngle": 158,
+      "hintId": 31,
       "id": 34,
       "length": 36,
       "tail": 53
     },
     {
       "angle": 90,
+      "hintId": 19,
       "id": 35,
       "length": 81,
       "tail": 52
     },
     {
       "angle": 270,
+      "hintId": 12,
       "id": 36,
       "length": 41,
       "tail": 81
     },
     {
       "angle": 90,
+      "hintId": 11,
       "id": 37,
       "length": 35,
       "tail": 77
     },
     {
       "angle": 270,
+      "hintAngle": 212,
+      "hintId": 7,
       "id": 38,
       "length": 127,
       "tail": 2
     },
     {
       "angle": 270,
+      "hintAngle": 328,
+      "hintId": 17,
       "id": 39,
       "length": 128,
       "tail": 22
     },
     {
       "angle": 329.03624346792645,
+      "hintAngle": 32,
+      "hintId": 18,
       "id": 40,
       "length": 39,
       "tail": 41
     },
     {
       "angle": 270,
+      "hintId": 9,
       "id": 41,
       "length": 44,
       "tail": 80
     },
     {
       "angle": 90,
+      "hintAngle": 89,
+      "hintId": 8,
       "id": 42,
       "length": 37,
       "tail": 76
     },
     {
       "angle": 90,
+      "hintAngle": 149,
+      "hintId": 21,
       "id": 43,
       "length": 41,
       "tail": 51
     },
     {
       "angle": 90,
+      "hintAngle": 271,
+      "hintId": 27,
       "id": 44,
       "length": 41,
       "tail": 36
     },
     {
       "angle": 270,
+      "hintAngle": 330,
+      "hintId": 24,
       "id": 45,
       "length": 43,
       "tail": 21
     },
     {
       "angle": 90,
+      "hintAngle": 151,
+      "hintId": 5,
       "id": 46,
       "length": 33,
       "tail": 16
     },
     {
       "angle": 329.03624346792645,
+      "hintAngle": 271,
+      "hintId": 30,
       "id": 47,
       "length": 48,
       "tail": 1
     },
     {
       "angle": 329.03624346792645,
+      "hintAngle": 270,
+      "hintId": 29,
       "id": 48,
       "length": 42,
       "tail": 0
     },
     {
       "angle": 90,
+      "hintAngle": 331,
+      "hintId": 25,
       "id": 49,
       "length": 34,
       "tail": 15
     },
     {
       "angle": 270,
+      "hintAngle": 330,
+      "hintId": 26,
       "id": 50,
       "length": 39,
       "tail": 20
     },
     {
       "angle": 329.03624346792645,
+      "hintAngle": 271,
+      "hintId": 28,
       "id": 51,
       "length": 36,
       "tail": 35
     },
     {
       "angle": 90,
+      "hintAngle": 32,
+      "hintId": 20,
       "id": 52,
       "length": 79,
       "tail": 50
     },
     {
       "angle": 270,
+      "hintId": 3,
       "id": 53,
       "length": 40,
       "tail": 75
     },
     {
       "angle": 270,
+      "hintId": 4,
       "id": 54,
       "length": 127,
       "tail": 59
+    },
+    {
+      "angle": 270,
+      "hintId": 1,
+      "id": 55,
+      "length": 41,
+      "tail": 87
+    },
+    {
+      "angle": 90,
+      "hintAngle": 148,
+      "hintId": 6,
+      "id": 56,
+      "length": 78,
+      "tail": 68
     }
   ],
   "ready": 1,
-  "version": 2
+  "version": 10
 }

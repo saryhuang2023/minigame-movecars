@@ -33,12 +33,16 @@
     },
     {
       "angle": 144.60865992092684,
+      "hintAngle": 186,
+      "hintId": 10,
       "id": 225,
       "length": 120,
       "tail": 29
     },
     {
       "angle": 144.6086599209268,
+      "hintAngle": 193,
+      "hintId": 7,
       "id": 226,
       "length": 123,
       "tail": 34
@@ -87,18 +91,24 @@
     },
     {
       "angle": 35.391340079073174,
+      "hintAngle": 341,
+      "hintId": 9,
       "id": 234,
       "length": 160,
       "tail": 25
     },
     {
       "angle": 35.391340079073196,
+      "hintAngle": 360,
+      "hintId": 8,
       "id": 235,
       "length": 165,
       "tail": 30
     },
     {
       "angle": 35.39134007907319,
+      "hintAngle": 360,
+      "hintId": 6,
       "id": 236,
       "length": 166,
       "tail": 35
@@ -111,24 +121,30 @@
     },
     {
       "angle": 270,
+      "hintId": 3,
       "id": 238,
       "length": 48,
       "tail": 83
     },
     {
       "angle": 144.60865992092678,
+      "hintAngle": 36,
+      "hintId": 2,
       "id": 239,
       "length": 43,
       "tail": 51
     },
     {
       "angle": 215.39134007907316,
+      "hintId": 4,
       "id": 240,
       "length": 127,
       "tail": 77
     },
     {
       "angle": 35.391340079073174,
+      "hintAngle": 9,
+      "hintId": 5,
       "id": 241,
       "length": 123,
       "tail": 84
@@ -141,6 +157,7 @@
     },
     {
       "angle": 35.39134007907319,
+      "hintId": 1,
       "id": 243,
       "length": 164,
       "tail": 47
@@ -171,5 +188,5 @@
     }
   ],
   "ready": 1,
-  "version": 3
+  "version": 4
 }
