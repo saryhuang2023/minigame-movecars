@@ -60,6 +60,9 @@ class PlayingEngine {
     this._masterLoading = false;
     this._myOpenId = null;          // 当前用户 openid（首次 activate 时异步获取）
     this._userInfo = null;          // { nickName, avatarUrl } 缓存
+    this._authBtn = null;           // wx.createUserInfoButton 授权按钮
+    this._authShown = false;        // 本局是否已弹出过授权按钮
+    this._isNewMaster = false;      // 本局是否成为新关主（用于结算界面文案）
   }
 
   activate() {
@@ -94,6 +97,8 @@ class PlayingEngine {
   deactivate() {
     this.input.off('playing');
     this._resetCombo();
+    this._destroyAuthBtn();
+    this._isNewMaster = false;
   }
 
   loadLevel(data) {
@@ -343,6 +348,7 @@ class PlayingEngine {
   restartLevel() {
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
     this._victory = false;
+    this._isNewMaster = false;
   }
 
   _quickPass() {
@@ -392,6 +398,9 @@ class PlayingEngine {
       this.levelName = next.name;
       this.loadLevel(data);
       this._victory = false;
+      this._authShown = false;
+      this._destroyAuthBtn();
+      this._isNewMaster = false;
       // 关主信息切换
       this._levelMaster = null;
       this._masterLoading = false;
@@ -466,9 +475,15 @@ class PlayingEngine {
       });
   }
 
-  _tryClaimMaster() {
+  /**
+ * 尝试夺位成为当前关卡的关主。仅在真机环境下执行，模拟器/开发工具自动跳过。
+ * 若当前步数少于关主最少步数，则异步获取用户信息后调用云函数上报夺位；
+ * 持平或更多步数时不夺位。夺位成功后刷新本地关主数据并加载头像，失败时静默处理。
+ * @returns {void} 异步流程，无同步返回值
+ */
+_tryClaimMaster() {
     // 仅真机上报，模拟器/开发工具跳过
-    if (wx.getSystemInfoSync().platform === 'devtools') {
+    if (wx.getDeviceInfo().platform === 'devtools') {
       console.log('[关主] 开发环境跳过夺位上报');
       return;
     }
@@ -476,12 +491,17 @@ class PlayingEngine {
     this._updateMyRecord();
     if (this.steps >= currentMin) return; // 持平不夺
 
-    // 异步获取用户信息，再调云函数夺位
+    // ✅ 乐观 UI：立即弹出授权按钮，不等服务器确认
+    this._showMasterAuthButton();
+
+    // 后台异步夺位上报（静默，不阻塞玩家）
     this._getUserInfo().then(userInfo => {
+      var hasRealAvatar = !!userInfo.avatarUrl;
       const cloud = require('../cloud.js');
+      console.log('[关主] _tryClaimMaster 后台上报 avatarUrl=' + (userInfo.avatarUrl ? '有' : '空') + ' nickName=' + userInfo.nickName);
       cloud.claimLevelMaster(this.levelName, this.steps, userInfo.avatarUrl || '', userInfo.nickName || '')
         .then(res => {
-          if (res.code === 0 && res.claimed) {
+          if (res.code === 0) {
             this._levelMaster = res.master;
             if (res.master && res.master.avatarUrl) {
               this._loadAvatarImage(res.master.avatarUrl).then(function(img) {
@@ -490,13 +510,23 @@ class PlayingEngine {
                 console.warn('[关主] claim avatar load error:', err);
               });
             }
-          }
-          if (res.claimed) {
-            wx.showToast({ title: '恭喜成为关主!', icon: 'none', duration: 1500 });
+            if (res.claimed) {
+              // 标记为新关主，结算界面显示恭喜文案
+              this._isNewMaster = true;
+              // 服务器已返回真实头像 → 无需授权按钮，销毁
+              if (hasRealAvatar) {
+                this._destroyAuthBtn();
+              }
+            } else {
+              // 服务器说没夺到（别人步数更少或持平不同人）→ 撤回授权按钮
+              console.log('[关主] 服务器返回 claimed=false，撤回授权按钮');
+              this._destroyAuthBtn();
+            }
           }
         })
         .catch(err => {
-          // 静默失败，不影响玩家
+          console.warn('[关主] claimLevelMaster 失败，撤回授权按钮:', err);
+          this._destroyAuthBtn();
         });
     });
   }
@@ -508,15 +538,97 @@ class PlayingEngine {
         withCredentials: false,
         success: function(res) {
           var info = res.userInfo || {};
-          this._userInfo = { nickName: info.nickName || '', avatarUrl: info.avatarUrl || '' };
+          var nick = info.nickName || '';
+          var avatar = info.avatarUrl || '';
+          // 新版微信出于隐私保护不返回真实头像/昵称 → 降级用 openid 生成
+          if (!nick && this._myOpenId) {
+            nick = '玩家' + this._myOpenId.slice(-4);
+          }
+          this._userInfo = { nickName: nick, avatarUrl: avatar };
           resolve(this._userInfo);
         }.bind(this),
         fail: function() {
-          this._userInfo = { nickName: '', avatarUrl: '' };
+          var nick = '';
+          if (this._myOpenId) nick = '玩家' + this._myOpenId.slice(-4);
+          this._userInfo = { nickName: nick, avatarUrl: '' };
           resolve(this._userInfo);
         }.bind(this)
       });
     }.bind(this));
+  }
+
+  // 销毁授权按钮（切换关卡或退出时清理）
+  _destroyAuthBtn() {
+    if (this._authBtn) {
+      try { this._authBtn.destroy(); } catch (e) {}
+      this._authBtn = null;
+    }
+  }
+
+  // 乐观 UI：通关后立即弹出授权按钮，不等服务器确认
+  // 玩家点击后获取真实头像昵称并重传关主信息
+  _showMasterAuthButton() {
+    if (this._authShown) return;
+    this._authShown = true;
+
+    // 与 renderVictoryOverlay 保持一致的弹窗位置计算
+    var hasCombo = this._maxCombo >= 2;
+    var ph = hasCombo ? 220 : 200;
+    var py = (SCREEN_HEIGHT - ph) / 2 - 20;
+    var authW = 220, authH = 44;
+    var authX = (SCREEN_WIDTH - authW) / 2;
+    // 放在"共 X 步"和按钮之间
+    var authY = py + 88;
+
+    var that = this;
+    console.log('[关主] _showMasterAuthButton 弹出授权按钮 level=' + this.levelName + ' steps=' + this.steps);
+    this._authBtn = wx.createUserInfoButton({
+      type: 'text',
+      text: '\uD83D\uDC51 恭喜你成为关主！点击授权显示头像',
+      style: {
+        left: authX,
+        top: authY,
+        width: authW,
+        height: authH,
+        lineHeight: authH,
+        backgroundColor: '#FFD700',
+        color: '#1a1a2e',
+        textAlign: 'center',
+        fontSize: 15,
+        borderRadius: 10,
+      }
+    });
+
+    this._authBtn.onTap(function(res) {
+      console.log('[关主] 授权按钮 onTap 触发，res keys:', res ? Object.keys(res).join(',') : 'null');
+      var info = (res && res.userInfo) ? res.userInfo : {};
+      console.log('[关主] onTap userInfo:', JSON.stringify(info).substring(0, 200));
+      if (info.nickName || info.avatarUrl) {
+        console.log('[关主] onTap 获取到真实头像昵称，开始重传关主');
+        that._userInfo = { nickName: info.nickName || '', avatarUrl: info.avatarUrl || '' };
+        // 重新上传关主信息（这次带真实头像昵称）
+        var cloud = require('../cloud.js');
+        cloud.claimLevelMaster(that.levelName, that.steps, info.avatarUrl || '', info.nickName || '')
+          .then(function(result) {
+            console.log('[关主] onTap claimLevelMaster 返回 code=' + (result ? result.code : 'null') + ' claimed=' + (result ? result.claimed : 'null') + ' msg=' + (result ? result.msg : ''));
+            if (result && result.code === 0) {
+              that._levelMaster = result.master;
+              if (result.master && result.master.avatarUrl) {
+                that._loadAvatarImage(result.master.avatarUrl).then(function(img) {
+                  if (that._levelMaster) that._levelMaster.avatarImg = img;
+                }).catch(function() {});
+              }
+            }
+          })
+          .catch(function(err) {
+            console.warn('[关主] onTap claimLevelMaster 失败:', err);
+          });
+      } else {
+        console.log('[关主] onTap 未获取到真实头像昵称（用户可能拒绝授权）');
+      }
+      that._authBtn.destroy();
+      that._authBtn = null;
+    });
   }
 
   _updateMyRecord() {
@@ -536,12 +648,6 @@ class PlayingEngine {
     // 诊断：每60帧打印一次
     if (!this._badgeLogFrame) this._badgeLogFrame = 0;
     this._badgeLogFrame++;
-    if (this._badgeLogFrame % 60 === 1) {
-      console.log('[关主] _renderMasterBadge levelName=' + JSON.stringify(this.levelName)
-        + ' _levelMaster=' + JSON.stringify(this._levelMaster)
-        + ' _myRecord=' + JSON.stringify(this._myRecord)
-        + ' cardX=' + cardX + ' cardY=' + cardY + ' cardH=' + cardH);
-    }
 
     var badgeW = 150;
     var badgeH = 70;
@@ -828,9 +934,13 @@ class PlayingEngine {
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     const hasCombo = this._maxCombo >= 2;
+    const isNewMaster = this._isNewMaster;
 
-    // 弹窗面板（有连击时加高）
-    const pw = 260, ph = hasCombo ? 220 : 200;
+    // 弹窗面板（有连击或新关主时加高）
+    var ph = 200;
+    if (hasCombo) ph += 20;
+    if (isNewMaster) ph += 22;
+    const pw = 260;
     const px = (SCREEN_WIDTH - pw) / 2;
     const py = (SCREEN_HEIGHT - ph) / 2 - 20;
 
@@ -855,14 +965,24 @@ class PlayingEngine {
     ctx.fillText(`共 ${this.steps} 步`, SCREEN_WIDTH / 2, py + 78);
 
     // 最大连击（≥2 时展示）
-    const btnY = hasCombo ? py + 150 : py + 120;
+    var nextY = py + 78;  // 追踪下一行 Y 坐标
     if (hasCombo) {
       ctx.fillStyle = '#FF9800';
       ctx.font = 'bold 15px sans-serif';
       ctx.fillText(`🔥 最大连击 ${this._maxCombo}`, SCREEN_WIDTH / 2, py + 112);
+      nextY = py + 112;
     }
 
-    // 按钮
+    // 新关主文案
+    if (isNewMaster) {
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText('👑 恭喜你成为新的关主！', SCREEN_WIDTH / 2, nextY + 22);
+      nextY = nextY + 22;
+    }
+
+    // 按钮（紧随最后一行内容）
+    const btnY = nextY + 34;
     const btnW = 100, btnH = 42;
     const gap = 20;
     const totalBtnW = btnW * 2 + gap;
