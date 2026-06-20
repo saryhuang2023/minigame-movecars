@@ -24,6 +24,7 @@ class GameEngine {
     // 菜单按钮
     this.menuButtons = [];
     this._titleTapCount = 0; // 标题连击计数，满 5 次显示编辑器入口
+    this._titleLongPressTimer = null;  // 标题长按计时器（模拟器弹 debug 面板用）
 
     this.start();
   }
@@ -365,36 +366,61 @@ class GameEngine {
   }
 
   setupMenuInput() {
+    var self = this;
+    // 标题区域命中检测（复用）
+    function _inTitleArea(t) {
+      var tx = self._titleHitX, ty = self._titleHitY;
+      var tw = self._titleHitW || 120, th = self._titleHitH || 120;
+      return tx !== undefined && t.x >= tx && t.x <= tx + tw && t.y >= ty && t.y <= ty + th;
+    }
+
     this.input.on('menu', (e) => {
       if (e.type === 'touchstart' && e.touches[0]) {
         var t = e.touches[0];
+        var inTitle = _inTitleArea(t);
 
         // 标题连击检测（5 次解锁编辑器入口 — 点击猪鼻Logo区域）
-        if (this._titleTapCount < 5) {
-          var titleX = this._titleHitX;
-          var titleY = this._titleHitY;
-          var titleW = this._titleHitW || 120;
-          var titleH = this._titleHitH || 120;
-          if (titleX !== undefined && t.x >= titleX && t.x <= titleX + titleW &&
-              t.y >= titleY && t.y <= titleY + titleH) {
-            this._titleTapCount++;
-            if (this._titleTapCount >= 5) {
-              wx.showToast({ title: '编辑器已解锁', icon: 'none', duration: 1200 });
-            }
-            return;
+        if (inTitle && this._titleTapCount < 5) {
+          this._titleTapCount++;
+          if (this._titleTapCount >= 5) {
+            wx.showToast({ title: '编辑器已解锁', icon: 'none', duration: 1200 });
           }
         }
 
-        for (var i = 0; i < this.menuButtons.length; i++) {
-          var btn = this.menuButtons[i];
-          if (t.x >= btn.x && t.x <= btn.x + btn.w &&
-              t.y >= btn.y && t.y <= btn.y + btn.h) {
-            if (btn.action) btn.action();
-            return;
+        // 标题长按 2 秒 → 弹出调试面板（模拟器友好：不需要三指）
+        if (inTitle) {
+          this._cancelTitleLongPress();
+          this._titleLongPressTimer = setTimeout(function () {
+            self._titleLongPressTimer = null;
+            DebugPanel.toggle();
+          }, 2000);
+        }
+
+        // 按钮点击（标题区域不触发按钮）
+        if (!inTitle) {
+          for (var i = 0; i < this.menuButtons.length; i++) {
+            var btn = this.menuButtons[i];
+            if (t.x >= btn.x && t.x <= btn.x + btn.w &&
+                t.y >= btn.y && t.y <= btn.y + btn.h) {
+              if (btn.action) btn.action();
+              return;
+            }
           }
         }
       }
+
+      // 手抬起或移动过远 → 取消长按
+      if (e.type === 'touchend' || e.type === 'touchmove') {
+        this._cancelTitleLongPress();
+      }
     });
+  }
+
+  _cancelTitleLongPress() {
+    if (this._titleLongPressTimer) {
+      clearTimeout(this._titleLongPressTimer);
+      this._titleLongPressTimer = null;
+    }
   }
 
   renderMenu() {
