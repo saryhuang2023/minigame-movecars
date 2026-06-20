@@ -595,12 +595,16 @@ _tryClaimMaster() {
             nick = '玩家' + this._myOpenId.slice(-4);
           }
           this._userInfo = { nickName: nick, avatarUrl: avatar };
+          // 持久化，避免每次新关卡都弹授权
+          wx.setStorageSync('userinfo_cache', this._userInfo);
           resolve(this._userInfo);
         }.bind(this),
         fail: function() {
           var nick = '';
           if (this._myOpenId) nick = '玩家' + this._myOpenId.slice(-4);
           this._userInfo = { nickName: nick, avatarUrl: '' };
+          // 降级方案也持久化，防止反复弹授权
+          wx.setStorageSync('userinfo_cache', this._userInfo);
           resolve(this._userInfo);
         }.bind(this)
       });
