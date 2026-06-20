@@ -54,6 +54,11 @@ class PlayingEngine {
     this._maxCombo = 0;             // 本局最大连击
     this._comboStartTime = 0;       // 当前连击窗口起始时间
     this._comboWidget = { visible: false, scale: 1, count: 0, createdAt: 0 };
+    // 关主系统
+    this._levelMaster = null;       // { avatarUrl, nickname, minSteps, avatarImg } | null
+    this._myRecord = null;          // 个人最好成绩（步数）| null
+    this._masterLoading = false;
+    this._userInfo = null;          // { nickName, avatarUrl } 缓存
   }
 
   activate() {
@@ -74,6 +79,14 @@ class PlayingEngine {
       }
     }
     this.input.on('playing', (e) => this.handleEvent(e));
+    // 加载个人历史记录（同步，瞬间完成）
+    var recKey = 'record_' + this.levelName;
+    var rawRec = wx.getStorageSync(recKey);
+    this._myRecord = (rawRec != null && rawRec !== '') ? rawRec : null;
+    console.log('[关主] activate levelName=' + JSON.stringify(this.levelName) + ' recKey=' + recKey + ' rawRec=' + JSON.stringify(rawRec) + ' _myRecord=' + JSON.stringify(this._myRecord));
+    // 异步拉取关主（fire-and-forget，不阻塞玩家操作）
+    this._masterLoading = false;  // 重置，防止上次请求未完成导致跳过
+    this._fetchLevelMaster();
   }
 
   deactivate() {
@@ -329,6 +342,7 @@ class PlayingEngine {
   }
 
   _markCleared() {
+    console.log('[关主] _markCleared called, level=' + this.levelName + ' steps=' + this.steps);
     var cleared = [];
     try {
       var raw = wx.getStorageSync('clearedLevels');
@@ -339,6 +353,8 @@ class PlayingEngine {
       cleared.push(name);
       wx.setStorageSync('clearedLevels', JSON.stringify(cleared));
     }
+    // 尝试夺关主
+    this._tryClaimMaster();
   }
 
   _goNextLevel() {
@@ -360,9 +376,198 @@ class PlayingEngine {
       this.levelName = next.name;
       this.loadLevel(data);
       this._victory = false;
+      // 关主信息切换
+      this._levelMaster = null;
+      this._masterLoading = false;
+      this._myRecord = wx.getStorageSync('record_' + this.levelName) || null;
+      this._fetchLevelMaster();
     } catch (err) {
       console.warn(`[Playing] 加载下一关 ${next.file} 失败:`, err);
     }
+  }
+
+  // ========== 关主系统 ==========
+  _fetchLevelMaster() {
+    if (this._masterLoading) return;
+    this._masterLoading = true;
+    const cloud = require('../cloud.js');
+    console.log('[关主] _fetchLevelMaster start levelName=' + JSON.stringify(this.levelName));
+    cloud.getLevelMaster(this.levelName)
+      .then(master => {
+        console.log('[关主] _fetchLevelMaster success master=' + JSON.stringify(master));
+        this._levelMaster = master;
+        this._masterLoading = false;
+        if (master && master.avatarUrl) {
+          const img = wx.createImage();
+          img.onload = () => {
+            console.log('[关主] avatar image loaded');
+            if (this._levelMaster) this._levelMaster.avatarImg = img;
+          };
+          img.onerror = () => { console.warn('[关主] avatar image load error'); };
+          img.src = master.avatarUrl;
+        }
+      })
+      .catch(err => {
+        console.warn('[关主] _fetchLevelMaster fail:', err);
+        this._levelMaster = null;
+        this._masterLoading = false;
+      });
+  }
+
+  _tryClaimMaster() {
+    const currentMin = this._levelMaster ? this._levelMaster.minSteps : 9999;
+    this._updateMyRecord();
+    if (this.steps >= currentMin) return; // 持平不夺
+
+    // 异步获取用户信息，再调云函数夺位
+    this._getUserInfo().then(userInfo => {
+      const cloud = require('../cloud.js');
+      cloud.claimLevelMaster(this.levelName, this.steps, userInfo.avatarUrl || '', userInfo.nickName || '')
+        .then(res => {
+          if (res.code === 0 && res.claimed) {
+            this._levelMaster = res.master;
+            if (res.master && res.master.avatarUrl) {
+              var img = wx.createImage();
+              img.onload = function() {
+                if (this._levelMaster) this._levelMaster.avatarImg = img;
+              }.bind(this);
+              img.onerror = function() {};
+              img.src = res.master.avatarUrl;
+            }
+          }
+          if (res.claimed) {
+            wx.showToast({ title: '恭喜成为关主!', icon: 'none', duration: 1500 });
+          }
+        })
+        .catch(err => {
+          // 静默失败，不影响玩家
+        });
+    });
+  }
+
+  _getUserInfo() {
+    if (this._userInfo) return Promise.resolve(this._userInfo);
+    return new Promise(function(resolve) {
+      wx.getUserInfo({
+        withCredentials: false,
+        success: function(res) {
+          var info = res.userInfo || {};
+          this._userInfo = { nickName: info.nickName || '', avatarUrl: info.avatarUrl || '' };
+          resolve(this._userInfo);
+        }.bind(this),
+        fail: function() {
+          this._userInfo = { nickName: '', avatarUrl: '' };
+          resolve(this._userInfo);
+        }.bind(this)
+      });
+    }.bind(this));
+  }
+
+  _updateMyRecord() {
+    var prev = wx.getStorageSync('record_' + this.levelName);
+    if (prev == null || prev === '' || this.steps < parseInt(prev)) {
+      console.log('[关主] _updateMyRecord saving: ' + this.levelName + ' steps=' + this.steps + ' prev=' + JSON.stringify(prev));
+      wx.setStorageSync('record_' + this.levelName, this.steps);
+      this._myRecord = this.steps;
+    }
+  }
+
+  _renderMasterBadge() {
+    var cardX = this._boardCardX;
+    var cardY = this._boardCardY;
+    var cardH = this._boardCardH;
+
+    // 诊断：每60帧打印一次
+    if (!this._badgeLogFrame) this._badgeLogFrame = 0;
+    this._badgeLogFrame++;
+    if (this._badgeLogFrame % 60 === 1) {
+      console.log('[关主] _renderMasterBadge levelName=' + JSON.stringify(this.levelName)
+        + ' _levelMaster=' + JSON.stringify(this._levelMaster)
+        + ' _myRecord=' + JSON.stringify(this._myRecord)
+        + ' cardX=' + cardX + ' cardY=' + cardY + ' cardH=' + cardH);
+    }
+
+    var badgeW = 180;
+    var badgeH = 68;
+    var badgeX = cardX + CARD_PADDING;
+    var badgeY = cardY + cardH - badgeH - 10;
+
+    // 半透明白底 + 浅粉边框 + 微弱阴影
+    ctx.save();
+    ctx.shadowColor = 'rgba(161, 150, 181, 0.08)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    this._roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 14);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = 'rgba(252, 233, 242, 1)';
+    ctx.lineWidth = 1;
+    this._roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 14);
+    ctx.stroke();
+    ctx.restore();
+
+    // === 左栏：关主信息 ===
+    var leftCx = badgeX + 26; // 左栏中心 X
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    // 标签「关主记录」
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('关主记录', leftCx, badgeY + 8);
+
+    if (this._levelMaster) {
+      // 头像（圆形裁剪）
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(leftCx, badgeY + 30, 16, 0, Math.PI * 2);
+      ctx.clip();
+      if (this._levelMaster.avatarImg) {
+        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 16, badgeY + 14, 32, 32);
+      } else {
+        // 头像图未加载完成 → 粉色占位
+        ctx.fillStyle = '#FCE9F2';
+        ctx.fillRect(leftCx - 16, badgeY + 14, 32, 32);
+      }
+      ctx.restore();
+
+      // 步数
+      ctx.fillStyle = '#0F172A';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(this._levelMaster.minSteps + '步', leftCx, badgeY + 48);
+    } else {
+      // 无管主 → 显示「无」
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('无', leftCx, badgeY + 30);
+    }
+
+    // === 分隔线 ===
+    var divX = badgeX + 52;
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(divX, badgeY + 14);
+    ctx.lineTo(divX, badgeY + badgeH - 14);
+    ctx.stroke();
+
+    // === 右栏：我的信息 ===
+    var rightX = divX + 12;
+    ctx.textAlign = 'left';
+
+    // 我的记录
+    ctx.fillStyle = '#334155';
+    ctx.font = '12px sans-serif';
+    var recText = this._myRecord != null ? ('我的记录:' + this._myRecord + '步') : '我的记录:无';
+    ctx.fillText(recText, rightX, badgeY + 14);
+
+    // 当前步数（金色强调）
+    ctx.fillStyle = '#F59E0B';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 34);
+
+    ctx.textAlign = 'center'; // 复位
   }
 
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
@@ -386,6 +591,9 @@ class PlayingEngine {
 
     // 3. 连击组件（棋盘卡片内左上角）
     this._renderComboWidget();
+
+    // 3.5 关主卡片（棋盘卡片内左下角）
+    this._renderMasterBadge();
 
     // 4. 顶栏
     this._drawTopBar(safeTop);
@@ -468,17 +676,10 @@ class PlayingEngine {
     ctx.font = 'bold 14px sans-serif';
     ctx.fillText(levelText, levelX + levelW / 2, levelY + levelH / 2);
 
-    // === 步数文字（右侧）===
-    ctx.fillStyle = MUTED;
-    ctx.font = '14px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('\u6B65\u6570 ' + this.steps, PADDING + barW - 60, barY + TOP_BAR_H / 2 + 50);
-
     // === 速通按钮（最右）===
     const qpW = 40, qpH = 31;
     const qpX = PADDING + barW - qpW;
-    const qpY = barY + (TOP_BAR_H - qpH) / 2 + 50;
+    const qpY = barY + (TOP_BAR_H - qpH) / 2;
     this._quickPassBtn = { x: qpX, y: qpY, w: qpW, h: qpH };
 
     ctx.fillStyle = AMBER;

@@ -136,6 +136,28 @@ async function reportBug(snapshot) {
   return callFunction('reportBug', { report: snapshot });
 }
 
+/**
+ * 获取关卡关主信息
+ * @param {string} levelId 关卡名（如 "0001"）
+ * @returns {Promise<{avatarUrl, nickname, minSteps}|null>}
+ */
+async function getLevelMaster(levelId) {
+  const res = await callFunction('getLevelMaster', { levelId });
+  return res.data || null;
+}
+
+/**
+ * 尝试夺取关主
+ * @param {string} levelId 关卡名
+ * @param {number} steps 步数
+ * @param {string} [avatarUrl] 玩家头像
+ * @param {string} [nickname] 玩家昵称
+ * @returns {Promise<{claimed: boolean, master: object}>}
+ */
+async function claimLevelMaster(levelId, steps, avatarUrl, nickname) {
+  return callFunction('claimLevelMaster', { levelId, steps, avatarUrl, nickname });
+}
+
 module.exports = {
   initCloud,
   callFunction,
@@ -145,5 +167,7 @@ module.exports = {
   listLevels,
   downloadLevel,
   deleteLevel,
-  reportBug
+  reportBug,
+  getLevelMaster,
+  claimLevelMaster
 };
