@@ -467,6 +467,11 @@ class PlayingEngine {
   }
 
   _tryClaimMaster() {
+    // 仅真机上报，模拟器/开发工具跳过
+    if (wx.getSystemInfoSync().platform === 'devtools') {
+      console.log('[关主] 开发环境跳过夺位上报');
+      return;
+    }
     const currentMin = this._levelMaster ? this._levelMaster.minSteps : 9999;
     this._updateMyRecord();
     if (this.steps >= currentMin) return; // 持平不夺
