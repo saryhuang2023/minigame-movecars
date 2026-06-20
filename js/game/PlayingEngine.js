@@ -58,6 +58,7 @@ class PlayingEngine {
     this._levelMaster = null;       // { avatarUrl, nickname, minSteps, avatarImg } | null
     this._myRecord = null;          // 个人最好成绩（步数）| null
     this._masterLoading = false;
+    this._myOpenId = null;          // 当前用户 openid（首次 activate 时异步获取）
     this._userInfo = null;          // { nickName, avatarUrl } 缓存
   }
 
@@ -86,6 +87,7 @@ class PlayingEngine {
     console.log('[关主] activate levelName=' + JSON.stringify(this.levelName) + ' recKey=' + recKey + ' rawRec=' + JSON.stringify(rawRec) + ' _myRecord=' + JSON.stringify(this._myRecord));
     // 异步拉取关主（fire-and-forget，不阻塞玩家操作）
     this._masterLoading = false;  // 重置，防止上次请求未完成导致跳过
+    this._fetchMyOpenId();
     this._fetchLevelMaster();
   }
 
@@ -171,6 +173,20 @@ class PlayingEngine {
         y >= this.hintBtn.y && y <= this.hintBtn.y + this.hintBtn.h) {
       this._showHint();
       return;
+    }
+
+    // 关主卡片左栏点击 → 显示关主昵称
+    if (this._masterAvatarRect && x >= this._masterAvatarRect.x && x <= this._masterAvatarRect.x + this._masterAvatarRect.w &&
+        y >= this._masterAvatarRect.y && y <= this._masterAvatarRect.y + this._masterAvatarRect.h) {
+      if (this._levelMaster) {
+        var showName = this._levelMaster.nickname;
+        if (!showName) {
+          var uid = this._levelMaster.userId || '';
+          showName = uid.length > 6 ? '…' + uid.slice(-6) : (uid || '匿名');
+        }
+        wx.showToast({ title: '关主：' + showName, icon: 'none', duration: 1500 });
+        return;
+      }
     }
 
     // 棋盘区域：找小猪，记录触控起点（不立即创建 dragState，等移动超阈值再激活拖拽）
@@ -387,6 +403,39 @@ class PlayingEngine {
   }
 
   // ========== 关主系统 ==========
+
+  // 加载远程头像图片（通过 downloadFile 获取本地路径，兼容性更好）
+  _loadAvatarImage(url) {
+    return new Promise(function(resolve, reject) {
+      wx.downloadFile({
+        url: url,
+        success: function(res) {
+          if (res.statusCode === 200) {
+            var img = wx.createImage();
+            img.onload = function() { resolve(img); };
+            img.onerror = function() { reject(new Error('image onerror')); };
+            img.src = res.tempFilePath;
+          } else {
+            reject(new Error('download status ' + res.statusCode));
+          }
+        },
+        fail: function(err) { reject(err); }
+      });
+    });
+  }
+
+  // 获取当前用户 openid（仅首次调用）
+  _fetchMyOpenId() {
+    if (this._myOpenId) return;
+    const cloud = require('../cloud.js');
+    cloud.getOpenId().then(function(openid) {
+      this._myOpenId = openid;
+      console.log('[关主] myOpenId=' + openid);
+    }.bind(this)).catch(function(err) {
+      console.warn('[关主] getOpenId fail:', err);
+    });
+  }
+
   _fetchLevelMaster() {
     if (this._masterLoading) return;
     this._masterLoading = true;
@@ -397,14 +446,17 @@ class PlayingEngine {
         console.log('[关主] _fetchLevelMaster success master=' + JSON.stringify(master));
         this._levelMaster = master;
         this._masterLoading = false;
+        if (master) {
+          if (!master.nickname) console.log('[关主] 云端记录缺少 nickname');
+          if (!master.avatarUrl) console.log('[关主] 云端记录缺少 avatarUrl');
+        }
         if (master && master.avatarUrl) {
-          const img = wx.createImage();
-          img.onload = () => {
+          this._loadAvatarImage(master.avatarUrl).then(function(img) {
             console.log('[关主] avatar image loaded');
             if (this._levelMaster) this._levelMaster.avatarImg = img;
-          };
-          img.onerror = () => { console.warn('[关主] avatar image load error'); };
-          img.src = master.avatarUrl;
+          }.bind(this)).catch(function(err) {
+            console.warn('[关主] avatar image load error:', err);
+          });
         }
       })
       .catch(err => {
@@ -427,12 +479,11 @@ class PlayingEngine {
           if (res.code === 0 && res.claimed) {
             this._levelMaster = res.master;
             if (res.master && res.master.avatarUrl) {
-              var img = wx.createImage();
-              img.onload = function() {
+              this._loadAvatarImage(res.master.avatarUrl).then(function(img) {
                 if (this._levelMaster) this._levelMaster.avatarImg = img;
-              }.bind(this);
-              img.onerror = function() {};
-              img.src = res.master.avatarUrl;
+              }.bind(this)).catch(function(err) {
+                console.warn('[关主] claim avatar load error:', err);
+              });
             }
           }
           if (res.claimed) {
@@ -487,7 +538,7 @@ class PlayingEngine {
         + ' cardX=' + cardX + ' cardY=' + cardY + ' cardH=' + cardH);
     }
 
-    var badgeW = 180;
+    var badgeW = 150;
     var badgeH = 70;
     var badgeX = 5;
     var badgeY = SCREEN_HEIGHT - badgeH-5;
@@ -512,23 +563,24 @@ class PlayingEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
-    // 标签「关主记录」
-    ctx.fillStyle = '#334155';
-    ctx.font = '12px sans-serif';
-    ctx.fillText('关主记录', leftCx, badgeY + 12);
+    // 标签
+    var isMe = this._levelMaster && this._myOpenId && this._levelMaster.userId === this._myOpenId;
+    ctx.fillStyle = isMe ? '#EC4899' : '#334155';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(isMe ? '我是关主' : '⭐关主', leftCx, badgeY + 8);
 
     if (this._levelMaster) {
       // 头像（圆形裁剪）
       ctx.save();
       ctx.beginPath();
-      ctx.arc(leftCx, badgeY + 40, 16, 0, Math.PI * 2);
+      ctx.arc(leftCx, badgeY + 36, 14, 0, Math.PI * 2);
       ctx.clip();
       if (this._levelMaster.avatarImg) {
-        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 16, badgeY + 22, 32, 32);
+        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 14, badgeY + 22, 28, 28);
       } else {
-        // 头像图未加载完成 → 粉色占位
+        // 头像未加载完成 → 粉色占位
         ctx.fillStyle = '#FCE9F2';
-        ctx.fillRect(leftCx - 16, badgeY + 22, 32, 32);
+        ctx.fillRect(leftCx - 14, badgeY + 22, 28, 28);
       }
       ctx.restore();
 
@@ -544,7 +596,9 @@ class PlayingEngine {
     }
 
     // === 分隔线 ===
-    var divX = badgeX + 52;
+    var divX = badgeX + 62;
+    // 记录左栏点击区域（用于点击显示关主昵称）
+    this._masterAvatarRect = { x: badgeX, y: badgeY, w: divX - badgeX, h: badgeH };
     ctx.strokeStyle = '#E2E8F0';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -553,19 +607,19 @@ class PlayingEngine {
     ctx.stroke();
 
     // === 右栏：我的信息 ===
-    var rightX = divX + 12;
+    var rightX = divX + 8;
     ctx.textAlign = 'left';
 
     // 我的记录
     ctx.fillStyle = '#334155';
     ctx.font = '12px sans-serif';
     var recText = this._myRecord != null ? ('我的记录:' + this._myRecord + '步') : '我的记录:无';
-    ctx.fillText(recText, rightX, badgeY + 14);
+    ctx.fillText(recText, rightX, badgeY + 20);
 
     // 当前步数（金色强调）
     ctx.fillStyle = '#F59E0B';
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 34);
+    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 40);
 
     ctx.textAlign = 'center'; // 复位
   }

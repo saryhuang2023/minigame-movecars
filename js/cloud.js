@@ -158,6 +158,15 @@ async function claimLevelMaster(levelId, steps, avatarUrl, nickname) {
   return callFunction('claimLevelMaster', { levelId, steps, avatarUrl, nickname });
 }
 
+/**
+ * 获取当前用户的 openid
+ * @returns {Promise<string>}
+ */
+async function getOpenId() {
+  const res = await callFunction('getOpenId');
+  return res.openid || '';
+}
+
 module.exports = {
   initCloud,
   callFunction,
@@ -169,5 +178,6 @@ module.exports = {
   deleteLevel,
   reportBug,
   getLevelMaster,
-  claimLevelMaster
+  claimLevelMaster,
+  getOpenId
 };
