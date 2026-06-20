@@ -9,47 +9,58 @@
   "pigs": [
     {
       "angle": 145.713123022791,
+      "hintId": 5,
       "id": 13,
       "length": 58,
       "tail": 13
     },
     {
       "angle": 90,
+      "hintAngle": 147,
+      "hintId": 6,
       "id": 14,
       "length": 126,
       "tail": 11
     },
     {
       "angle": 90,
+      "hintId": 4,
       "id": 15,
       "length": 203,
       "tail": 18
     },
     {
       "angle": 90,
+      "hintAngle": 271,
+      "hintId": 1,
       "id": 16,
       "length": 63,
       "tail": 10
     },
     {
       "angle": 90,
+      "hintAngle": 270,
+      "hintId": 2,
       "id": 17,
       "length": 136,
       "tail": 6
     },
     {
       "angle": 325.713123022791,
+      "hintAngle": 271,
+      "hintId": 3,
       "id": 18,
       "length": 64,
       "tail": 0
     },
     {
       "angle": 270,
+      "hintId": 7,
       "id": 19,
       "length": 143,
       "tail": 1
     }
   ],
   "ready": 1,
-  "version": 6
+  "version": 7
 }

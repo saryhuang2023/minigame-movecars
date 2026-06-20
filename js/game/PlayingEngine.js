@@ -982,7 +982,7 @@ _tryClaimMaster() {
       if (!best || p.hintId < best.hintId) best = p;
     }
     if (!best) {
-      wx.showToast({ title: '本关无提示', icon: 'none', duration: 1500 });
+      wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
       return;
     }
     this._hintTarget = best;
