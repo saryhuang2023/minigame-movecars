@@ -7,7 +7,6 @@ const GameplayEngine = require('../core/GameplayEngine.js');
 // Ardot 设计稿色彩系统 (fileId: 694583967818218)
 // 背景色 #FDF2F8 由 GameEngine.COLORS.bgBottom 统一绘制渐变
 const PINK = '#EC4899';     // 关卡徽章
-const AMBER = '#F59E0B';    // 速通按钮
 const DARK = '#0F172A';     // 深色文字
 const MUTED = '#64748B';    // 次要文字
 const PURPLE = '#8B5CF6';   // 提示按钮
@@ -26,8 +25,8 @@ const ESCAPE_TIME = 40000;  // 逃脱速度
 const DRAG_THRESHOLD = 20;
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;
 const COMBO_WINDOW = 3000;             // 连击窗口（毫秒）
-const COMBO_WIDGET_W = 138;            // 连击组件宽度
-const COMBO_WIDGET_H = 40;             // 连击组件高度
+const COMBO_WIDGET_W = 120;            // 连击组件宽度
+const COMBO_WIDGET_H = 30;             // 连击组件高度
 const COMBO_WIDGET_R = 20;             // 连击组件圆角
 const COMBO_WIDGET_OFFSET = 12;        // 距卡片内容区边缘偏移
 const COMBO_ENTRANCE_DURATION = 200;   // 入场弹性动画时长（毫秒）
@@ -49,7 +48,6 @@ class PlayingEngine {
     this._victory = false;
     this._exitBtn = null;
     this._nextBtn = null;
-    this._quickPassBtn = null;
     // 连击系统
     this._comboCount = 0;           // 当前连击数
     this._comboTimer = null;        // 重置窗口定时器
@@ -174,13 +172,6 @@ class PlayingEngine {
   }
 
   onTouchStart(x, y) {
-    // 快速通过按钮（测试用）
-    if (this._quickPassBtn && x >= this._quickPassBtn.x && x <= this._quickPassBtn.x + this._quickPassBtn.w &&
-        y >= this._quickPassBtn.y && y <= this._quickPassBtn.y + this._quickPassBtn.h) {
-      this._quickPass();
-      return;
-    }
-
     // 顶栏按钮
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
@@ -381,18 +372,6 @@ class PlayingEngine {
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
     this._victory = false;
     this._isNewMaster = false;
-  }
-
-  _quickPass() {
-    // 测试用：清空所有猪，直接通关
-    this._resetCombo();
-    this.gp.pigs = [];
-    this.gp.escapeQueue = [];
-    this.gp.flyingPigs = [];
-    this.gp.rebuildOccupancy();
-    this._victory = true;
-    // 也记录通关
-    this._markCleared();
   }
 
   _markCleared() {
@@ -734,14 +713,15 @@ _tryClaimMaster() {
     ctx.textBaseline = 'top';
 
     // 标签
+    var badgeMasterY = badgeY + 11;
     var isMe = this._levelMaster && this._myOpenId && this._levelMaster.userId === this._myOpenId;
     ctx.fillStyle = isMe ? '#EC4899' : '#334155';
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText(isMe ? '我是关主' : '⭐关主', leftCx, badgeY + 11);
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(isMe ? '我是关主' : '关主记录', leftCx, badgeMasterY);
 
     if (this._levelMaster) {
       // 头像（圆形裁剪）
-      var badgeHeadY = badgeY + 23;
+      var badgeHeadY = badgeMasterY + 12;
       ctx.save();
       ctx.beginPath();
       ctx.arc(leftCx, badgeHeadY + 18, 18, 0, Math.PI * 2);
@@ -754,6 +734,46 @@ _tryClaimMaster() {
         ctx.fillRect(leftCx - 18, badgeHeadY, 36, 36);
       }
       ctx.restore();
+      
+      // 关主步数
+      var badgStepY = badgeHeadY + 35;
+      var recText = '' + this._levelMaster.minSteps + '步';
+
+      // 先测量文字宽度
+      var textWidth = ctx.measureText(recText).width;
+
+      // 画背景矩形
+      var textWidth = ctx.measureText(recText).width;
+      var paddingH = 6;
+      var paddingV = 3;
+      var radius = 4;
+
+      // 画圆角背景
+      ctx.fillStyle = '#FFE066';
+      ctx.globalAlpha = 0.5;  
+      _roundRect(ctx, leftCx - paddingH - textWidth/2, badgStepY - paddingV, 
+                textWidth + paddingH * 2, 12 + paddingV * 2, radius);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;  
+
+      // 再画文字
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(recText, leftCx, badgStepY);
+
+      function _roundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+      }
     } else {
       // 无管主 → 显示「无」
       ctx.fillStyle = '#94A3B8';
@@ -776,22 +796,16 @@ _tryClaimMaster() {
     var rightX = divX + 8;
     ctx.textAlign = 'left';
 
-    // 关主步数
-    ctx.fillStyle = '#334155';
-    ctx.font = '12px sans-serif';
-    var recText = this._levelMaster != null ? ('关主步数:' + this._levelMaster.minSteps + '步') : '关主步数:无';
-    ctx.fillText(recText, rightX, badgeY + 10);
-
     // 我的记录
     ctx.fillStyle = '#334155';
     ctx.font = '12px sans-serif';
-    var recText = this._myRecord != null ? ('我的记录:' + this._myRecord + '步') : '我的记录:无';
-    ctx.fillText(recText, rightX, badgeY + 30);
+    var recText = this._myRecord != null ? ('我的:' + this._myRecord + '步') : '我的:无';
+    ctx.fillText(recText, rightX, badgeY + 20);
 
     // 当前步数（金色强调）
     ctx.fillStyle = '#F59E0B';
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 48);
+    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 46);
 
     ctx.textAlign = 'center'; // 复位
   }
@@ -885,8 +899,8 @@ _tryClaimMaster() {
     ctx.fillText('\u2190', backX + backW / 2, backY + backH / 2);
 
     // === 关卡徽章（居中）===
-    const levelText = this.levelName || '\u7B2C 1 \u5173';
-    ctx.font = 'bold 14px sans-serif';
+    const levelText = "第 "+(parseInt(this.levelName)|| '\u7B2C 1 \u5173') +" 关";
+    ctx.font = 'bold 20px sans-serif';
     const levelTW = ctx.measureText(levelText).width;
     const levelW = levelTW + 16; // 8px padding each side
     const levelH = 33;
@@ -899,25 +913,7 @@ _tryClaimMaster() {
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 14px sans-serif';
     ctx.fillText(levelText, levelX + levelW / 2, levelY + levelH / 2);
-
-    // === 速通按钮（最右）===
-    const qpW = 40, qpH = 31;
-    const qpX = PADDING + barW - qpW;
-    const qpY = barY + (TOP_BAR_H - qpH) / 2;
-    this._quickPassBtn = { x: qpX, y: qpY, w: qpW, h: qpH };
-
-    ctx.fillStyle = AMBER;
-    this._roundRect(ctx, qpX, qpY, qpW, qpH, 12);
-    ctx.fill();
-    ctx.fillStyle = DARK;
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('\u901F\u901A', qpX + qpW / 2, qpY + qpH / 2);
-
-    ctx.textAlign = 'center'; // 复位
   }
 
   _drawBottomBar() {
@@ -1215,10 +1211,10 @@ _tryClaimMaster() {
 
     // 进度条颜色
     let barColor, textAlpha;
-    if (progress > 0.5) {
+    if (progress > 0.75) {
       barColor = COMBO_COLOR_SAFE;
       textAlpha = 1;
-    } else if (progress > 0.25) {
+    } else if (progress > 0.5) {
       barColor = COMBO_COLOR_WARN;
       textAlpha = 1;
     } else {
@@ -1228,7 +1224,7 @@ _tryClaimMaster() {
 
     // 计算位置
     const wx = 0;  // 屏幕最左边贴边
-    const wy = this._boardCardY;  // 上边缘贴着棋盘卡片
+    const wy = this._boardCardY-COMBO_WIDGET_H;  // 下边缘贴着棋盘卡片
     const barWidth = COMBO_WIDGET_W * progress;
 
     ctx.save();
