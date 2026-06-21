@@ -21,6 +21,8 @@ const CARD_GAP = 8;         // 卡片之间的间距
 const CARD_PADDING = 12;    // 棋盘卡片内边距
 const CARD_RADIUS = 32;     // 棋盘卡片圆角
 
+const ESCAPE_TIME = 40000;  // 逃脱速度
+
 const DRAG_THRESHOLD = 20;
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;
 const COMBO_WINDOW = 3000;             // 连击窗口（毫秒）
@@ -337,7 +339,7 @@ class PlayingEngine {
         pigId,
         dirX: result.dirX, dirY: result.dirY,
         totalDist: result.totalDist, currentDx: 0, currentDy: 0,
-        startTime: Date.now(), duration: 12800
+        startTime: Date.now(), duration: ESCAPE_TIME
       });
       // 逻辑层立即移除（结算/计分不受动画影响）
       const idx = this.gp.pigs.findIndex(p => p.id === pigId);
@@ -1017,7 +1019,7 @@ _tryClaimMaster() {
       hintAngle: ha,
       dirX: dirX, dirY: dirY,
       totalDist: totalDist, currentDx: 0, currentDy: 0,
-      startTime: Date.now(), duration: 12800
+      startTime: Date.now(), duration: ESCAPE_TIME
     });
     setTimeout(function() {
       if (this._hintTarget) {

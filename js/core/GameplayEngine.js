@@ -3,7 +3,7 @@
 // 被 EditorEngine / TestEngine / RealGameEngine 共同组合使用
 
 const { ctx, canvas, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
-const { PigRenderer, roundRect } = require('../render/PigRenderer.js');
+const { PigRenderer, roundRect, AnimType } = require('../render/PigRenderer.js');
 
 // ========== 常量 ==========
 // Claymorphism 风格：格子 = 棋盘上的凹陷引导，非独立视觉元素
@@ -869,7 +869,7 @@ class GameplayEngine {
         const savedAngle = pig.angle;
         pig.angle = g.hintAngle != null ? g.hintAngle : pig.angle;
         ctx.globalAlpha = 0.70;
-        pr.draw(ctx, pig, g.currentDx, g.currentDy);
+        pr.draw(ctx, pig, g.currentDx, g.currentDy, AnimType.ESCAPE);
         ctx.globalAlpha = 1;
         pig.angle = savedAngle;
       }
@@ -878,7 +878,7 @@ class GameplayEngine {
     // 飞行猪（已从逻辑层 pigs 移除，纯 UI 层渲染）
     for (const fp of this.flyingPigs) {
       const off = animOffs[fp.id] || { dx: 0, dy: 0 };
-      pr.draw(ctx, fp, off.dx, off.dy);
+      pr.draw(ctx, fp, off.dx, off.dy, AnimType.ESCAPE);
     }
 
     // 选中时：碰撞区棕色虚线框 + 触控区蓝色虚线框 + 头部绿色圆点（仅编辑模式，无拖拽时）

@@ -39,11 +39,14 @@ function roundRect(ctx, x, y, w, h, r, topOnly) {
 // === PigRenderer ===
 // ============================================================
 // 动画类型枚举（未来可扩展 JUMP、DIE 等）
-const AnimType = Object.freeze({ IDLE: 'idle', RUN: 'run' });
+const AnimType = Object.freeze({ IDLE: 'idle', RUN: 'run', ESCAPE: 'escape' });
 
-const IDLE_FRAME_COUNT = 4;
-const RUN_FRAME_COUNT = 4;
-const FRAME_INTERVAL = 800/RUN_FRAME_COUNT; // ms per frame (10fps)
+const IDLE_FRAME_COUNT = 11;
+const RUN_FRAME_COUNT = 8;
+const ESCAPE_FRAME_COUNT = 8;
+const IDLE_FRAME_INTERVAL = 800 / IDLE_FRAME_COUNT;
+const RUN_FRAME_INTERVAL = 800 / RUN_FRAME_COUNT;
+const ESCAPE_FRAME_INTERVAL = 800 / ESCAPE_FRAME_COUNT;
 const WOBBLE_FREQ = 10;           // 身体摆动：每秒次数
 const WOBBLE_AMPLITUDE = 0.005;  // 身体摆动：幅度（弧度）
 const WOBBLE_PIVOT = 0.75;       // 身体摆动轴心位置（0=尾部端点, 1=中心）
@@ -83,11 +86,23 @@ class PigRenderer {
   // 返回 true 表示图片已画出，false 表示图片未加载需 fallback
   _drawPigImage(ctx, totalLen, pig, animType) {
     animType = animType || AnimType.IDLE;
-    var parts = animType === AnimType.RUN ? _loadRunParts() : _loadPigParts();
+    var parts, frameCount, frameInterval;
+    if (animType === AnimType.RUN) {
+      parts = _loadRunParts();
+      frameCount = RUN_FRAME_COUNT;
+      frameInterval = RUN_FRAME_INTERVAL;
+    } else if (animType === AnimType.ESCAPE) {
+      parts = _loadEscapeParts();
+      frameCount = ESCAPE_FRAME_COUNT;
+      frameInterval = ESCAPE_FRAME_INTERVAL;
+    } else {
+      parts = _loadPigParts();
+      frameCount = IDLE_FRAME_COUNT;
+      frameInterval = IDLE_FRAME_INTERVAL;
+    }
     if (!parts.allLoaded) return false;
 
     var tailImg = parts.tailImg, midImg = parts.midImg, headImg = parts.headImg;
-    var frameCount = animType === AnimType.RUN ? RUN_FRAME_COUNT : IDLE_FRAME_COUNT;
 
     // 序列帧动画：有 pig 且全部帧已加载 → 按时间推进帧号
     if (pig && parts.idleAllLoaded) {
@@ -98,7 +113,7 @@ class PigRenderer {
       }
 
       var now = Date.now();
-      if (now - state.lastAdvance >= FRAME_INTERVAL) {
+      if (now - state.lastAdvance >= frameInterval) {
         state.frame = (state.frame + 1) % frameCount;
         state.lastAdvance = now;
       }
@@ -142,32 +157,34 @@ class PigRenderer {
   }
 
   // ---- 正常猪绘制 ----
-  draw(ctx, pig, offDx, offDy) {
+  // animType: 可选 AnimType 枚举值，不传则自动判断（拖拽→RUN，否则→IDLE）
+  draw(ctx, pig, offDx, offDy, animType) {
     const c = this._pigCenter(pig, offDx, offDy);
     if (!c) return;
 
     const ds = this.e.dragState;
-    const animType = (ds && ds.pigId === pig.id) ? AnimType.RUN : AnimType.IDLE;
+    animType = animType || ((ds && ds.pigId === pig.id) ? AnimType.RUN : AnimType.IDLE);
 
     ctx.save();
     ctx.translate(c.cx, c.cy);
     ctx.rotate(-c.rad);
 
-    // 风筝抖动：仅 idle 时生效（拖拽/编辑器不晃）
+    // 风筝抖动：idle 和 escape 时生效（拖拽/编辑器不晃）
     // 方案二：轴心前移（身体整体摇晃 + 尾部独立微摆）
-    if (animType === AnimType.IDLE && databus.gameState !== 'editor') {
+    if ((animType === AnimType.IDLE || animType === AnimType.ESCAPE) && databus.gameState !== 'editor') {
       const halfLen = c.totalLen / 2;
       const now = Date.now();
 
       // 身体摆动：轴心放在尾部往前 25% 处，头尾都动
+      const speed =  animType === AnimType.ESCAPE ? 4 : 1; // 逃跑时抖动很厉害
       const bodyPivotOff = halfLen * WOBBLE_PIVOT;
-      const bodyWobble = Math.sin(now * 0.001 * WOBBLE_FREQ + pig.id * 1.7) * WOBBLE_AMPLITUDE;
+      const bodyWobble = Math.sin(now * 0.001 * WOBBLE_FREQ * speed + pig.id * 1.7) * WOBBLE_AMPLITUDE * speed;
       ctx.translate(-bodyPivotOff, 0);
       ctx.rotate(bodyWobble);
       ctx.translate(bodyPivotOff, 0);
 
       // 尾部独立甩动：快速小幅度，模拟风筝尾巴抖动
-      const tailWobble = Math.sin(now * 0.001 * TAIL_WOBBLE_FREQ + pig.id * 2.3) * TAIL_WOBBLE_AMPLITUDE;
+      const tailWobble = Math.sin(now * 0.001 * TAIL_WOBBLE_FREQ * speed + pig.id * 2.3) * TAIL_WOBBLE_AMPLITUDE;
       ctx.translate(-halfLen, 0);
       ctx.rotate(tailWobble);
       ctx.translate(halfLen, 0);
@@ -321,6 +338,41 @@ function _loadRunParts() {
   return parts;
 }
 
+// ---- escape 动画图片 ----
+let _escapeParts = null;
+
+function _loadEscapeParts() {
+  if (_escapeParts) return _escapeParts;
+
+  var base = 'assets/animals/roles/pig/escape/1/';
+  var parts = {
+    tailImg: wx.createImage(), midImg: wx.createImage(), headImg: wx.createImage(),
+    _loaded: [false, false, false],
+    tailW: 0, midW: 0, headW: 0, height: 0,
+
+    idleTailImgs: [], idleMidImgs: [], idleHeadImgs: [],
+    _idleLoaded: 0,
+    get idleAllLoaded() { return this._idleLoaded >= ESCAPE_FRAME_COUNT * 3; }
+  };
+
+  Object.defineProperty(parts, 'allLoaded', {
+    get() { return this._loaded[0] && this._loaded[1] && this._loaded[2]; }
+  });
+
+  parts.tailImg.src = base + 'tail/1.png';
+  parts.midImg.src  = base + 'mid/1.png';
+  parts.headImg.src = base + 'head/1.png';
+
+  parts.tailImg.onload = function() { parts._loaded[0] = true; parts.tailW = parts.tailImg.width;  parts.height = Math.max(parts.height, parts.tailImg.height); parts.idleTailImgs[0] = parts.tailImg; parts._idleLoaded++; };
+  parts.midImg.onload  = function() { parts._loaded[1] = true; parts.midW  = parts.midImg.width;   parts.height = Math.max(parts.height, parts.midImg.height);  parts.idleMidImgs[0]  = parts.midImg;  parts._idleLoaded++; };
+  parts.headImg.onload = function() { parts._loaded[2] = true; parts.headW = parts.headImg.width;  parts.height = Math.max(parts.height, parts.headImg.height); parts.idleHeadImgs[0] = parts.headImg; parts._idleLoaded++; };
+
+  _preloadFrames(parts, base, ESCAPE_FRAME_COUNT);
+
+  _escapeParts = parts;
+  return parts;
+}
+
 // 后台懒加载剩余序列帧，全部就绪后 parts.idleAllLoaded → true
 function _preloadFrames(parts, base, frameCount) {
   for (var i = 2; i <= frameCount; i++) {
@@ -390,6 +442,7 @@ function drawComposedPig(ctx, x, y, scale = 1) {
 // 模块加载时立即触发猪图片预加载，避免首帧渲染时图片未就绪出现黄色 fallback 矩形
 _loadPigParts();
 _loadRunParts();
+_loadEscapeParts();
 
 module.exports.PigRenderer = PigRenderer;
 module.exports.AnimType = AnimType;
