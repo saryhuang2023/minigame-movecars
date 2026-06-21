@@ -706,7 +706,7 @@ _tryClaimMaster() {
     if (!this._badgeLogFrame) this._badgeLogFrame = 0;
     this._badgeLogFrame++;
 
-    var badgeW = 150;
+    var badgeW = 165;
     var badgeH = 70;
     var badgeX = 5;
     var badgeY = SCREEN_HEIGHT - badgeH-5;

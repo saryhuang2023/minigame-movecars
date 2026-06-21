@@ -36,9 +36,13 @@ function roundRect(ctx, x, y, w, h, r, topOnly) {
 // ============================================================
 // === PigRenderer ===
 // ============================================================
+const IDLE_FRAME_COUNT = 4;
+const IDLE_FRAME_INTERVAL = 100; // ms per frame (10fps)
+
 class PigRenderer {
   constructor(engine) {
     this.e = engine; // GameplayEngine 引用（读取 holes / topBarH / boardOffsetY / diameter / dragState）
+    this._animState = new Map(); // pigId → { frame, lastAdvance }
   }
 
   // ---- 猪身体尺寸 ----
@@ -65,9 +69,32 @@ class PigRenderer {
   // ---- 三图拼接绘制（头尾等比 + 中段拉伸） ----
   // 在已 translate+rotate 的 ctx 中绘制，local 坐标系：x ∈ [-totalLen/2, totalLen/2]
   // 返回 true 表示图片已画出，false 表示图片未加载需 fallback
-  _drawPigImage(ctx, totalLen) {
-    const parts = _loadPigParts();
+  _drawPigImage(ctx, totalLen, pig) {
+    var parts = _loadPigParts();
     if (!parts.allLoaded) return false;
+
+    var tailImg = parts.tailImg, midImg = parts.midImg, headImg = parts.headImg;
+
+    // 序列帧动画：有 pig 且全部帧已加载 → 按时间推进帧号
+    if (pig && parts.idleAllLoaded) {
+      var state = this._animState.get(pig.id);
+      if (!state) {
+        state = { frame: 0, lastAdvance: Date.now() };
+        this._animState.set(pig.id, state);
+      }
+
+      var now = Date.now();
+      if (now - state.lastAdvance >= IDLE_FRAME_INTERVAL) {
+        state.frame = (state.frame + 1) % IDLE_FRAME_COUNT;
+        state.lastAdvance = now;
+      }
+      var frameImgs = [parts.idleTailImgs[state.frame], parts.idleMidImgs[state.frame], parts.idleHeadImgs[state.frame]];
+      if (frameImgs[0] && frameImgs[1] && frameImgs[2]) {
+        tailImg = frameImgs[0];
+        midImg  = frameImgs[1];
+        headImg = frameImgs[2];
+      }
+    }
 
     const bodyH = this.pigBodyWidth;                // 猪体高度 = 孔直径
     const imgScale = bodyH / parts.height;          // 等比缩放（图片等高→按高度缩放）
@@ -87,15 +114,15 @@ class PigRenderer {
     const halfH = drawH / 2;
 
     // 尾（左端对齐，先画）
-    ctx.drawImage(parts.tailImg, -halfLen, -halfH, tailW, drawH);
+    ctx.drawImage(tailImg, -halfLen, -halfH, tailW, drawH);
 
     // 中段（左右各交叉 overlap px，覆盖尾部和头部边缘）
     if (midW > 0.5) {
-      ctx.drawImage(parts.midImg, -halfLen + tailW - overlap, -halfH, midW + overlap * 2, drawH);
+      ctx.drawImage(midImg, -halfLen + tailW - overlap, -halfH, midW + overlap * 2, drawH);
     }
 
     // 头（右端对齐，最后画，覆盖中段右边缘）
-    ctx.drawImage(parts.headImg, halfLen - headW, -halfH, headW, drawH);
+    ctx.drawImage(headImg, halfLen - headW, -halfH, headW, drawH);
 
     return true;
   }
@@ -109,7 +136,7 @@ class PigRenderer {
     ctx.translate(c.cx, c.cy);
     ctx.rotate(-c.rad);
 
-    this._drawPigImage(ctx, c.totalLen);
+    this._drawPigImage(ctx, c.totalLen, pig);
 
     ctx.restore();
   }
@@ -188,26 +215,60 @@ let _pigParts = null;
 
 function _loadPigParts() {
   if (_pigParts) return _pigParts;
-  const parts = {
+
+  var base = 'assets/animals/roles/pig/idle/1/';
+  var parts = {
+    // 首帧用作静态图（drawComposedPig 等场景复用）
     tailImg: wx.createImage(), midImg: wx.createImage(), headImg: wx.createImage(),
     _loaded: [false, false, false],
-    tailW: 0, midW: 0, headW: 0, height: 0
+    tailW: 0, midW: 0, headW: 0, height: 0,
+
+    // 全部 idle 帧数组
+    idleTailImgs: [], idleMidImgs: [], idleHeadImgs: [],
+    _idleLoaded: 0,
+    get idleAllLoaded() { return this._idleLoaded >= IDLE_FRAME_COUNT * 3; }
   };
+
   Object.defineProperty(parts, 'allLoaded', {
     get() { return this._loaded[0] && this._loaded[1] && this._loaded[2]; }
   });
 
-  const base = 'assets/animals/roles/pig/';
-  parts.tailImg.src = base + 'pig_tail.png';
-  parts.midImg.src  = base + 'pig_mid.png';
-  parts.headImg.src = base + 'pig_head.png';
+  // 加载首帧（第 1 帧 → 1.png），也作为静态图
+  parts.tailImg.src = base + 'tail/1.png';
+  parts.midImg.src  = base + 'mid/1.png';
+  parts.headImg.src = base + 'head/1.png';
 
-  parts.tailImg.onload = () => { parts._loaded[0] = true; parts.tailW = parts.tailImg.width;  parts.height = Math.max(parts.height, parts.tailImg.height); };
-  parts.midImg.onload  = () => { parts._loaded[1] = true; parts.midW  = parts.midImg.width;   parts.height = Math.max(parts.height, parts.midImg.height);  };
-  parts.headImg.onload = () => { parts._loaded[2] = true; parts.headW = parts.headImg.width;  parts.height = Math.max(parts.height, parts.headImg.height); };
+  parts.tailImg.onload = function() { parts._loaded[0] = true; parts.tailW = parts.tailImg.width;  parts.height = Math.max(parts.height, parts.tailImg.height); parts.idleTailImgs[0] = parts.tailImg; parts._idleLoaded++; };
+  parts.midImg.onload  = function() { parts._loaded[1] = true; parts.midW  = parts.midImg.width;   parts.height = Math.max(parts.height, parts.midImg.height);  parts.idleMidImgs[0]  = parts.midImg;  parts._idleLoaded++; };
+  parts.headImg.onload = function() { parts._loaded[2] = true; parts.headW = parts.headImg.width;  parts.height = Math.max(parts.height, parts.headImg.height); parts.idleHeadImgs[0] = parts.headImg; parts._idleLoaded++; };
+
+  // 懒加载剩余帧（后台逐步加载，不阻塞首帧显示）
+  _preloadIdleFrames(parts, base);
 
   _pigParts = parts;
   return parts;
+}
+
+// 后台懒加载剩余序列帧，全部就绪后 parts.idleAllLoaded → true
+function _preloadIdleFrames(parts, base) {
+  for (var i = 2; i <= IDLE_FRAME_COUNT; i++) {
+    _loadOneIdleFrame(parts, base, i, 'tail');
+    _loadOneIdleFrame(parts, base, i, 'mid');
+    _loadOneIdleFrame(parts, base, i, 'head');
+  }
+}
+function _loadOneIdleFrame(parts, base, i, type) {
+  var img = wx.createImage();
+  img.src = base + type + '/' + i + '.png';
+  img.onload = function() {
+    var arr = type === 'tail' ? parts.idleTailImgs : type === 'mid' ? parts.idleMidImgs : parts.idleHeadImgs;
+    arr[i - 1] = img;
+    parts._idleLoaded++;
+  };
+  img.onerror = function() {
+    // 加载失败也计数，避免 idleAllLoaded 永远为 false；降级继续用首帧
+    parts._idleLoaded++;
+  };
 }
 
 /**

@@ -837,7 +837,7 @@ class GameplayEngine {
           octx.translate(ocW / 2, ocH / 2);
           octx.rotate(-pigR.rad);
           if (flashAlpha < 1) octx.globalAlpha = flashAlpha;
-          pr._drawPigImage(octx, totalLen);
+          pr._drawPigImage(octx, totalLen, pig);
           octx.globalAlpha = 1;
 
           // 粉色染色（source-atop，离屏背景透明 → 只染猪像素）
