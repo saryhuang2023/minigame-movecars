@@ -337,7 +337,7 @@ class PlayingEngine {
         pigId,
         dirX: result.dirX, dirY: result.dirY,
         totalDist: result.totalDist, currentDx: 0, currentDy: 0,
-        startTime: Date.now(), duration: 6400
+        startTime: Date.now(), duration: 12800
       });
       // 逻辑层立即移除（结算/计分不受动画影响）
       const idx = this.gp.pigs.findIndex(p => p.id === pigId);
