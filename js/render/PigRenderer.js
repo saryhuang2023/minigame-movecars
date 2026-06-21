@@ -46,7 +46,7 @@ const RUN_FRAME_COUNT = 8;
 const ESCAPE_FRAME_COUNT = 8;
 const IDLE_FRAME_INTERVAL = 800 / IDLE_FRAME_COUNT;
 const RUN_FRAME_INTERVAL = 800 / RUN_FRAME_COUNT;
-const ESCAPE_FRAME_INTERVAL = 800 / ESCAPE_FRAME_COUNT;
+const ESCAPE_FRAME_INTERVAL = 300 / ESCAPE_FRAME_COUNT;
 const WOBBLE_FREQ = 10;           // 身体摆动：每秒次数
 const WOBBLE_AMPLITUDE = 0.005;  // 身体摆动：幅度（弧度）
 const WOBBLE_PIVOT = 0.75;       // 身体摆动轴心位置（0=尾部端点, 1=中心）
@@ -171,20 +171,19 @@ class PigRenderer {
 
     // 风筝抖动：idle 和 escape 时生效（拖拽/编辑器不晃）
     // 方案二：轴心前移（身体整体摇晃 + 尾部独立微摆）
-    if ((animType === AnimType.IDLE || animType === AnimType.ESCAPE) && databus.gameState !== 'editor') {
+    if ((animType === AnimType.IDLE) && databus.gameState !== 'editor') {
       const halfLen = c.totalLen / 2;
       const now = Date.now();
 
       // 身体摆动：轴心放在尾部往前 25% 处，头尾都动
-      const speed =  animType === AnimType.ESCAPE ? 4 : 1; // 逃跑时抖动很厉害
       const bodyPivotOff = halfLen * WOBBLE_PIVOT;
-      const bodyWobble = Math.sin(now * 0.001 * WOBBLE_FREQ * speed + pig.id * 1.7) * WOBBLE_AMPLITUDE * speed;
+      const bodyWobble = Math.sin(now * 0.001 * WOBBLE_FREQ + pig.id * 1.7) * WOBBLE_AMPLITUDE;
       ctx.translate(-bodyPivotOff, 0);
       ctx.rotate(bodyWobble);
       ctx.translate(bodyPivotOff, 0);
 
       // 尾部独立甩动：快速小幅度，模拟风筝尾巴抖动
-      const tailWobble = Math.sin(now * 0.001 * TAIL_WOBBLE_FREQ * speed + pig.id * 2.3) * TAIL_WOBBLE_AMPLITUDE;
+      const tailWobble = Math.sin(now * 0.001 * TAIL_WOBBLE_FREQ + pig.id * 2.3) * TAIL_WOBBLE_AMPLITUDE;
       ctx.translate(-halfLen, 0);
       ctx.rotate(tailWobble);
       ctx.translate(halfLen, 0);
