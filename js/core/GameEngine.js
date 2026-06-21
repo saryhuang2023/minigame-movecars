@@ -42,6 +42,15 @@ class GameEngine {
       databus.safeTop = 56; // 典型设备默认值
     }
 
+    // 加载章节配置
+    try {
+      var chapterRaw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');
+      databus.chapters = JSON.parse(chapterRaw);
+    } catch (e) {
+      console.warn('[GameEngine] 加载 chapter.json 失败:', e);
+      databus.chapters = [];
+    }
+
     databus.gameState = 'menu';
     this.setupMenuInput();
     this.loop();

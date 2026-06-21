@@ -13,6 +13,7 @@ class DataBus {
     this.currentLevel = null; // 选中的关卡数据 { name, data }
     this.projectLevels = [];   // 正式关卡列表 [{ name, file, ... }]
     this.currentLevelIndex = -1; // 当前关卡在 projectLevels 中的索引
+    this.chapters = [];        // 章节配置 [{ chapter, name, icon, themeColor, bgColor, endIndex }]
 
     // 排查系统字段
     this.currentFPS = 60;       // 实时帧率（GameEngine.loop 更新）

@@ -1,0 +1,38 @@
+[
+  {
+    "chapter": 0,
+    "name": "初入猪圈",
+    "subtitle": "从这里开始",
+    "icon": "🌱",
+    "themeColor": "#EC4899",
+    "bgColor": "#FDF2F8",
+    "endIndex": 2
+  },
+  {
+    "chapter": 1,
+    "name": "泥坑探险",
+    "subtitle": "步步惊心",
+    "icon": "🌧️",
+    "themeColor": "#8B5CF6",
+    "bgColor": "#F5F3FF",
+    "endIndex": 4
+  },
+  {
+    "chapter": 2,
+    "name": "猪圈纷争",
+    "subtitle": "乱中有序",
+    "icon": "⚔️",
+    "themeColor": "#F59E0B",
+    "bgColor": "#FFFBEB",
+    "endIndex": 6
+  },
+  {
+    "chapter": 3,
+    "name": "飞猪计划",
+    "subtitle": "极限逃脱",
+    "icon": "🚀",
+    "themeColor": "#10B981",
+    "bgColor": "#ECFDF5",
+    "endIndex": 9999
+  }
+]
