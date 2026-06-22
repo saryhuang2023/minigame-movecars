@@ -388,8 +388,8 @@ class PlayingEngine {
         console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
       }
     }
-    // 尝试夺关主（用过移除则跳过）
-    if (!this._hasUsedRemove) {
+    // 尝试夺关主（试玩模式/用过移除则跳过）
+    if (!this._hasUsedRemove && databus.returnState !== 'editor') {
       this._tryClaimMaster();
     } else {
       console.log('[关主] 使用了移除按钮，跳过关主判定');
@@ -864,8 +864,10 @@ _tryClaimMaster() {
     // 3. 连击组件（棋盘卡片内左上角）
     this._renderComboWidget();
 
-    // 3.5 关主卡片（棋盘卡片内左下角）
-    this._renderMasterBadge();
+    // 3.5 关主卡片（棋盘卡片内左下角）— 试玩时隐藏
+    if (databus.returnState !== 'editor') {
+      this._renderMasterBadge();
+    }
 
     // 4. 顶栏
     this._drawTopBar(safeTop);
@@ -930,7 +932,8 @@ _tryClaimMaster() {
     ctx.textBaseline = 'middle';
     ctx.fillText('\u2190', backX + backW / 2, backY + backH / 2);
 
-    // === 关卡徽章（居中）===
+    // === 关卡徽章（居中）— 试玩时隐藏 ===
+    if (databus.returnState !== 'editor') {
     const levelText = "第 "+(parseInt(this.levelName)|| '\u7B2C 1 \u5173') +" 关";
     ctx.font = 'bold 20px sans-serif';
     const levelTW = ctx.measureText(levelText).width;
@@ -946,6 +949,7 @@ _tryClaimMaster() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(levelText, levelX + levelW / 2, levelY + levelH / 2);
+    }
   }
 
   _drawBottomBar() {
