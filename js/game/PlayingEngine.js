@@ -99,8 +99,6 @@ class PlayingEngine {
     // 重置通关动画状态
     this._crownAnimPhase = null;
     this._crownAnimStart = 0;
-    // effectiveWidth = 全屏宽度，与编辑器保持一致，确保棋盘缩放不变
-    this.gp.effectiveWidth = SCREEN_WIDTH;
     this.loadLevel(lv ? lv.data : null);
     // 记住当前关卡索引，供主界面"开始游戏"使用（只升不降）
     if (databus.currentLevelIndex >= 0) {
@@ -138,11 +136,10 @@ class PlayingEngine {
 
   loadLevel(data) {
     if (data && data.board) {
-      this.gp.cols = data.board.cols || 5;
-      this.gp.rows = data.board.rows || 5;
-      this.gp.hGap = data.board.hGap || 10;
-      this.gp.vGap = data.board.vGap || 10;
-      this.gp.diameter = data.board.diameter || 30;
+      this.gp.rows = data.board.rows || data.board.cols || 5;
+      this.gp.oddCols = data.board.oddCols || data.board.oddRows || 3;
+      this.gp.boardWidth = data.board.boardWidth || 375;
+      this.gp.boardRate = data.board.boardRate || 2.9;
     }
     this._crownSteps = (data && data.crownSteps) || 0;
     this.gp.pigs = (data && data.pigs ? data.pigs : []).map(p => ({

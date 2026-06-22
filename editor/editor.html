@@ -1118,7 +1118,6 @@ function handleEditMouseUp(pos) {
       updatePigEditor();
       updatePigList();
       markCurrentDirty();
-      showToast(`小猪 #${pig.id} 已放置 (${lv.length}格, ${lv.angle}°)`);
       // 落地后尝试逃脱（编辑模式：幽灵猪飞走，真猪留在原地）
       tryGhostPush(pig.id);
     }

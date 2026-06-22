@@ -16,6 +16,7 @@ const BG_COLOR = '#1a1a2e';
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
 const HEAD_ZONE_MULT = 1;  // 头部区域 = HEAD_ZONE_MULT × diameter 像素
+const REFERENCE_DIAMETER = 50;  // boardScale 参考直径
 
 class GameplayEngine {
   constructor() {
@@ -23,14 +24,11 @@ class GameplayEngine {
     this.topBarH = 48;
     this.bottomStripH = 175;
 
-    // ===== 棋盘参数 =====
-    this.cols = 5;
-    this.rows = 5;
-    this.hGap = 10;
-    this.vGap = 10;
-    this.diameter = 30;
-    // ===== 屏幕适配 =====
-    this.effectiveWidth = SCREEN_WIDTH;
+    // ===== 棋盘参数（蜂窝六边形网格，纵向排列） =====
+    this.rows = 5;          // 完整列（贴边列）孔数（决定棋盘高度）
+    this.oddCols = 3;       // 完整列数量 → 总列数 = 2*oddCols-1（完整/交错/完整/.../完整，两侧贴边）
+    this.boardWidth = 375;  // 棋盘目标总宽度（屏幕像素）
+    this.boardRate = 2.9;   // dt/r 比例（孔间距与半径比），可调节正六边形密度
     // ===== 动态计算 =====
     this.boardScale = 1;
     this.scaledDiameter = 30;
@@ -64,39 +62,37 @@ class GameplayEngine {
   }
 
   // ============================================================
-  // 棋盘计算
+  // 棋盘计算（蜂窝六边形网格）
+  // boardWidth → diameter（反推）→ hSpacing/vSpacing（六边形几何）
+  // boardScale = diameter / REFERENCE_DIAMETER，用于猪长度逻辑↔屏幕转换
   // ============================================================
-  // maxBoardHOverride: 可选，强制使用指定的最大棋盘高度（编辑器传入游戏等效值，确保角度修正一致）
-  recomputeBoard(maxBoardHOverride) {
-    const maxBoardW = SCREEN_WIDTH;
-    const maxBoardH = maxBoardHOverride != null ? maxBoardHOverride : (SCREEN_HEIGHT - this.topBarH - this.bottomStripH);
+  recomputeBoard() {
+    // 纵向蜂窝列排列：偶数列贴边，奇数列下移 vSpacing/2
+    // boardWidth = (totalCols - 1) * hSpacing + diameter
+    // 六边形关系：hSpacing = dist * √3/2, vSpacing = dist（行距 = 格子常数）
+    // dist = boardRate * diameter / 2
+    // → diameter = boardWidth / [(totalCols - 1) * boardRate * √3 / 4 + 1]
+    const totalCols = this.totalCols;
+    const denom = (totalCols - 1) * this.boardRate * Math.sqrt(3) / 4 + 1;
+    const sd = Math.round(this.boardWidth / denom * 10) / 10;
 
-    // 屏幕适配缩放：宽+高双约束，取较小者，保证棋盘等比缩放不压扁
-    const widthScale = this.effectiveWidth / 375;
-    const heightScale = this.rows > 0
-      ? maxBoardH / (this.rows * (this.diameter + this.vGap))
-      : widthScale;
-    this.boardScale = Math.max(0.75, Math.min(1.5, Math.min(widthScale, heightScale)));
-    const sd = this.diameter * this.boardScale;
-    const shg = this.hGap * this.boardScale;
-    const svg = this.vGap * this.boardScale;
     this.scaledDiameter = sd;
     this.scaledHalfDiameter = sd / 2;
     this.scaledHeadZone = sd * HEAD_ZONE_MULT;
-    this.hSpacing = sd + shg;
-    this.vSpacing = sd + svg;
 
-    // 安全兜底：极端情况（例如 boardScale 触及 0.75 floor 后仍溢出）压缩间距
-    if (this.cols * this.hSpacing > maxBoardW) {
-      this.hSpacing = Math.floor(maxBoardW / this.cols);
-    }
-    if (this.rows * this.vSpacing > maxBoardH) {
-      this.vSpacing = Math.floor(maxBoardH / this.rows);
-    }
+    const dist = this.boardRate * sd / 2;  // 相邻孔心距（格子常数）
+    this.hSpacing = dist * Math.sqrt(3) / 2; // 列间距，压缩成正六边形
+    this.vSpacing = dist;                    // 行间距 = dist（同行孔相邻距离）
+
+    // boardScale：猪长度逻辑↔屏幕像素转换系数
+    this.boardScale = sd / REFERENCE_DIAMETER;
 
     this.computeHoles();
     this.rebuildOccupancy();
   }
+
+  // 总列数 = 2 × 完整列数 - 1（完整/交错/完整/.../完整，两侧贴边）
+  get totalCols() { return this.oddCols * 2 - 1; }
 
   // 碰撞检测射线推进步长 = 孔位半径（diameter/2）
   get collisionStep() { return this.scaledHalfDiameter; }
@@ -106,23 +102,24 @@ class GameplayEngine {
 
   computeHoles() {
     this.holes = [];
+    const topPad = this.scaledHalfDiameter;
+    const x0 = this.scaledHalfDiameter;
     const hStep = this.hSpacing;
     const vStep = this.vSpacing;
-    const mx = hStep / 2;
-    const my = vStep / 2;
 
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        this.holes.push({ x: mx + c * hStep, y: my + r * vStep, type: 'grid', row: r, col: c });
-      }
-    }
-    for (let r = 0; r < this.rows - 1; r++) {
-      for (let c = 0; c < this.cols - 1; c++) {
-        this.holes.push({
-          x: mx + hStep / 2 + c * hStep,
-          y: my + vStep / 2 + r * vStep,
-          type: 'diag', row: r, col: c
-        });
+    for (let c = 0; c < this.totalCols; c++) {
+      const x = x0 + c * hStep;
+      if (c % 2 === 0) {
+        // 完整列（贴左右边，rows 个孔，顶部对齐）
+        for (let r = 0; r < this.rows; r++) {
+          this.holes.push({ x, y: topPad + r * vStep, type: 'grid', row: r, col: c });
+        }
+      } else {
+        // 交错列（rows-1 个孔，下移 vStep/2，蜂窝六边形）
+        const oddTop = topPad + vStep / 2;
+        for (let r = 0; r < this.rows - 1; r++) {
+          this.holes.push({ x, y: oddTop + r * vStep, type: 'grid', row: r, col: c });
+        }
       }
     }
   }
@@ -131,16 +128,12 @@ class GameplayEngine {
   // 棋盘居中对齐
   // ============================================================
   recenterBoard() {
-    const visualW = this.cols * this.hSpacing;
-    const visualH = this.rows * this.vSpacing;
+    const visualW = this.boardWidth;               // 完整列总宽 = boardWidth
+    const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
     const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
     this.boardOffsetX = Math.max(0, Math.round((SCREEN_WIDTH - visualW) / 2));
     this.boardOffsetY = Math.max(0, Math.round((availH - visualH) / 2));
   }
-
-  // ============================================================
-  // 占用管理
-  // ============================================================
   rebuildOccupancy() {
     this.holeOccupied = new Array(this.holes.length).fill(-1);
     for (const pig of this.pigs) {
@@ -901,6 +894,24 @@ class GameplayEngine {
       }
     }
 
+    // 棋盘左右边界线（调试用）
+    const boardLeft = this.boardOffsetX;
+    const boardRight = this.boardOffsetX + this.boardWidth;
+    const boardTop = offY;
+    const boardBottom = offY + (this.rows - 1) * this.vSpacing + this.scaledDiameter;
+    ctx.strokeStyle = 'rgba(255, 255, 100, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(boardLeft, boardTop);
+    ctx.lineTo(boardLeft, boardBottom);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(boardRight, boardTop);
+    ctx.lineTo(boardRight, boardBottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     // 拖拽中头部占孔 → 红色外边框高亮
     if (this.dragState && this.dragState.headHoleIdx >= 0) {
       const hh = this.holes[this.dragState.headHoleIdx];
@@ -1007,7 +1018,7 @@ class GameplayEngine {
 
     // 底部提示文字（屏幕坐标）
     if (options.hintText !== undefined) {
-      const visualH = this.rows * this.vSpacing;
+      const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
       const hintY = Math.min(SCREEN_HEIGHT - this.bottomStripH - 12, this.topBarH + this.boardOffsetY + visualH + 8);
       ctx.fillStyle = 'rgba(255,255,255,0.45)';
       ctx.font = '12px sans-serif';

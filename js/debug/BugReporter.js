@@ -263,11 +263,11 @@ class BugReporter {
 
       if (gp) {
         state.boardConfig = {
-          cols: gp.cols,
           rows: gp.rows,
-          diameter: gp.diameter,
-          hGap: gp.hGap,
-          vGap: gp.vGap,
+          oddCols: gp.oddCols,
+          boardWidth: gp.boardWidth,
+          boardRate: gp.boardRate,
+          scaledDiameter: Math.round(gp.scaledDiameter * 10) / 10,
           boardScale: gp.boardScale ? Math.round(gp.boardScale * 100) / 100 : 1
         };
         // 猪信息精简

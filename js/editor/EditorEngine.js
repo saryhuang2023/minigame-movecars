@@ -24,7 +24,6 @@ class EditorEngine {
   constructor(inputManager) {
     this.input = inputManager;
     this.gp = new GameplayEngine();
-    this.gp.effectiveWidth = SCREEN_WIDTH;  // 编辑模式永远用真实设备宽度
 
     // ===== 编辑状态 =====
     this.dirty = false;
@@ -73,13 +72,11 @@ class EditorEngine {
   // 激活 / 反激活
   // ============================================================
   activate() {
-    this.gp.effectiveWidth = SCREEN_WIDTH;
     this.gp.bottomStripH = 92;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.loadLevelList();
     this.dirty = false;
-    this.showRedFrame = false;
     this.input.on('editor', (e) => this.handleEvent(e));
 
     // 云端同步只在第一次 activate 时执行，之后跳过（_cloudSynced 在 deactivate 中不清除）
@@ -138,8 +135,6 @@ class EditorEngine {
         this.checkTopButtons(x, y);
         return;
       }
-      // 屏幕宽度面板（左上角浮动）
-      if (this.widthPanelBtns && this.checkWidthPanelBtns(x, y)) return;
       // 棋盘（提示模式有独立处理）
       if (this.hintMode) {
         this._onHintTouchStart(x, y);
@@ -402,7 +397,7 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    const len = Math.max(this.gp.diameter, Math.min(this.gp.diameter * 15, Math.round(scaledDist)));
+    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 15, Math.round(scaledDist)));
 
     // 长度和角度都没变 → 跳过（像素值允许 ±2px 误差）
     if (ds._lastLen !== undefined && Math.abs(ds._lastLen - len) < 3 && ds._lastAngle === angle) return;
@@ -479,7 +474,7 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    const len = Math.max(this.gp.diameter, Math.min(this.gp.diameter * 15, Math.round(scaledDist)));
+    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 15, Math.round(scaledDist)));
 
     const pig = this.gp.dragState.pigId != null ? this.gp.pigs.find(p => p.id === this.gp.dragState.pigId) : null;
 
@@ -591,7 +586,6 @@ class EditorEngine {
             realId = this.gp.nextPigId++;
             this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
             this.gp.selectedPigId = realId;
-            this.showToast(`小猪 #${realId} 已放置 (${snapped.length}px, ${snapped.angle}°)`);
           }
           for (let i = 0; i < this.gp.holeOccupied.length; i++) {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
@@ -651,7 +645,7 @@ class EditorEngine {
     const curData = this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length
       ? this.levelList[this.currentLevelIdx].data : null;
     return {
-      board: { cols: this.gp.cols, hGap: this.gp.hGap, rows: this.gp.rows, vGap: this.gp.vGap, diameter: this.gp.diameter },
+      board: { rows: this.gp.rows, oddCols: this.gp.oddCols, boardWidth: this.gp.boardWidth, boardRate: this.gp.boardRate },
       pigs: this.gp.pigs.map(p => {
         const obj = { id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle };
         if (p.hintId != null) {
@@ -667,11 +661,10 @@ class EditorEngine {
 
   loadLevelData(data) {
     if (data.board) {
-      this.gp.cols = data.board.cols || 5;
-      this.gp.rows = data.board.rows || 5;
-      this.gp.hGap = data.board.hGap || 10;
-      this.gp.vGap = data.board.vGap || 10;
-      this.gp.diameter = data.board.diameter || 30;
+      this.gp.rows = data.board.rows || data.board.cols || 5;
+      this.gp.oddCols = data.board.oddCols || data.board.oddRows || 3;
+      this.gp.boardWidth = data.board.boardWidth || 375;
+      this.gp.boardRate = data.board.boardRate || 2.9;
     }
     this._crownSteps = (data && data.crownSteps) || 0;
     this.gp.pigs = (data.pigs || []).map(p => ({
@@ -685,10 +678,7 @@ class EditorEngine {
     this.gp.flashingPigs = {};
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
-    // 使用与 PlayingEngine 一致的 maxBoardH 计算棋盘，确保角度修正结果相同
-    // PlayingEngine: topBarH = safeTop + 16 + 48 + 8 + 12, bottomStripH = 56 + 16 + 8 + 12
-    var gameMaxBoardH = SCREEN_HEIGHT - (databus.safeTop + 84) - 92;
-    this.gp.recomputeBoard(gameMaxBoardH);
+    this.gp.recomputeBoard();
     var corrected = this.gp.snapAllPigsAngles();
     // 用 PlayingEngine 的棋盘卡片布局参数重新居中 —— 确保渲染与正式关卡一致
     var boardCardY = (databus.safeTop || 0) + 16 + 48 + 8 - 30;
@@ -952,7 +942,7 @@ class EditorEngine {
 
   getDefaultLevelData() {
     return {
-      board: { cols: 3, hGap: 60, rows: 5, vGap: 20, diameter: 50 },
+      board: { rows: 5, oddCols: 3, boardWidth: 375, boardRate: 2.9 },
       pigs: [],
       ready: 0
     };
@@ -1153,22 +1143,24 @@ class EditorEngine {
       }
     }
 
-    // 4. 兜底：尝试 tailIndex 附近孔位
+    // 4. 兜底：尝试 tailIndex 附近孔位（距离最近的 6 个，网格无关）
     if (lostPigs.length > 0) {
-      const offsets = [
-        1, -1, this.gp.cols, -this.gp.cols,
-        2, -2, this.gp.cols * 2, -this.gp.cols * 2,
-        this.gp.cols + 1, this.gp.cols - 1,
-        -this.gp.cols + 1, -this.gp.cols - 1
-      ];
       for (const pid of lostPigs) {
         const snap = snapshot.find(s => s.id === pid);
         if (!snap) continue;
+        const tailHole = this.gp.holes[snap.tailIndex];
+        // 按距离排序找最近的 N 个孔（排除自身）
+        const candidates = this.gp.holes
+          .map((h, i) => {
+            const dx = h.x - tailHole.x, dy = h.y - tailHole.y;
+            return { idx: i, dist2: dx * dx + dy * dy };
+          })
+          .filter(c => c.idx !== snap.tailIndex)
+          .sort((a, b) => a.dist2 - b.dist2)
+          .slice(0, 8);  // 8 个候选覆盖蜂窝 6 邻居 + 2 兜底
         let found = false;
-        for (const offset of offsets) {
-          const newTail = snap.tailIndex + offset;
-          if (newTail < 0 || newTail >= this.gp.holes.length) continue;
-          if (this.gp.holeOccupied[newTail] !== -1) continue;  // 不能落在已占用孔上
+        for (const { idx: newTail } of candidates) {
+          if (this.gp.holeOccupied[newTail] !== -1) continue;
           for (let tryLen = snap.length; tryLen >= 1; tryLen--) {
             for (const sign of [0, -1, 1]) {
               const a = sign === 0 ? snap.angle : snap.angle + sign * 22.5;
@@ -1317,10 +1309,8 @@ class EditorEngine {
     opts.hintText = hintText;
 
     this.gp.renderBoard(ctx, opts);
-    if (this.showRedFrame) this._renderEffectiveArea();
     this._renderConflictOverlays();  // 占用冲突红色高亮
     this.renderTopBar();
-    // this.renderWidthPanel(); // 屏幕宽度面板暂时隐藏
     this.renderBottomStrip();
     this.renderToast();
 
@@ -1798,9 +1788,10 @@ class EditorEngine {
 
   // ---- 紧凑步进器：label [-][+] — 手指友好 ----
   // 返回绘制后的 x 位置，供调用方精确控制间距
-  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step, targetArray) {
+  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step, targetArray, valueWidth) {
     step = step || 1;
     targetArray = targetArray || this.bottomBtns;
+    valueWidth = valueWidth || 18;
     const midY = btnY + btnH / 2;
     const btnW = 27;
 
@@ -1816,8 +1807,8 @@ class EditorEngine {
     ctx.fillStyle = '#FF8C00';
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(String(value), x + 9, midY);
-    x += 18;
+    ctx.fillText(String(value), x + valueWidth / 2, midY);
+    x += valueWidth;
 
     // 减号
     ctx.strokeStyle = '#ccc';
@@ -2032,7 +2023,7 @@ class EditorEngine {
     const rows = Math.ceil(this.levelList.length / COLS);
     const gridH = (rows + 2) * btnH + (rows + 1) * rowGap;  // +2 行空底，防误点
 
-    const boardSectionH = 80;        // 棋盘控件区（2 行 stepper）
+    const boardSectionH = 128;       // 棋盘控件区（3 行 stepper: 每行 ~36px + 间距）
     const headerH = 48 + boardSectionH + 4 + barH;  // 标题 + 棋盘 + 间隙 + 操作栏
     const maxScrollH = SCREEN_HEIGHT * 0.75 - headerH;
     const scrollH = Math.min(gridH, maxScrollH);
@@ -2076,6 +2067,7 @@ class EditorEngine {
     const stepperH = 28;
     const boardY1 = sheetY + 52;
     const boardY2 = sheetY + 88;
+    const boardY3 = sheetY + 124;
     this._levelSheetStepperBtns = [];
 
     // 顶边分隔线
@@ -2085,16 +2077,8 @@ class EditorEngine {
     ctx.lineTo(SCREEN_WIDTH, boardY1 - 2);
     ctx.stroke();
 
-    // Row 1: 列 + 行
+    // Row 1: 行 + 列
     let bx = 12;
-    bx = this._drawCompactStepper(bx, boardY1, stepperH, '列', this.gp.cols, 2, 15,
-      (v) => {
-        if (this.gp.pigs.length > 0) {
-          this.showToast('有猪的情况下不能改变格子数量');
-          return;
-        }
-        this.gp.cols = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
-      }, 1, this._levelSheetStepperBtns) + 14;
     bx = this._drawCompactStepper(bx, boardY1, stepperH, '行', this.gp.rows, 2, 15,
       (v) => {
         if (this.gp.pigs.length > 0) {
@@ -2102,28 +2086,59 @@ class EditorEngine {
           return;
         }
         this.gp.rows = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+      }, 1, this._levelSheetStepperBtns) + 14;
+    bx = this._drawCompactStepper(bx, boardY1, stepperH, '奇数列', this.gp.oddCols, 2, 10,
+      (v) => {
+        if (this.gp.pigs.length > 0) {
+          this.showToast('有猪的情况下不能改变格子数量');
+          return;
+        }
+        this.gp.oddCols = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
       }, 1, this._levelSheetStepperBtns);
 
-    // Row 2: 径 + 横距 + 纵距
+    // Row 2: boardWidth（棋盘总宽）
     bx = 12;
-    bx = this._drawCompactStepper(bx, boardY2, stepperH, '径', this.gp.diameter, 30, 50,
+    this._drawCompactStepper(bx, boardY2, stepperH, '宽', this.gp.boardWidth, 100, 600,
       (v) => {
-        this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this.gp.boardWidth = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
-      }, 2, this._levelSheetStepperBtns) + 14;
-    bx = this._drawCompactStepper(bx, boardY2, stepperH, '横距', this.gp.hGap, 0, 60,
+      }, 5, this._levelSheetStepperBtns);
+
+    // Row 3: boardRate（孔间距/半径比，调节正六边形密度）
+    bx = 12;
+    this._drawCompactStepper(bx, boardY3, stepperH, 'Rate', this.gp.boardRate, 1.5, 4.0,
       (v) => {
-        this.gp.hGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this.gp.boardRate = Math.round(v * 1000) / 1000;
+        this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
-      }, 2, this._levelSheetStepperBtns) + 14;
-    this._drawCompactStepper(bx, boardY2, stepperH, '纵距', this.gp.vGap, 0, 60,
-      (v) => {
-        this.gp.vGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
-        this._adaptPigsToBoard();
-        this.markCurrentDirty();
-      }, 2, this._levelSheetStepperBtns);
+      }, 0.001, this._levelSheetStepperBtns, 42);
+    // 点击数值区域可直接输入（像金猪阈值一样）
+    this._levelSheetStepperBtns.push({
+      x: bx + 30, y: boardY3, w: 42, h: stepperH,
+      onClick: () => {
+        var self = this;
+        wx.showModal({
+          title: 'Rate',
+          editable: true,
+          placeholderText: '1.500~4.000',
+          content: String(self.gp.boardRate),
+          success: function(res) {
+            if (res.confirm && res.content != null) {
+              var v = parseFloat(res.content);
+              if (!isNaN(v)) {
+                v = Math.round(Math.max(1.5, Math.min(4.0, v)) * 1000) / 1000;
+                self.gp.boardRate = v;
+                self.gp.recomputeBoard(); self.gp.recenterBoard();
+                self._adaptPigsToBoard();
+                self.markCurrentDirty();
+              }
+            }
+          }
+        });
+      }
+    });
 
     // ---- 操作按钮栏 ----
     const actionBarY = sheetY + 48 + boardSectionH + 4;
@@ -2410,132 +2425,6 @@ class EditorEngine {
     ctx.font = '12px sans-serif';
     ctx.fillText('请稍后', bx + bw / 2, by + 56);
   }
-
-  // ============================================================
-  // === 屏幕宽度面板（左上角浮动） ===
-  // ============================================================
-  renderWidthPanel() {
-    const storedW = databus.storedScreenWidth;
-    const panelX = 8, panelY = this.gp.topBarH + 6;
-    const panelW = 202, panelH = 44;
-    const btnW = 30, btnH = 28;
-
-    // 半透明背景
-    ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    roundRect(ctx, panelX, panelY, panelW, panelH, 8);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-    ctx.lineWidth = 1;
-    roundRect(ctx, panelX, panelY, panelW, panelH, 8);
-    ctx.stroke();
-
-    this.widthPanelBtns = [];
-
-    const midY = panelY + panelH / 2;
-
-    // 标签
-    ctx.fillStyle = '#666';
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('屏幕宽度', panelX + 10, midY);
-
-    // 数值
-    ctx.fillStyle = '#333';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(storedW.toString(), panelX + 78, midY);
-
-    // [-] 按钮
-    const minusX = panelX + 100;
-    const btnY = panelY + (panelH - btnH) / 2;
-    ctx.fillStyle = '#f0f0f0';
-    ctx.strokeStyle = '#ccc';
-    ctx.lineWidth = 1;
-    roundRect(ctx, minusX, btnY, btnW, btnH, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#333';
-    ctx.font = 'bold 18px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('−', minusX + btnW / 2, btnY + btnH / 2);
-    this.widthPanelBtns.push({ x: minusX, y: btnY, w: btnW, h: btnH,
-      onClick: () => { databus.storedScreenWidth = Math.max(250, storedW - 25); }});
-
-    // [+] 按钮
-    const plusX = minusX + btnW + 4;
-    ctx.fillStyle = '#f0f0f0';
-    ctx.strokeStyle = '#ccc';
-    ctx.lineWidth = 1;
-    roundRect(ctx, plusX, btnY, btnW, btnH, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#333';
-    ctx.fillText('+', plusX + btnW / 2, btnY + btnH / 2);
-    this.widthPanelBtns.push({ x: plusX, y: btnY, w: btnW, h: btnH,
-      onClick: () => { databus.storedScreenWidth = Math.min(600, storedW + 25); }});
-
-    // [显/隐] 按钮
-    const visX = plusX + btnW + 4;
-    const visW = 26;
-    ctx.fillStyle = this.showRedFrame ? '#FFE0E0' : '#f0f0f0';
-    ctx.strokeStyle = this.showRedFrame ? '#FF6B6B' : '#ccc';
-    ctx.lineWidth = 1;
-    roundRect(ctx, visX, btnY, visW, btnH, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = this.showRedFrame ? '#CC3333' : '#333';
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(this.showRedFrame ? '隐' : '显', visX + visW / 2, btnY + btnH / 2);
-    this.widthPanelBtns.push({ x: visX, y: btnY, w: visW, h: btnH,
-      onClick: () => { this.showRedFrame = !this.showRedFrame; }});
-  }
-
-  checkWidthPanelBtns(x, y) {
-    if (!this.widthPanelBtns) return false;
-    for (const btn of this.widthPanelBtns) {
-      if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-        btn.onClick();
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // ============================================================
-  // === 棋盘有效区域红框 ===
-  // ============================================================
-  _renderEffectiveArea() {
-    const g = this.gp;
-    // 红框展示 storedScreenWidth 下的棋盘区域（独立计算，不依赖 gp 现有缩放值）
-    const testScale = Math.max(0.75, Math.min(1.5, databus.storedScreenWidth / 375));
-    const testD = g.diameter * testScale;
-    const testHGap = g.hGap * testScale;
-    const testVGap = g.vGap * testScale;
-    const testHSpacing = testD + testHGap;
-    const testVSpacing = testD + testVGap;
-    const testVisualW = g.cols * testHSpacing;
-    const testVisualH = g.rows * testVSpacing;
-    const testBoardW = (g.cols - 1) * testHSpacing + testD;
-    const testBoardH = (g.rows - 1) * testVSpacing + testD;
-
-    const testOffsetX = Math.max(0, (SCREEN_WIDTH - testVisualW) / 2);
-    const testOffsetY = Math.max(0, (SCREEN_HEIGHT - g.topBarH - g.bottomStripH - testVisualH) / 2);
-    const x = testOffsetX + (testVisualW - testBoardW) / 2;
-    const y = g.topBarH + testOffsetY + (testVisualH - testBoardH) / 2;
-
-    // 红色虚线边框（只画线，不填充）
-    ctx.strokeStyle = 'rgba(255, 0, 0, 0.45)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(x, y, testBoardW, testBoardH);
-    ctx.setLineDash([]);
-  }
-
 }
 
 module.exports = EditorEngine;

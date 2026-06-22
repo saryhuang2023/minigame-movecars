@@ -4,43 +4,46 @@
     "diameter": 50,
     "hGap": 60,
     "rows": 5,
-    "vGap": 20
+    "vGap": 20,
+    "boardRate": 2.9,
+    "boardWidth": 315,
+    "oddCols": 3
   },
   "pigs": [
     {
-      "angle": 327.5288077091515,
-      "hintAngle": 327.5288077091515,
+      "angle": 90,
+      "hintAngle": 90,
+      "hintId": 4,
+      "id": 6,
+      "length": 125,
+      "tail": 4
+    },
+    {
+      "angle": 330,
+      "hintAngle": 330,
+      "hintId": 1,
+      "id": 7,
+      "length": 71,
+      "tail": 7
+    },
+    {
+      "angle": 330,
+      "hintAngle": 330,
       "hintId": 3,
-      "id": 0,
-      "length": 180,
+      "id": 8,
+      "length": 201,
       "tail": 0
     },
     {
       "angle": 270,
       "hintAngle": 270,
       "hintId": 2,
-      "id": 1,
-      "length": 65,
-      "tail": 8
-    },
-    {
-      "angle": 327.5288077091515,
-      "hintAngle": 327.5288077091515,
-      "hintId": 1,
-      "id": 2,
-      "length": 52,
-      "tail": 19
-    },
-    {
-      "angle": 90,
-      "hintAngle": 90,
-      "hintId": 4,
-      "id": 3,
-      "length": 123,
-      "tail": 12
+      "id": 9,
+      "length": 74,
+      "tail": 20
     }
   ],
   "ready": 0,
-  "version": 8,
+  "version": 14,
   "crownSteps": 4
 }
