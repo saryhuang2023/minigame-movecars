@@ -37,6 +37,48 @@
       "handler": "index.main",
       "timeout": 15,
       "ignore": ["node_modules"]
+    },
+    {
+      "name": "claimLevelMaster",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "getLevelMaster",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "getOpenId",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "getPlayerData",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "savePlayerData",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "reportBug",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
     }
   ]
 }
