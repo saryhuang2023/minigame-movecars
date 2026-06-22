@@ -899,9 +899,9 @@ _tryClaimMaster() {
 
     // 位置：底部与 combo 连击图底部（棋盘卡片上边缘）对齐
     var cx = this._boardCardX + this._boardCardW - 36;
-    var cy = this._boardCardY - 14;
-    var radius = 22;
-    var lineW = 4;
+    var cy = this._boardCardY - 25;
+    var radius = 20;
+    var lineW = 2;
     var hasThreshold = this._crownSteps > 0; // 是否配置了皇冠阈值
 
     // 飞行动画中：灰色猪留守原位，金色猪由 _renderCrownAnimation 单独绘制
@@ -961,7 +961,7 @@ _tryClaimMaster() {
     ctx.fillStyle = '#94A3B8';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('剩余 ' + remaining + ' 步', cx, cy + radius + 4);
+    ctx.fillText('' + remaining + ' 步', cx, cy + radius);
   }
 
   // ========== 小金猪通关动画 ==========
