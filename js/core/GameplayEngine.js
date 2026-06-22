@@ -308,10 +308,14 @@ class GameplayEngine {
     const other = this.pigs.find(p => p.id === otherPigId);
     if (!other) return false;
 
-    // 当前胶囊是否相交？不相交 → 不是已重叠后撤场景
+    // 当前是否已重叠？用 capRadius（占用半径，宽）而非 collisionCapRadius（碰撞半径，窄）
+    // 因为视觉重叠对应的是占用半径级，碰撞半径仅为 1/2 会漏判
     const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
     const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
-    if (!cr || !ob || !this._capsuleIntersect(cr, ob)) return false;
+    if (!cr || !ob) return false;
+    const crWide = { ...cr, collisionCapRadius: undefined };
+    const obWide = { ...ob, collisionCapRadius: undefined };
+    if (!this._capsuleIntersect(crWide, obWide)) return false;
 
     // 提议位置胶囊
     const pr = this.getPigRect(proposedTailIdx, proposedLen, proposedAngle);
@@ -327,6 +331,47 @@ class GameplayEngine {
       ob.capTailX, ob.capTailY, ob.capHeadX, ob.capHeadY
     );
     return d2Next > d2Now + 1;  // 阈值 1px² 防浮点抖动
+  }
+
+  // 判断平移 (dx,dy) 是否在远离 otherPigId（推出逃脱时使用）
+  _isRetreatingFromShifted(pigId, dx, dy, otherPigId) {
+    const pig = this.pigs.find(p => p.id === pigId);
+    if (!pig) return false;
+    const other = this.pigs.find(p => p.id === otherPigId);
+    if (!other) return false;
+
+    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+    if (!cr || !ob) return false;
+
+    // 当前不重叠 → 不豁免（用 capRadius 宽检测，与视觉重叠保持一致）
+    const crWide2 = { ...cr, collisionCapRadius: undefined };
+    const obWide2 = { ...ob, collisionCapRadius: undefined };
+    if (!this._capsuleIntersect(crWide2, obWide2)) return false;
+
+    // 提议位移后的胶囊
+    const pr = {
+      capTailX: cr.capTailX + dx,
+      capTailY: cr.capTailY + dy,
+      capHeadX: cr.capHeadX + dx,
+      capHeadY: cr.capHeadY + dy,
+      collisionCapRadius: cr.collisionCapRadius,
+      capRadius: cr.capRadius,
+    };
+
+    // 提议后不相交 → 一定是在远离
+    if (!this._capsuleIntersect(pr, ob)) return true;
+
+    // 都相交但距离增加 → 在后退
+    const d2Now = this._segSegDist2(
+      cr.capTailX, cr.capTailY, cr.capHeadX, cr.capHeadY,
+      ob.capTailX, ob.capTailY, ob.capHeadX, ob.capHeadY
+    );
+    const d2Next = this._segSegDist2(
+      pr.capTailX, pr.capTailY, pr.capHeadX, pr.capHeadY,
+      ob.capTailX, ob.capTailY, ob.capHeadX, ob.capHeadY
+    );
+    return d2Next > d2Now + 1;
   }
 
   // ---- OBB 碰撞（分离轴定理） — 保留给触控检测 ----
@@ -769,7 +814,7 @@ class GameplayEngine {
     for (let step = 1; step <= maxSteps; step++) {
       const dx = step * stepSize * dirX;
       const dy = step * stepSize * dirY;
-      // 孔位碰撞（胶囊 vs 点）
+      // 孔位碰撞（胶囊 vs 点）— 已重叠的后退可以豁免
       for (let hi = 0; hi < this.holes.length; hi++) {
         if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== pigId) {
           const h = this.holes[hi];
@@ -777,13 +822,16 @@ class GameplayEngine {
             r0.capTailX + dx, r0.capTailY + dy,
             r0.capHeadX + dx, r0.capHeadY + dy);
           if (ep.dist2 <= r0.capRadius * r0.capRadius) {
-            return { canPush: false, reason: `碰到猪 #${this.holeOccupied[hi]}`, collidedPigId: this.holeOccupied[hi] };
+            const otherId = this.holeOccupied[hi];
+            if (this._isRetreatingFromShifted(pigId, dx, dy, otherId)) continue;
+            return { canPush: false, reason: `碰到猪 #${otherId}`, collidedPigId: otherId };
           }
         }
       }
-      // OBB 碰撞
+      // OBB 碰撞 — 已重叠的后退可以豁免
       const cid = this._shiftedObbCollision(r0, dx, dy, pigId);
       if (cid >= 0) {
+        if (this._isRetreatingFromShifted(pigId, dx, dy, cid)) continue;
         return { canPush: false, reason: `碰到猪 #${cid}`, collidedPigId: cid };
       }
     }
