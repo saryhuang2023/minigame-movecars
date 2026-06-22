@@ -67,6 +67,7 @@ class PlayingEngine {
     this._isNewMaster = false;      // 本局是否成为新关主（用于结算界面文案）
     this._gotCrown = false;         // 小金猪是否已显示为金色（动画完成后才置 true）
     this._earnedCrown = false;      // 本局是否达到了小金猪门槛（用于判断是否播动画）
+    this._hadCrownBefore = false;   // 本局开始前是否已拥有小金猪（已获得则跳过所有皇冠逻辑）
     this._showVictoryPanel = false; // 结算面板是否可见（通关后可能先隐藏播动画）
     // 小金猪通关动画
     this._crownAnimPhase = null;    // null | 'flying' | 'flashing' | 'done'
@@ -92,7 +93,8 @@ class PlayingEngine {
     this._clearHint();
     this._hasUsedRemove = false;
     // 读小金猪状态（已获得则进入即显示金色）
-    this._gotCrown = !!wx.getStorageSync('crown_' + this.levelName);
+    this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
+    this._gotCrown = this._hadCrownBefore;
     this._earnedCrown = false;
     // 重置通关动画状态
     this._crownAnimPhase = null;
@@ -400,7 +402,8 @@ class PlayingEngine {
     this._victory = false;
     this._showVictoryPanel = false;
     this._isNewMaster = false;
-    this._gotCrown = !!wx.getStorageSync('crown_' + this.levelName);
+    this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
+    this._gotCrown = this._hadCrownBefore;
     this._earnedCrown = false;
     this._crownAnimPhase = null;
     this._crownAnimStart = 0;
@@ -419,9 +422,12 @@ class PlayingEngine {
         console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
       }
     }
-    // 小金猪：步数不超过阈值即可获得
-    // 存储立即持久化，但 _gotCrown 等动画结束后才变金色
-    if (this._crownSteps > 0 && this.steps <= this._crownSteps) {
+    // 小金猪：已获得过则跳过，不再重复检查/写存储/播动画
+    if (this._hadCrownBefore) {
+      // 仍设 _gotCrown=true 确保渲染显示金色（重玩场景）
+      this._gotCrown = true;
+      this._earnedCrown = false;
+    } else if (this._crownSteps > 0 && this.steps <= this._crownSteps) {
       wx.setStorageSync('crown_' + this.levelName, true);
       this._earnedCrown = true;
       this._gotCrown = false;  // 动画期间保持灰色
@@ -1288,7 +1294,7 @@ _tryClaimMaster() {
 
     const hasCombo = this._maxCombo >= 2;
     const isNewMaster = this._isNewMaster;
-    const hasCrown = this._gotCrown;
+    const hasCrown = this._earnedCrown;
 
     // 弹窗面板（有连击或新关主时加高）
     var ph = 200;
