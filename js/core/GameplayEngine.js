@@ -866,7 +866,7 @@ class GameplayEngine {
           octx.globalCompositeOperation = 'source-atop';
           octx.globalAlpha = 0.35;
           octx.fillStyle = '#FF80A8';
-          octx.fillRect(-totalLen / 2, -bodyH * 0.8, totalLen, bodyH * 1.6);
+          octx.fillRect(-ocW / 2, -ocH / 2, ocW, ocH);
           octx.restore();
 
           // 叠到主画布（离屏已旋转，只需平移）

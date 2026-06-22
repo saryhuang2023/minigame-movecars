@@ -15,54 +15,72 @@
     },
     {
       "angle": 332.16817243518204,
+      "hintAngle": 332.16817243518204,
+      "hintId": 3,
       "id": 266,
       "length": 41,
       "tail": 138
     },
     {
       "angle": 119.60676689676718,
+      "hintAngle": 153,
+      "hintId": 24,
       "id": 267,
       "length": 67,
       "tail": 65
     },
     {
       "angle": 332.168172435182,
+      "hintAngle": 332.168172435182,
+      "hintId": 4,
       "id": 268,
       "length": 41,
       "tail": 123
     },
     {
       "angle": 170.01909120033028,
+      "hintAngle": 172,
+      "hintId": 17,
       "id": 269,
       "length": 109,
       "tail": 47
     },
     {
       "angle": 332.168172435182,
+      "hintAngle": 332.168172435182,
+      "hintId": 11,
       "id": 270,
       "length": 81,
       "tail": 45
     },
     {
       "angle": 27.831827564817996,
+      "hintAngle": 27.831827564817996,
+      "hintId": 14,
       "id": 271,
       "length": 81,
       "tail": 40
     },
     {
       "angle": 212.35590918784274,
+      "hintAngle": 208,
+      "hintId": 19,
       "id": 272,
       "length": 39,
       "tail": 29
     },
     {
       "angle": 27.831827564818003,
+      "hintAngle": 1,
+      "hintId": 15,
       "id": 273,
       "length": 77,
       "tail": 39
     },
     {
       "angle": 27.831827564818017,
+      "hintAngle": 27.831827564818017,
+      "hintId": 9,
       "id": 274,
       "length": 80,
       "tail": 28
@@ -75,12 +93,16 @@
     },
     {
       "angle": 90,
+      "hintAngle": 90,
+      "hintId": 12,
       "id": 276,
       "length": 81,
       "tail": 16
     },
     {
       "angle": 332.168172435182,
+      "hintAngle": 332.168172435182,
+      "hintId": 26,
       "id": 277,
       "length": 43,
       "tail": 3
@@ -105,6 +127,8 @@
     },
     {
       "angle": 130.72721923239075,
+      "hintAngle": 67,
+      "hintId": 20,
       "id": 281,
       "length": 107,
       "tail": 64
@@ -123,6 +147,8 @@
     },
     {
       "angle": 270,
+      "hintAngle": 270,
+      "hintId": 2,
       "id": 284,
       "length": 42,
       "tail": 75
@@ -135,6 +161,8 @@
     },
     {
       "angle": 270,
+      "hintAngle": 28,
+      "hintId": 21,
       "id": 286,
       "length": 79,
       "tail": 121
@@ -147,6 +175,8 @@
     },
     {
       "angle": 270,
+      "hintAngle": 270,
+      "hintId": 1,
       "id": 288,
       "length": 37,
       "tail": 74
@@ -177,42 +207,56 @@
     },
     {
       "angle": 207.83182756481793,
+      "hintAngle": 207.83182756481793,
+      "hintId": 8,
       "id": 293,
       "length": 38,
       "tail": 134
     },
     {
       "angle": 207.831827564818,
+      "hintAngle": 207.831827564818,
+      "hintId": 7,
       "id": 295,
       "length": 38,
       "tail": 119
     },
     {
       "angle": 152.16817243518202,
+      "hintAngle": 152.16817243518202,
+      "hintId": 6,
       "id": 297,
       "length": 78,
       "tail": 37
     },
     {
       "angle": 9.980908799669741,
+      "hintAngle": 11,
+      "hintId": 18,
       "id": 299,
       "length": 109,
       "tail": 42
     },
     {
       "angle": 327.64409081215723,
+      "hintAngle": 333,
+      "hintId": 25,
       "id": 300,
       "length": 41,
       "tail": 24
     },
     {
       "angle": 152.16817243518202,
+      "hintAngle": 180,
+      "hintId": 16,
       "id": 301,
       "length": 79,
       "tail": 38
     },
     {
       "angle": 152.168172435182,
+      "hintAngle": 152.168172435182,
+      "hintId": 5,
       "id": 302,
       "length": 78,
       "tail": 25
@@ -231,6 +275,8 @@
     },
     {
       "angle": 90,
+      "hintAngle": 90,
+      "hintId": 13,
       "id": 306,
       "length": 82,
       "tail": 13
@@ -261,18 +307,24 @@
     },
     {
       "angle": 207.831827564818,
+      "hintAngle": 207.831827564818,
+      "hintId": 10,
       "id": 311,
       "length": 81,
       "tail": 44
     },
     {
       "angle": 49.27278076760926,
+      "hintAngle": 28,
+      "hintId": 22,
       "id": 312,
       "length": 107,
       "tail": 61
     },
     {
       "angle": 60.39323310323281,
+      "hintAngle": 28,
+      "hintId": 23,
       "id": 294,
       "length": 83,
       "tail": 60
@@ -284,6 +336,7 @@
       "tail": 0
     }
   ],
-  "ready": 0,
-  "version": 11
+  "ready": 1,
+  "version": 28,
+  "crownSteps": 80
 }

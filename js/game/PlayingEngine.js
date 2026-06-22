@@ -562,6 +562,11 @@ class PlayingEngine {
         console.log('[关主] _fetchLevelMaster success master=' + JSON.stringify(master));
         this._levelMaster = master;
         this._masterLoading = false;
+        // 云端 level_info 可能包含 crownSteps，同步到实例（JSON 文件中可能不存在）
+        if (master && master.crownSteps > 0 && !this._crownSteps) {
+          this._crownSteps = master.crownSteps;
+          console.log('[小金猪] 从云端同步阈值 ' + this._crownSteps + '步');
+        }
         if (master) {
           if (!master.masterNickname) console.log('[关主] 云端记录缺少 masterNickname');
           if (!master.masterAvatarUrl) console.log('[关主] 云端记录缺少 masterAvatarUrl');
@@ -887,7 +892,6 @@ _tryClaimMaster() {
 
   // ========== 小金猪 ==========
   _renderCrownWidget() {
-    if (!this._crownSteps || this._crownSteps <= 0) return;
     if (databus.returnState === 'editor') return; // 试玩模式不显示
 
     // 位置：底部与 combo 连击图底部（棋盘卡片上边缘）对齐
@@ -895,6 +899,7 @@ _tryClaimMaster() {
     var cy = this._boardCardY - 14;
     var radius = 22;
     var lineW = 4;
+    var hasThreshold = this._crownSteps > 0; // 是否配置了皇冠阈值
 
     // 飞行动画中：灰色猪留守原位，金色猪由 _renderCrownAnimation 单独绘制
     if (this._crownAnimPhase === 'flying') {
@@ -915,7 +920,13 @@ _tryClaimMaster() {
       return;
     }
 
-    // 游戏中未获得：显示进度环 + 灰色猪 + 剩余步数
+    // 无皇冠阈值：仅显示灰色猪图标，无进度环和步数
+    if (!hasThreshold) {
+      drawPigIcon(ctx, cx, cy, 21, false);
+      return;
+    }
+
+    // 有阈值、游戏中未获得：显示进度环 + 灰色猪 + 剩余步数
     var remaining = this._crownSteps - this.steps;
     if (remaining < 0) remaining = 0;
     var progress = remaining / this._crownSteps;

@@ -64,6 +64,9 @@ class EditorEngine {
     this._levelSheetTouchStartY = 0;
     this._levelSheetTouchStartScrollY = 0;
     this._levelSheetIsScrolling = false;
+
+    // ===== 金猪阈值 =====
+    this._crownSteps = 0;
   }
 
   // ============================================================
@@ -71,7 +74,7 @@ class EditorEngine {
   // ============================================================
   activate() {
     this.gp.effectiveWidth = SCREEN_WIDTH;
-    this.gp.bottomStripH = 128;
+    this.gp.bottomStripH = 92;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.loadLevelList();
@@ -130,8 +133,8 @@ class EditorEngine {
         this.checkBottomButtons(x, y);
         return;
       }
-      // 顶部工具栏
-      if (y < this.gp.topBarH) {
+      // 顶部工具栏（视觉高度 48px，不受 gp.topBarH 影响）
+      if (y < 48) {
         this.checkTopButtons(x, y);
         return;
       }
@@ -657,6 +660,7 @@ class EditorEngine {
         }
         return obj;
       }),
+      crownSteps: this._crownSteps || 0,
       ready: (curData && curData.ready != null) ? curData.ready : 0
     };
   }
@@ -669,6 +673,7 @@ class EditorEngine {
       this.gp.vGap = data.board.vGap || 10;
       this.gp.diameter = data.board.diameter || 30;
     }
+    this._crownSteps = (data && data.crownSteps) || 0;
     this.gp.pigs = (data.pigs || []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       hintId: p.hintId != null ? p.hintId : null,
@@ -685,9 +690,10 @@ class EditorEngine {
     var gameMaxBoardH = SCREEN_HEIGHT - (databus.safeTop + 84) - 92;
     this.gp.recomputeBoard(gameMaxBoardH);
     var corrected = this.gp.snapAllPigsAngles();
-    // 用编辑器自身的布局参数重新居中棋盘，不影响 UI 渲染
-    this.gp.topBarH = 48;
-    this.gp.bottomStripH = 128;
+    // 用 PlayingEngine 的棋盘卡片布局参数重新居中 —— 确保渲染与正式关卡一致
+    var boardCardY = (databus.safeTop || 0) + 16 + 48 + 8 - 30;
+    this.gp.topBarH = boardCardY + 12;
+    this.gp.bottomStripH = 92;
     this.gp.recenterBoard();
     this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
     this._detectConflicts();
@@ -1270,6 +1276,30 @@ class EditorEngine {
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
+    // === 棋盘卡片（与 PlayingEngine 布局一致）===
+    const CARD_PADDING = 12;
+    const CARD_RADIUS = 32;
+    const safeTop = databus.safeTop || 0;
+    var boardCardX = 16;
+    var boardCardY = safeTop + 16 + 48 + 8 - 30;
+    var boardCardW = SCREEN_WIDTH - 32;
+    var boardCardH = SCREEN_HEIGHT - 92 - 8 - boardCardY;
+
+    // 白色卡片 + 阴影
+    ctx.save();
+    ctx.shadowColor = 'rgba(161, 150, 181, 0.2)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetX = 12;
+    ctx.shadowOffsetY = 12;
+    ctx.fillStyle = '#FFFFFF';
+    roundRect(ctx, boardCardX, boardCardY, boardCardW, boardCardH, CARD_RADIUS);
+    ctx.fill();
+    ctx.restore();
+
+    // 棋盘在卡片内的布局参数
+    this.gp.topBarH = boardCardY + CARD_PADDING;
+    this.gp.bottomStripH = 92;
+
     // 计算提示文字（提示模式下不显示操作提示）
     let hintText = '';
     var opts = { hintText, showSelection: !this.hintMode, showCollisionBox: !this.hintMode };
@@ -1444,7 +1474,7 @@ class EditorEngine {
   // === 渲染 — 顶部工具栏 ===
   // ============================================================
   renderTopBar() {
-    const topBarH = this.gp.topBarH;
+    const topBarH = 48;
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, SCREEN_WIDTH, topBarH);
@@ -1501,9 +1531,9 @@ class EditorEngine {
 
   // ============================================================
   // === 渲染 — 底部控制条 ===
-  // 第一行：[列 -5+] [行 -5+] | [猪]
-  // 第二行：[径 -5+] [横距 -5+] [纵距 -5+]
-  // 第三行：[关卡▼] [新建] [保存] [复制]
+  // 第一行：[猪] [提示] [金猪 输入框]
+  // 第二行：[关卡▼] [新建] [保存] [复制] [本地同步] [发布]
+  // 棋盘控件（列/行/径/横距/纵距）已迁至关卡选择面板
   // ============================================================
   renderBottomStrip() {
     const baseY = SCREEN_HEIGHT - this.gp.bottomStripH;
@@ -1559,54 +1589,39 @@ class EditorEngine {
         this.gp.selectedPigId = null;
         this.showToast('已退出提示模式');
       }.bind(this) });
+      x2 += hintBtnW + 8;
+
+      // 保存按钮
+      var saveBtnW = 66;
+      ctx.fillStyle = '#2196F3';
+      roundRect(ctx, x2, btnYHint, saveBtnW, btnH2, 6);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('保存', x2 + saveBtnW / 2, midYHint);
+      this.bottomBtns.push({ x: x2, y: btnYHint, w: saveBtnW, h: btnH2, onClick: function() {
+        this.saveLevel();
+        this.showToast('已保存关卡');
+      }.bind(this) });
       return;
     }
 
-    const row1H = 38;
-    const row1Y = baseY + 3;
-    const row2H = 38;
-    const row2Y = baseY + row1H + 3;
-
-    // ============================
-    // 第一行：棋盘尺寸 + 小猪按钮
-    // ============================
+    const rowH = 38;
     const btnH = 30;
-    const btnY1 = row1Y + (row1H - btnH) / 2;
-    const midY1 = row1Y + row1H / 2;
+    var x;
 
-    let x = 12;
+    // ============================
+    // 第一行：猪 + 提示 + 金猪
+    // ============================
+    const row1Y = baseY + 3;
+    const btnY1 = row1Y + (rowH - btnH) / 2;
+    const midY1 = row1Y + rowH / 2;
 
-    // 列控制 — 手指友好
-    x = this._drawCompactStepper(x, btnY1, btnH, '列', this.gp.cols, 2, 15,
-      (v) => {
-        if (this.gp.pigs.length > 0) {
-          this.showToast('有猪的情况下不能改变格子数量');
-          return;
-        }
-        this.gp.cols = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
-      });
-    x += 12;
+    x = 12;
 
-    // 行控制
-    x = this._drawCompactStepper(x, btnY1, btnH, '行', this.gp.rows, 2, 15,
-      (v) => {
-        if (this.gp.pigs.length > 0) {
-          this.showToast('有猪的情况下不能改变格子数量');
-          return;
-        }
-        this.gp.rows = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
-      });
-    x += 12;
-
-    // 分隔线
-    ctx.strokeStyle = '#ddd';
-    ctx.beginPath();
-    ctx.moveTo(x, row1Y + 6);
-    ctx.lineTo(x, row1Y + row1H - 6);
-    ctx.stroke();
-    x += 12;
-
-    // 小猪按钮
+    // 猪按钮
     const pigW = 66;
     const pigLabel = this.gp.selectedPigId != null ? '#' + this.gp.selectedPigId : '猪';
     ctx.fillStyle = '#FF9800';
@@ -1626,7 +1641,7 @@ class EditorEngine {
     }});
     x += pigW + 12;
 
-    // 提示模式按钮
+    // 提示按钮
     const hintModeW = 66;
     ctx.fillStyle = this.hintMode ? '#8B5CF6' : 'rgba(139, 92, 246, 0.2)';
     roundRect(ctx, x, btnY1, hintModeW, btnH, 6);
@@ -1646,65 +1661,69 @@ class EditorEngine {
       }
       this.showToast(this.hintMode ? '提示模式：选中猪后点击编号或方向' : '退出提示模式');
     }});
+    x += hintModeW + 12;
+
+    // 金猪标签
+    ctx.fillStyle = '#999';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('金猪', x, midY1);
+    x += 30;
+
+    // 金猪输入框
+    const crownW = 54, crownH = btnH;
+    ctx.strokeStyle = '#FF8C00';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, x, btnY1, crownW, crownH, 6);
+    ctx.stroke();
+    ctx.fillStyle = '#FF8C00';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var crownLabel = this._crownSteps > 0 ? String(this._crownSteps) : '无';
+    ctx.fillText(crownLabel, x + crownW / 2, midY1);
+
+    var self = this;
+    this.bottomBtns.push({
+      x: x, y: btnY1, w: crownW, h: crownH,
+      onClick: function() {
+        wx.showModal({
+          title: '金猪阈值',
+          editable: true,
+          placeholderText: '输入数字，0 表示无',
+          content: String(self._crownSteps),
+          success: function(res) {
+            if (res.confirm && res.content != null) {
+              var v = parseInt(res.content, 10);
+              if (!isNaN(v)) {
+                v = Math.max(0, Math.min(999, v));
+                self._crownSteps = v;
+                self.markCurrentDirty();
+              }
+            }
+          }
+        });
+      }
+    });
 
     // ============================
-    // 第二行：直径 / 孔间距 — 手指友好
+    // 第二行：关卡管理
     // ============================
-    const btnY2 = row2Y + (row2H - btnH) / 2;
-    const midY2 = row2Y + row2H / 2;
+    const row2Y = baseY + 3 + rowH + 4;
+    const btnY2 = row2Y + (rowH - btnH) / 2;
+    const midY2 = row2Y + rowH / 2;
 
     // 顶边分隔线
     ctx.strokeStyle = '#ddd';
     ctx.beginPath();
-    ctx.moveTo(0, row2Y - 1);
-    ctx.lineTo(SCREEN_WIDTH, row2Y - 1);
+    ctx.moveTo(0, row2Y - 2);
+    ctx.lineTo(SCREEN_WIDTH, row2Y - 2);
     ctx.stroke();
 
     x = 12;
 
-    // 直径 stepper（步长 2）
-    x = this._drawCompactStepper(x, btnY2, btnH, '径', this.gp.diameter, 30, 50,
-      (v) => {
-        this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
-        this._adaptPigsToBoard();
-        this.markCurrentDirty();
-      }, 2);
-    x += 12;
-
-    // 横向孔间距 stepper（步长 2）
-    x = this._drawCompactStepper(x, btnY2, btnH, '横距', this.gp.hGap, 0, 60,
-      (v) => {
-        this.gp.hGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
-        this._adaptPigsToBoard();
-        this.markCurrentDirty();
-      }, 2);
-    x += 12;
-
-    // 纵向孔间距 stepper（步长 2）
-    x = this._drawCompactStepper(x, btnY2, btnH, '纵距', this.gp.vGap, 0, 60,
-      (v) => {
-        this.gp.vGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
-        this._adaptPigsToBoard();
-        this.markCurrentDirty();
-      }, 2);
-
-    // ============================
-    // 关卡管理
-    // ============================
-    const row3Y = baseY + 2 * row1H + 8;
-    const btnY3 = row3Y + (row2H - btnH) / 2;
-    const midY3 = row3Y + row2H / 2;
-
-    // 顶边分隔线
-    ctx.strokeStyle = '#ddd';
-    ctx.beginPath();
-    ctx.moveTo(0, row3Y - 1);
-    ctx.lineTo(SCREEN_WIDTH, row3Y - 1);
-    ctx.stroke();
-
-    x = 12;
-
-    // 关卡选择按钮 [0002 ▼] — 手指友好
+    // 关卡选择按钮 [0002 ▼]
     const hasLevels = this.levelList.length > 0;
     const curName = hasLevels && this.currentLevelIdx >= 0
       ? this.levelList[this.currentLevelIdx].name : '---';
@@ -1715,7 +1734,7 @@ class EditorEngine {
     ctx.fillStyle = '#f5f5f5';
     ctx.strokeStyle = '#ccc';
     ctx.lineWidth = 1;
-    roundRect(ctx, x, btnY3, lvlBtnW, btnH, 6);
+    roundRect(ctx, x, btnY2, lvlBtnW, btnH, 6);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = isDirty ? '#E65100' : '#333';
@@ -1723,11 +1742,11 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const lvlLabel = (isDirty ? '*' : '') + curName + ' ▼';
-    ctx.fillText(lvlLabel, x + lvlBtnW / 2, midY3);
-    this.levelBtns.push({ x, y: btnY3, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
+    ctx.fillText(lvlLabel, x + lvlBtnW / 2, midY2);
+    this.levelBtns.push({ x, y: btnY2, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
     x += lvlBtnW + 4;
 
-    // 操作按钮：新建 / 保存 / 复制 — 手指友好
+    // 操作按钮：新建 / 保存 / 复制
     const opBtns = [
       { label: '新建', color: '#4CAF50', action: 'newLevel' },
       { label: '保存', color: '#2196F3', action: 'saveLevel' },
@@ -1737,28 +1756,28 @@ class EditorEngine {
     const opW = 38;
     for (const b of opBtns) {
       ctx.fillStyle = b.color;
-      roundRect(ctx, x, btnY3, opW, btnH, 6);
+      roundRect(ctx, x, btnY2, opW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(b.label, x + opW / 2, midY3);
-      this.levelBtns.push({ x, y: btnY3, w: opW, h: btnH, action: b.action });
+      ctx.fillText(b.label, x + opW / 2, midY2);
+      this.levelBtns.push({ x, y: btnY2, w: opW, h: btnH, action: b.action });
       x += opW + 4;
     }
 
     // 本地同步按钮
     const syncW = 50;
     ctx.fillStyle = '#ff9800';
-    roundRect(ctx, x, btnY3, syncW, btnH, 6);
+    roundRect(ctx, x, btnY2, syncW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('本地同步', x + syncW / 2, midY3);
-    this.levelBtns.push({ x, y: btnY3, w: syncW, h: btnH, action: 'localSync' });
+    ctx.fillText('本地同步', x + syncW / 2, midY2);
+    this.levelBtns.push({ x, y: btnY2, w: syncW, h: btnH, action: 'localSync' });
     x += syncW + 4;
 
     // 发布按钮：toggle ready 0↔1
@@ -1767,20 +1786,21 @@ class EditorEngine {
     const publishW = 50;
     const publishColor = ready === 1 ? '#E91E63' : '#9E9E9E';
     ctx.fillStyle = publishColor;
-    roundRect(ctx, x, btnY3, publishW, btnH, 6);
+    roundRect(ctx, x, btnY2, publishW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(ready === 1 ? '待发布' : '设计中', x + publishW / 2, midY3);
-    this.levelBtns.push({ x, y: btnY3, w: publishW, h: btnH, action: 'toggleReady' });
+    ctx.fillText(ready === 1 ? '待发布' : '设计中', x + publishW / 2, midY2);
+    this.levelBtns.push({ x, y: btnY2, w: publishW, h: btnH, action: 'toggleReady' });
   }
 
   // ---- 紧凑步进器：label [-][+] — 手指友好 ----
   // 返回绘制后的 x 位置，供调用方精确控制间距
-  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step) {
+  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step, targetArray) {
     step = step || 1;
+    targetArray = targetArray || this.bottomBtns;
     const midY = btnY + btnH / 2;
     const btnW = 27;
 
@@ -1809,7 +1829,7 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x + btnW / 2, midY);
-    this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.max(min, value - step)) });
+    targetArray.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.max(min, value - step)) });
     x += btnW + 3;
 
     // 加号
@@ -1818,7 +1838,7 @@ class EditorEngine {
     ctx.stroke();
     ctx.fillStyle = '#333';
     ctx.fillText('+', x + btnW / 2, midY);
-    this.bottomBtns.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.min(max, value + step)) });
+    targetArray.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.min(max, value + step)) });
     x += btnW;
 
     return x;
@@ -2012,7 +2032,8 @@ class EditorEngine {
     const rows = Math.ceil(this.levelList.length / COLS);
     const gridH = (rows + 2) * btnH + (rows + 1) * rowGap;  // +2 行空底，防误点
 
-    const headerH = 48 + barH;        // 标题 + 操作栏（固定不滚动）
+    const boardSectionH = 80;        // 棋盘控件区（2 行 stepper）
+    const headerH = 48 + boardSectionH + 4 + barH;  // 标题 + 棋盘 + 间隙 + 操作栏
     const maxScrollH = SCREEN_HEIGHT * 0.75 - headerH;
     const scrollH = Math.min(gridH, maxScrollH);
     const sheetH = headerH + scrollH;
@@ -2051,8 +2072,61 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.fillText('\u2715', closeX + 16, sheetY + 22);
 
+    // ---- 棋盘控件区 ----
+    const stepperH = 28;
+    const boardY1 = sheetY + 52;
+    const boardY2 = sheetY + 88;
+    this._levelSheetStepperBtns = [];
+
+    // 顶边分隔线
+    ctx.strokeStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(0, boardY1 - 2);
+    ctx.lineTo(SCREEN_WIDTH, boardY1 - 2);
+    ctx.stroke();
+
+    // Row 1: 列 + 行
+    let bx = 12;
+    bx = this._drawCompactStepper(bx, boardY1, stepperH, '列', this.gp.cols, 2, 15,
+      (v) => {
+        if (this.gp.pigs.length > 0) {
+          this.showToast('有猪的情况下不能改变格子数量');
+          return;
+        }
+        this.gp.cols = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+      }, 1, this._levelSheetStepperBtns) + 14;
+    bx = this._drawCompactStepper(bx, boardY1, stepperH, '行', this.gp.rows, 2, 15,
+      (v) => {
+        if (this.gp.pigs.length > 0) {
+          this.showToast('有猪的情况下不能改变格子数量');
+          return;
+        }
+        this.gp.rows = v; this.gp.recomputeBoard(); this.gp.recenterBoard(); this.markCurrentDirty();
+      }, 1, this._levelSheetStepperBtns);
+
+    // Row 2: 径 + 横距 + 纵距
+    bx = 12;
+    bx = this._drawCompactStepper(bx, boardY2, stepperH, '径', this.gp.diameter, 30, 50,
+      (v) => {
+        this.gp.diameter = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this._adaptPigsToBoard();
+        this.markCurrentDirty();
+      }, 2, this._levelSheetStepperBtns) + 14;
+    bx = this._drawCompactStepper(bx, boardY2, stepperH, '横距', this.gp.hGap, 0, 60,
+      (v) => {
+        this.gp.hGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this._adaptPigsToBoard();
+        this.markCurrentDirty();
+      }, 2, this._levelSheetStepperBtns) + 14;
+    this._drawCompactStepper(bx, boardY2, stepperH, '纵距', this.gp.vGap, 0, 60,
+      (v) => {
+        this.gp.vGap = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
+        this._adaptPigsToBoard();
+        this.markCurrentDirty();
+      }, 2, this._levelSheetStepperBtns);
+
     // ---- 操作按钮栏 ----
-    const actionBarY = sheetY + 52;
+    const actionBarY = sheetY + 48 + boardSectionH + 4;
     const actionBtns = [
       { label: '\u5220\u9664', color: '#f44336', action: 'deleteLevel' },
       { label: '\u6e05\u7a7a', color: '#FF9800', action: 'clearLevel' },
@@ -2169,6 +2243,16 @@ class EditorEngine {
     if (this.sheetLevelRect && y < this.sheetLevelRect.y) {
       this._closeLevelSheet();
       return true;
+    }
+
+    // 棋盘控件 stepper 按钮（不关闭面板）
+    if (this._levelSheetStepperBtns) {
+      for (const btn of this._levelSheetStepperBtns) {
+        if (this.hitRect(x, y, btn)) {
+          btn.onClick();
+          return true;
+        }
+      }
     }
 
     // 操作按钮栏：删除 / 清空 / 重载

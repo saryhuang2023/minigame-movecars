@@ -261,7 +261,7 @@
     },
     {
       "angle": 270,
-      "hintAngle": 270,
+      "hintAngle": 206,
       "hintId": 3,
       "id": 53,
       "length": 40,
@@ -293,5 +293,5 @@
     }
   ],
   "ready": 1,
-  "version": 12
+  "version": 13
 }
