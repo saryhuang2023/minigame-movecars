@@ -293,6 +293,42 @@ class GameplayEngine {
     return cp.dist2 <= r.capRadius * r.capRadius;
   }
 
+  // 两条线段最近点对的距离平方（用于后退判断）
+  _segSegDist2(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
+    const cp = this._segmentSegmentClosest(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2);
+    const dx = cp.ax - cp.bx;
+    const dy = cp.ay - cp.by;
+    return dx * dx + dy * dy;
+  }
+
+  // 判断 proposed 位置是否在远离 otherPigId（已重叠 → 后退豁免）
+  _isRetreatingFrom(pigId, proposedTailIdx, proposedLen, proposedAngle, otherPigId) {
+    const pig = this.pigs.find(p => p.id === pigId);
+    if (!pig) return false;
+    const other = this.pigs.find(p => p.id === otherPigId);
+    if (!other) return false;
+
+    // 当前胶囊是否相交？不相交 → 不是已重叠后撤场景
+    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+    if (!cr || !ob || !this._capsuleIntersect(cr, ob)) return false;
+
+    // 提议位置胶囊
+    const pr = this.getPigRect(proposedTailIdx, proposedLen, proposedAngle);
+    if (!pr) return false;
+
+    // 比较线段最近点距离平方：变大 = 在后退
+    const d2Now = this._segSegDist2(
+      cr.capTailX, cr.capTailY, cr.capHeadX, cr.capHeadY,
+      ob.capTailX, ob.capTailY, ob.capHeadX, ob.capHeadY
+    );
+    const d2Next = this._segSegDist2(
+      pr.capTailX, pr.capTailY, pr.capHeadX, pr.capHeadY,
+      ob.capTailX, ob.capTailY, ob.capHeadX, ob.capHeadY
+    );
+    return d2Next > d2Now + 1;  // 阈值 1px² 防浮点抖动
+  }
+
   // ---- OBB 碰撞（分离轴定理） — 保留给触控检测 ----
   obbIntersect(a, b) {
     const proj = (cx, cy, hw, hh, cosL, sinL, cosP, sinP, ax, ay) => {
@@ -383,26 +419,34 @@ class GameplayEngine {
   checkAngleValid(tailIdx, len, excludeId, angle, requireHeadOnHole = true) {
     const r = this.getPigRect(tailIdx, len, angle);
     if (!r) return { valid: false };
-    // ① 孔位占用
+    // ① 孔位占用（已重叠的后退可以豁免）
     const occupied = this.getPigOccupiedHoles(tailIdx, len, angle);
     for (const hi of occupied) {
       if (this.holeOccupied[hi] !== -1 && this.holeOccupied[hi] !== excludeId) {
-        return { valid: false, collidedId: this.holeOccupied[hi] };
+        const otherId = this.holeOccupied[hi];
+        if (this._isRetreatingFrom(excludeId, tailIdx, len, angle, otherId)) continue;
+        return { valid: false, collidedId: otherId };
       }
     }
-    // ② 胶囊碰撞
+    // ② 胶囊碰撞（已重叠的后退可以豁免）
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
       const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
       if (!ob) continue;
-      if (this._capsuleIntersect(r, ob)) return { valid: false, collidedId: other.id };
+      if (this._capsuleIntersect(r, ob)) {
+        if (this._isRetreatingFrom(excludeId, tailIdx, len, angle, other.id)) continue;
+        return { valid: false, collidedId: other.id };
+      }
     }
     if (!requireHeadOnHole) return { valid: true };
-    // ③ 头部落孔（同时检查孔未被其他猪占据）
+    // ③ 头部落孔（被其他猪占用但在后退 → 豁免占用检查）
     const headHole = this.findHeadHole(tailIdx, len, angle);
     if (headHole < 0) return { valid: false };
     if (this.holeOccupied[headHole] !== -1 && this.holeOccupied[headHole] !== excludeId) {
-      return { valid: false };
+      const otherId = this.holeOccupied[headHole];
+      if (!this._isRetreatingFrom(excludeId, tailIdx, len, angle, otherId)) {
+        return { valid: false };
+      }
     }
     return { valid: true };
   }
