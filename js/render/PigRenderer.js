@@ -1,12 +1,20 @@
-// PigRenderer — 猪的独立渲染模块（v26.12）
+// PigRenderer — 猪的独立渲染模块（v26.13）
 // 从 GameplayEngine 抽离，减少 token 消耗
 // require/module.exports，wx API
+// v26.13: 三宫格单图切片 → 尾固定/中拉伸/头固定，替代三图拼接
 
 const databus = require('../databus');
 
 const PIG_COLOR = '#FFD700';
 const PIG_STROKE = '#FFB300';
 const SELECTED_COLOR = '#2196F3';
+
+// ============================================================
+// === 三宫格切片比例 ===
+// ============================================================
+// 单张猪图中：尾部占比 / 头部占比，中段 = 1 - TAIL_SLICE - HEAD_SLICE
+const TAIL_SLICE = 0.37;
+const HEAD_SLICE = 0.51;
 
 // ============================================================
 // === canvas 工具 ===
@@ -60,7 +68,7 @@ class PigRenderer {
   }
 
   // ---- 猪身体尺寸 ----
-  get pigBodyWidth() { return this.e.scaledDiameter * 1.3; }
+  get pigBodyWidth() { return this.e.scaledDiameter * 1.2; }
   get pigBodyHalf()  { return this.pigBodyWidth / 2; }
 
   // ---- 拖拽中的显示角度（旋转追逐动画） ----
@@ -80,7 +88,7 @@ class PigRenderer {
     return { cx, cy, rad: r.rad, totalLen: r.hw * 2 + this.e.scaledDiameter };
   }
 
-  // ---- 三图拼接绘制（头尾等比 + 中段拉伸） ----
+  // ---- 三宫格绘制：单张源图切片，中段拉伸，头尾固定 ----
   // 在已 translate+rotate 的 ctx 中绘制，local 坐标系：x ∈ [-totalLen/2, totalLen/2]
   // animType: AnimType 枚举值，默认 IDLE
   // 返回 true 表示图片已画出，false 表示图片未加载需 fallback
@@ -102,7 +110,7 @@ class PigRenderer {
     }
     if (!parts.allLoaded) return false;
 
-    var tailImg = parts.tailImg, midImg = parts.midImg, headImg = parts.headImg;
+    var frameImg = parts.frameImg;
 
     // 序列帧动画：有 pig 且全部帧已加载 → 按时间推进帧号
     if (pig && parts.idleAllLoaded) {
@@ -117,41 +125,50 @@ class PigRenderer {
         state.frame = (state.frame + 1) % frameCount;
         state.lastAdvance = now;
       }
-      var frameImgs = [parts.idleTailImgs[state.frame], parts.idleMidImgs[state.frame], parts.idleHeadImgs[state.frame]];
-      if (frameImgs[0] && frameImgs[1] && frameImgs[2]) {
-        tailImg = frameImgs[0];
-        midImg  = frameImgs[1];
-        headImg = frameImgs[2];
+      if (parts.idleFrameImgs[state.frame]) {
+        frameImg = parts.idleFrameImgs[state.frame];
       }
     }
 
-    const bodyH = this.pigBodyWidth;                // 猪体高度 = 孔直径
-    const imgScale = bodyH / parts.height;          // 等比缩放（图片等高→按高度缩放）
-    let tailW = parts.tailW * imgScale;
-    let headW = parts.headW * imgScale;
+    const bodyH = this.pigBodyWidth;
+    const imgScale = bodyH / parts.height;
     const drawH = bodyH;
+    const halfH = drawH / 2;
+    const halfLen = totalLen / 2;
+
+    // 三宫格切片：尾(左) / 中(拉伸) / 头(右)
+    const srcW = parts.frameW;
+    const tailSrcW = Math.round(srcW * TAIL_SLICE);
+    const headSrcW = Math.round(srcW * HEAD_SLICE);
+    const midSrcW = srcW - tailSrcW - headSrcW;
+
+    let tailDrawW = tailSrcW * imgScale;
+    let headDrawW = headSrcW * imgScale;
 
     // 如果猪太短，头尾等比缩小
-    if (tailW + headW > totalLen) {
-      const altScale = totalLen / (tailW + headW);
-      tailW *= altScale;
-      headW *= altScale;
+    if (tailDrawW + headDrawW > totalLen) {
+      const altScale = totalLen / (tailDrawW + headDrawW);
+      tailDrawW *= altScale;
+      headDrawW *= altScale;
     }
-    const midW = totalLen - tailW - headW;          // 中段拉伸填充
-    const overlap = 2;                               // 相邻段交叉像素
-    const halfLen = totalLen / 2;
-    const halfH = drawH / 2;
+    const midDrawW = totalLen - tailDrawW - headDrawW;
 
-    // 尾（左端对齐，先画）
-    ctx.drawImage(tailImg, -halfLen, -halfH, tailW, drawH);
+    // 尾（左端固定）
+    ctx.drawImage(frameImg,
+      0, 0, tailSrcW, parts.height,
+      -halfLen, -halfH, tailDrawW, drawH);
 
-    // 中段（左右各交叉 overlap px，覆盖尾部和头部边缘）
-    if (midW > 0.5) {
-      ctx.drawImage(midImg, -halfLen + tailW - overlap, -halfH, midW + overlap * 2, drawH);
+    // 中段（拉伸填充中间空间）
+    if (midDrawW > 0.5) {
+      ctx.drawImage(frameImg,
+        tailSrcW, 0, midSrcW, parts.height,
+        -halfLen + tailDrawW, -halfH, midDrawW, drawH);
     }
 
-    // 头（右端对齐，最后画，覆盖中段右边缘）
-    ctx.drawImage(headImg, halfLen - headW, -halfH, headW, drawH);
+    // 头（右端固定）
+    ctx.drawImage(frameImg,
+      tailSrcW + midSrcW, 0, headSrcW, parts.height,
+      halfLen - headDrawW, -halfH, headDrawW, drawH);
 
     return true;
   }
@@ -259,11 +276,11 @@ class PigRenderer {
 }
 
 // ============================================================
-// === 三图拼接小猪绘制（主界面等场景复用）===
+// === 单图序列帧加载（三宫格切片）===
 // ============================================================
-// 尾(tail) + 中段(mid, 拉伸2倍宽) + 头(head)，左中右拼接
-// 三张图等高，垂直居中对齐，总宽 = tail.w + mid.w*2 + head.w
+// 每帧一张完整猪图，通过 TAIL_SLICE/HEAD_SLICE 切片实现头尾固定/中段拉伸
 
+// ---- idle ----
 let _pigParts = null;
 
 function _loadPigParts() {
@@ -271,38 +288,36 @@ function _loadPigParts() {
 
   var base = 'assets/animals/roles/pig/idle/1/';
   var parts = {
-    // 首帧用作静态图（drawComposedPig 等场景复用）
-    tailImg: wx.createImage(), midImg: wx.createImage(), headImg: wx.createImage(),
-    _loaded: [false, false, false],
-    tailW: 0, midW: 0, headW: 0, height: 0,
+    frameImg: wx.createImage(),
+    _loaded: false,
+    frameW: 0, height: 0,
 
-    // 全部 idle 帧数组
-    idleTailImgs: [], idleMidImgs: [], idleHeadImgs: [],
+    idleFrameImgs: [],
     _idleLoaded: 0,
-    get idleAllLoaded() { return this._idleLoaded >= IDLE_FRAME_COUNT * 3; }
+    get idleAllLoaded() { return this._idleLoaded >= IDLE_FRAME_COUNT; }
   };
 
   Object.defineProperty(parts, 'allLoaded', {
-    get() { return this._loaded[0] && this._loaded[1] && this._loaded[2]; }
+    get() { return this._loaded; }
   });
 
-  // 加载首帧（第 1 帧 → 1.png），也作为静态图
-  parts.tailImg.src = base + 'tail/1.png';
-  parts.midImg.src  = base + 'mid/1.png';
-  parts.headImg.src = base + 'head/1.png';
+  // 加载首帧（也用作 drawComposedPig 等静态场景）
+  parts.frameImg.src = base + '1.png';
+  parts.frameImg.onload = function() {
+    parts._loaded = true;
+    parts.frameW = parts.frameImg.width;
+    parts.height = parts.frameImg.height;
+    parts.idleFrameImgs[0] = parts.frameImg;
+    parts._idleLoaded++;
+  };
 
-  parts.tailImg.onload = function() { parts._loaded[0] = true; parts.tailW = parts.tailImg.width;  parts.height = Math.max(parts.height, parts.tailImg.height); parts.idleTailImgs[0] = parts.tailImg; parts._idleLoaded++; };
-  parts.midImg.onload  = function() { parts._loaded[1] = true; parts.midW  = parts.midImg.width;   parts.height = Math.max(parts.height, parts.midImg.height);  parts.idleMidImgs[0]  = parts.midImg;  parts._idleLoaded++; };
-  parts.headImg.onload = function() { parts._loaded[2] = true; parts.headW = parts.headImg.width;  parts.height = Math.max(parts.height, parts.headImg.height); parts.idleHeadImgs[0] = parts.headImg; parts._idleLoaded++; };
-
-  // 懒加载剩余帧（后台逐步加载，不阻塞首帧显示）
   _preloadFrames(parts, base, IDLE_FRAME_COUNT);
 
   _pigParts = parts;
   return parts;
 }
 
-// ---- run 动画图片 ----
+// ---- run ----
 let _runParts = null;
 
 function _loadRunParts() {
@@ -310,26 +325,27 @@ function _loadRunParts() {
 
   var base = 'assets/animals/roles/pig/run/1/';
   var parts = {
-    tailImg: wx.createImage(), midImg: wx.createImage(), headImg: wx.createImage(),
-    _loaded: [false, false, false],
-    tailW: 0, midW: 0, headW: 0, height: 0,
+    frameImg: wx.createImage(),
+    _loaded: false,
+    frameW: 0, height: 0,
 
-    idleTailImgs: [], idleMidImgs: [], idleHeadImgs: [],
+    idleFrameImgs: [],
     _idleLoaded: 0,
-    get idleAllLoaded() { return this._idleLoaded >= RUN_FRAME_COUNT * 3; }
+    get idleAllLoaded() { return this._idleLoaded >= RUN_FRAME_COUNT; }
   };
 
   Object.defineProperty(parts, 'allLoaded', {
-    get() { return this._loaded[0] && this._loaded[1] && this._loaded[2]; }
+    get() { return this._loaded; }
   });
 
-  parts.tailImg.src = base + 'tail/1.png';
-  parts.midImg.src  = base + 'mid/1.png';
-  parts.headImg.src = base + 'head/1.png';
-
-  parts.tailImg.onload = function() { parts._loaded[0] = true; parts.tailW = parts.tailImg.width;  parts.height = Math.max(parts.height, parts.tailImg.height); parts.idleTailImgs[0] = parts.tailImg; parts._idleLoaded++; };
-  parts.midImg.onload  = function() { parts._loaded[1] = true; parts.midW  = parts.midImg.width;   parts.height = Math.max(parts.height, parts.midImg.height);  parts.idleMidImgs[0]  = parts.midImg;  parts._idleLoaded++; };
-  parts.headImg.onload = function() { parts._loaded[2] = true; parts.headW = parts.headImg.width;  parts.height = Math.max(parts.height, parts.headImg.height); parts.idleHeadImgs[0] = parts.headImg; parts._idleLoaded++; };
+  parts.frameImg.src = base + '1.png';
+  parts.frameImg.onload = function() {
+    parts._loaded = true;
+    parts.frameW = parts.frameImg.width;
+    parts.height = parts.frameImg.height;
+    parts.idleFrameImgs[0] = parts.frameImg;
+    parts._idleLoaded++;
+  };
 
   _preloadFrames(parts, base, RUN_FRAME_COUNT);
 
@@ -337,7 +353,7 @@ function _loadRunParts() {
   return parts;
 }
 
-// ---- escape 动画图片 ----
+// ---- escape ----
 let _escapeParts = null;
 
 function _loadEscapeParts() {
@@ -345,26 +361,27 @@ function _loadEscapeParts() {
 
   var base = 'assets/animals/roles/pig/escape/1/';
   var parts = {
-    tailImg: wx.createImage(), midImg: wx.createImage(), headImg: wx.createImage(),
-    _loaded: [false, false, false],
-    tailW: 0, midW: 0, headW: 0, height: 0,
+    frameImg: wx.createImage(),
+    _loaded: false,
+    frameW: 0, height: 0,
 
-    idleTailImgs: [], idleMidImgs: [], idleHeadImgs: [],
+    idleFrameImgs: [],
     _idleLoaded: 0,
-    get idleAllLoaded() { return this._idleLoaded >= ESCAPE_FRAME_COUNT * 3; }
+    get idleAllLoaded() { return this._idleLoaded >= ESCAPE_FRAME_COUNT; }
   };
 
   Object.defineProperty(parts, 'allLoaded', {
-    get() { return this._loaded[0] && this._loaded[1] && this._loaded[2]; }
+    get() { return this._loaded; }
   });
 
-  parts.tailImg.src = base + 'tail/1.png';
-  parts.midImg.src  = base + 'mid/1.png';
-  parts.headImg.src = base + 'head/1.png';
-
-  parts.tailImg.onload = function() { parts._loaded[0] = true; parts.tailW = parts.tailImg.width;  parts.height = Math.max(parts.height, parts.tailImg.height); parts.idleTailImgs[0] = parts.tailImg; parts._idleLoaded++; };
-  parts.midImg.onload  = function() { parts._loaded[1] = true; parts.midW  = parts.midImg.width;   parts.height = Math.max(parts.height, parts.midImg.height);  parts.idleMidImgs[0]  = parts.midImg;  parts._idleLoaded++; };
-  parts.headImg.onload = function() { parts._loaded[2] = true; parts.headW = parts.headImg.width;  parts.height = Math.max(parts.height, parts.headImg.height); parts.idleHeadImgs[0] = parts.headImg; parts._idleLoaded++; };
+  parts.frameImg.src = base + '1.png';
+  parts.frameImg.onload = function() {
+    parts._loaded = true;
+    parts.frameW = parts.frameImg.width;
+    parts.height = parts.frameImg.height;
+    parts.idleFrameImgs[0] = parts.frameImg;
+    parts._idleLoaded++;
+  };
 
   _preloadFrames(parts, base, ESCAPE_FRAME_COUNT);
 
@@ -372,20 +389,17 @@ function _loadEscapeParts() {
   return parts;
 }
 
-// 后台懒加载剩余序列帧，全部就绪后 parts.idleAllLoaded → true
+// ---- seq frame lazy loader ----
 function _preloadFrames(parts, base, frameCount) {
   for (var i = 2; i <= frameCount; i++) {
-    _loadOneFrame(parts, base, i, 'tail');
-    _loadOneFrame(parts, base, i, 'mid');
-    _loadOneFrame(parts, base, i, 'head');
+    _loadOneFrame(parts, base, i);
   }
 }
-function _loadOneFrame(parts, base, i, type) {
+function _loadOneFrame(parts, base, i) {
   var img = wx.createImage();
-  img.src = base + type + '/' + i + '.png';
+  img.src = base + i + '.png';
   img.onload = function() {
-    var arr = type === 'tail' ? parts.idleTailImgs : type === 'mid' ? parts.idleMidImgs : parts.idleHeadImgs;
-    arr[i - 1] = img;
+    parts.idleFrameImgs[i - 1] = img;
     parts._idleLoaded++;
   };
   img.onerror = function() {
@@ -394,22 +408,31 @@ function _loadOneFrame(parts, base, i, type) {
   };
 }
 
+// ============================================================
+// === 静态猪绘制（主界面 loading 等场景复用）===
+// ============================================================
+
 /**
- * 获取拼接小猪的自然尺寸（加载中返回 null）
+ * 获取小猪的自然尺寸（三宫格拼接后的逻辑大小）
  * @returns {{ naturalW: number, naturalH: number } | null}
  */
 function getComposedPigSize() {
   const parts = _loadPigParts();
   if (!parts.allLoaded) return null;
-  // 三段间各重叠 1px，总宽减去 2 个重叠像素
+
+  const srcW = parts.frameW;
+  const tailSrcW = Math.round(srcW * TAIL_SLICE);
+  const headSrcW = Math.round(srcW * HEAD_SLICE);
+  const midSrcW = srcW - tailSrcW - headSrcW;
+
   return {
-    naturalW: parts.tailW + parts.midW * 2 + parts.headW - 2,
+    naturalW: tailSrcW + midSrcW * 2 + headSrcW,
     naturalH: parts.height
   };
 }
 
 /**
- * 绘制三图拼接小猪
+ * 绘制三宫格小猪
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} x - 左上角 X
  * @param {number} y - 左上角 Y
@@ -420,22 +443,25 @@ function drawComposedPig(ctx, x, y, scale = 1) {
   const parts = _loadPigParts();
   if (!parts.allLoaded) return 0;
 
-  const tw = parts.tailW, mw = parts.midW * 2, hw = parts.headW;
-  const drawH = parts.height * scale;
-  const overlap = 1 * scale; // 三段间各重叠 1 个原始像素
+  const srcW = parts.frameW;
+  const srcH = parts.height;
+  const tailSrcW = Math.round(srcW * TAIL_SLICE);
+  const headSrcW = Math.round(srcW * HEAD_SLICE);
+  const midSrcW = srcW - tailSrcW - headSrcW;
 
-  // 尾 — 左
-  ctx.drawImage(parts.tailImg, x, y, tw * scale, drawH);
-  let curX = x + tw * scale - overlap;
+  const tw = tailSrcW * scale;
+  const mw = midSrcW * 2 * scale;
+  const hw = headSrcW * scale;
+  const drawH = srcH * scale;
 
-  // 中段 — 拉伸2倍（与尾重叠 1px）
-  ctx.drawImage(parts.midImg, curX, y, mw * scale, drawH);
-  curX += mw * scale - overlap;
+  // 尾（左）
+  ctx.drawImage(parts.frameImg, 0, 0, tailSrcW, srcH, x, y, tw, drawH);
+  // 中段（右移，拉伸 2 倍）
+  ctx.drawImage(parts.frameImg, tailSrcW, 0, midSrcW, srcH, x + tw, y, mw, drawH);
+  // 头（右）
+  ctx.drawImage(parts.frameImg, tailSrcW + midSrcW, 0, headSrcW, srcH, x + tw + mw, y, hw, drawH);
 
-  // 头 — 右（与中段重叠 1px）
-  ctx.drawImage(parts.headImg, curX, y, hw * scale, drawH);
-
-  return (tw + mw + hw - 2) * scale;
+  return (tailSrcW + midSrcW * 2 + headSrcW) * scale;
 }
 
 // 模块加载时立即触发猪图片预加载，避免首帧渲染时图片未就绪出现黄色 fallback 矩形
