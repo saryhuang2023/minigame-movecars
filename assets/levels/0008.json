@@ -191,5 +191,6 @@
     }
   ],
   "ready": 1,
-  "version": 7
+  "version": 8,
+  "crownSteps": 60
 }

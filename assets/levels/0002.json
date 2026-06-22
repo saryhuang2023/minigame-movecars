@@ -9,6 +9,7 @@
   "pigs": [
     {
       "angle": 90,
+      "hintAngle": 90,
       "hintId": 6,
       "id": 5,
       "length": 69,
@@ -30,6 +31,7 @@
     },
     {
       "angle": 147.52880770915152,
+      "hintAngle": 147.52880770915152,
       "hintId": 2,
       "id": 8,
       "length": 62,
@@ -37,6 +39,7 @@
     },
     {
       "angle": 270,
+      "hintAngle": 270,
       "hintId": 3,
       "id": 9,
       "length": 201,
@@ -44,6 +47,7 @@
     },
     {
       "angle": 327.5288077091515,
+      "hintAngle": 327.5288077091515,
       "hintId": 4,
       "id": 10,
       "length": 64,
@@ -59,5 +63,6 @@
     }
   ],
   "ready": 1,
-  "version": 7
+  "version": 8,
+  "crownSteps": 9
 }
