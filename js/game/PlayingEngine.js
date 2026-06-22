@@ -1,6 +1,7 @@
 // 关卡游玩引擎 — 组合 GameplayEngine 实现正式玩法
 
 const databus = require('../databus.js');
+const cloud = require('../cloud.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 
@@ -376,16 +377,6 @@ class PlayingEngine {
 
   _markCleared() {
     console.log('[关主] _markCleared called, level=' + this.levelName + ' steps=' + this.steps);
-    var cleared = [];
-    try {
-      var raw = wx.getStorageSync('clearedLevels');
-      if (raw) cleared = JSON.parse(raw);
-    } catch (e) { cleared = []; }
-    var name = databus.currentLevel ? databus.currentLevel.name : '';
-    if (name && cleared.indexOf(name) === -1) {
-      cleared.push(name);
-      wx.setStorageSync('clearedLevels', JSON.stringify(cleared));
-    }
     // 推进 lastLevelIndex：通关后无论点"退出"还是"下一关"，下次"开始游戏"都进下一关
     var currentIdx = databus.currentLevelIndex;
     var savedRaw = wx.getStorageSync('lastLevelIndex');
@@ -402,6 +393,47 @@ class PlayingEngine {
       this._tryClaimMaster();
     } else {
       console.log('[关主] 使用了移除按钮，跳过关主判定');
+    }
+    // 异步同步到云端（fire-and-forget，不阻塞 UI）
+    this._syncToCloud();
+  }
+
+  _syncToCloud() {
+    try {
+      var lastLevelIndex = wx.getStorageSync('lastLevelIndex');
+      // 收集所有 record_xxx 合入一个 records 对象
+      var records = {};
+      var info = wx.getStorageSync('userinfo_cache') || {};
+      // 只收集当前关卡及之前的 record（避免拉全量）
+      var prefix = 'record_';
+      try {
+        var infoRes = wx.getStorageInfoSync();
+        if (infoRes.keys) {
+          var projectNames = databus.projectLevels.map(function(l) { return l.name; });
+          var limitNames = projectNames.slice(0, (lastLevelIndex || 0));
+          for (var i = 0; i < limitNames.length; i++) {
+            var key = prefix + limitNames[i];
+            if (infoRes.keys.indexOf(key) !== -1) {
+              var v = wx.getStorageSync(key);
+              if (v !== '' && v !== undefined && v !== null) {
+                records[limitNames[i]] = parseInt(v, 10) || v;
+              }
+            }
+          }
+        }
+      } catch (e1) {}
+      cloud.savePlayerData({
+        lastLevelIndex: lastLevelIndex,
+        records: records,
+        avatarUrl: info.avatarUrl || '',
+        nickname: info.nickName || ''
+      }).then(function() {
+        console.log('[Cloud] 玩家数据已同步到云端');
+      }).catch(function(err) {
+        console.warn('[Cloud] 同步失败（非阻塞）:', err && err.message);
+      });
+    } catch (e2) {
+      console.warn('[Cloud] _syncToCloud 异常:', e2);
     }
   }
 

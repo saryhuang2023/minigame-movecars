@@ -1,6 +1,7 @@
 // 游戏主循环引擎
 
 const databus = require('../databus.js');
+const cloud = require('../cloud.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
@@ -54,6 +55,54 @@ class GameEngine {
     databus.gameState = 'menu';
     this.setupMenuInput();
     this.loop();
+
+    // 异步从云端拉取玩家数据，合并到本地（换设备恢复进度）
+    this._syncFromCloud();
+  }
+
+  _syncFromCloud() {
+    cloud.getPlayerData().then(function(res) {
+      if (!res || res.code !== 0 || !res.data) {
+        console.log('[Cloud] 无云端存档或拉取失败，沿用本地数据');
+        return;
+      }
+      var cloudData = res.data;
+      var cloudLI = cloudData.lastLevelIndex;
+      var localRaw = wx.getStorageSync('lastLevelIndex');
+      var localLI = (localRaw !== '' && localRaw !== undefined && localRaw !== null)
+        ? parseInt(localRaw, 10) : -1;
+      if (typeof cloudLI === 'number' && cloudLI > localLI) {
+        console.log('[Cloud] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
+        wx.setStorageSync('lastLevelIndex', cloudLI);
+      }
+      // 合并 records：云端有的且本地没有则补本地
+      var cloudRecords = cloudData.records || {};
+      var merged = 0;
+      for (var k in cloudRecords) {
+        if (cloudRecords.hasOwnProperty(k)) {
+          var localRec = wx.getStorageSync('record_' + k);
+          if (localRec === '' || localRec === undefined || localRec === null) {
+            wx.setStorageSync('record_' + k, cloudRecords[k]);
+            merged++;
+          }
+        }
+      }
+      if (merged > 0) {
+        console.log('[Cloud] 合并 records: ' + merged + ' 条');
+      }
+      // 云端头像昵称 > 本地缓存
+      if (cloudData.avatarUrl && cloudData.nickname) {
+        var cached = wx.getStorageSync('userinfo_cache') || {};
+        if (!cached.avatarUrl && cloudData.avatarUrl) {
+          wx.setStorageSync('userinfo_cache', {
+            nickName: cloudData.nickname,
+            avatarUrl: cloudData.avatarUrl
+          });
+        }
+      }
+    }).catch(function(err) {
+      console.warn('[Cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
+    });
   }
 
   // ========== 设计常量 ==========
@@ -538,11 +587,7 @@ class GameEngine {
     ctx.stroke();
 
     // 右边：已通关
-    var clearedCount = 0;
-    try {
-      var clearedRaw = wx.getStorageSync('clearedLevels');
-      if (clearedRaw) clearedCount = JSON.parse(clearedRaw).length;
-    } catch (e) { clearedCount = 0; }
+    var clearedCount = wx.getStorageSync('lastLevelIndex') || 0;
     var rightCX = btnX + btnW * 0.72;
     ctx.fillStyle = C.textMuted;
     ctx.font = 'bold 13px sans-serif';
