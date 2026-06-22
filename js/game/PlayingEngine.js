@@ -512,6 +512,12 @@ class PlayingEngine {
       this._levelMaster = null;
       this._masterLoading = false;
       this._myRecord = wx.getStorageSync('record_' + this.levelName) || null;
+      // 小金猪状态重置（对应 activate() 的逻辑，_goNextLevel 跳过了 activate 需手动重置）
+      this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
+      this._gotCrown = this._hadCrownBefore;
+      this._earnedCrown = false;
+      this._crownAnimPhase = null;
+      this._crownAnimStart = 0;
       this._fetchLevelMaster();
     } catch (err) {
       console.warn(`[Playing] 加载下一关 ${next.file} 失败:`, err);
