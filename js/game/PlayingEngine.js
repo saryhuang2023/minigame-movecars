@@ -22,7 +22,7 @@ const CARD_GAP = 8;         // 卡片之间的间距
 const CARD_PADDING = 12;    // 棋盘卡片内边距
 const CARD_RADIUS = 32;     // 棋盘卡片圆角
 
-const ESCAPE_TIME = 25600;  // 逃脱速度
+const ESCAPE_TIME = 18000;  // 逃脱速度
 
 const DRAG_THRESHOLD = 20;
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;

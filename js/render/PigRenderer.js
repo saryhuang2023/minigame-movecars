@@ -44,9 +44,9 @@ const AnimType = Object.freeze({ IDLE: 'idle', RUN: 'run', ESCAPE: 'escape' });
 const IDLE_FRAME_COUNT = 11;
 const RUN_FRAME_COUNT = 8;
 const ESCAPE_FRAME_COUNT = 8;
-const IDLE_FRAME_INTERVAL = 800 / IDLE_FRAME_COUNT;
-const RUN_FRAME_INTERVAL = 800 / RUN_FRAME_COUNT;
-const ESCAPE_FRAME_INTERVAL = 300 / ESCAPE_FRAME_COUNT;
+const IDLE_FRAME_INTERVAL = 600 / IDLE_FRAME_COUNT;
+const RUN_FRAME_INTERVAL = 300 / RUN_FRAME_COUNT;
+const ESCAPE_FRAME_INTERVAL = 200 / ESCAPE_FRAME_COUNT;
 const WOBBLE_FREQ = 10;           // 身体摆动：每秒次数
 const WOBBLE_AMPLITUDE = 0.005;  // 身体摆动：幅度（弧度）
 const WOBBLE_PIVOT = 0.75;       // 身体摆动轴心位置（0=尾部端点, 1=中心）
