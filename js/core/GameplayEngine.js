@@ -66,9 +66,10 @@ class GameplayEngine {
   // ============================================================
   // 棋盘计算
   // ============================================================
-  recomputeBoard() {
+  // maxBoardHOverride: 可选，强制使用指定的最大棋盘高度（编辑器传入游戏等效值，确保角度修正一致）
+  recomputeBoard(maxBoardHOverride) {
     const maxBoardW = SCREEN_WIDTH;
-    const maxBoardH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
+    const maxBoardH = maxBoardHOverride != null ? maxBoardHOverride : (SCREEN_HEIGHT - this.topBarH - this.bottomStripH);
 
     // 屏幕适配缩放：宽+高双约束，取较小者，保证棋盘等比缩放不压扁
     const widthScale = this.effectiveWidth / 375;
@@ -198,8 +199,10 @@ class GameplayEngine {
     const cosP = Math.sin(rad);
     const sinP = Math.cos(rad);
     // 胶囊碰撞体（矩形身体 + 两端半圆，消除 OBB 旋转尖角误判）
-    // 胶囊半径 = 孔直径的 1/3（与旧版 collisionHh 一致，窄于视觉宽度）
-    const capRadius = this.scaledDiameter / 3;
+    // 占用判定半径 = 孔直径 * 2/3（宽于碰撞半径，确保身体覆盖孔心即判定占用）
+    const capRadius = this.scaledDiameter * 2 / 3;
+    // 猪间碰撞半径 = 孔直径 * 1/3（保持窄，避免猪之间轻易碰撞）
+    const collisionCapRadius = this.scaledDiameter / 3;
     // 胶囊线段端点（尾部孔心 → 头部正方形中心）
     const capTailX = tail.x;
     const capTailY = tail.y;
@@ -211,9 +214,9 @@ class GameplayEngine {
     const touchHeadExt = this.scaledHalfDiameter * 0.5;
     // 保留 OBB 数据供触控和兼容代码使用
     const collisionHw = hw + this.scaledHalfDiameter;
-    const collisionHh = capRadius;
+    const collisionHh = this.scaledDiameter / 3;  // 猪间碰撞半径保持窄，不受占用半径影响
     return { cx, cy, hw, hh, collisionHw, collisionHh, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,
-      capTailX, capTailY, capHeadX, capHeadY, capRadius };
+      capTailX, capTailY, capHeadX, capHeadY, capRadius, collisionCapRadius };
   }
 
   // 矩形头端中心点（用于落孔判定）
@@ -281,7 +284,7 @@ class GameplayEngine {
       b.capTailX, b.capTailY, b.capHeadX, b.capHeadY
     );
     const dx = cp.ax - cp.bx, dy = cp.ay - cp.by;
-    const r = a.capRadius + b.capRadius;
+    const r = (a.collisionCapRadius || a.capRadius) + (b.collisionCapRadius || b.capRadius);
     return dx * dx + dy * dy <= r * r;
   }
 
@@ -335,12 +338,6 @@ class GameplayEngine {
       if (this._capsuleContainsPoint(r, h.x, h.y)) {
         occupied.push(hi);
       }
-    }
-    // 补充头孔：findHeadHole 落孔阈值（2*diameter/3）大于胶囊半径（diameter/3），
-    // 头孔可能不被胶囊覆盖，导致 visually snapped but not occupied 的 bug
-    const headIdx = this.findHeadHole(tailIndex, length, angle);
-    if (headIdx >= 0 && !occupied.includes(headIdx)) {
-      occupied.push(headIdx);
     }
     return occupied;
   }
@@ -413,29 +410,54 @@ class GameplayEngine {
   snapAngleToHoles(tailIndex, length, rawAngle) {
     const tailHole = this.holes[tailIndex];
     if (!tailHole) return rawAngle;
-    const r = this.getPigRect(tailIndex, length, rawAngle);
-    if (!r) return rawAngle;
-    const center = this._headSquareCenter(r);
-    const thresh = this.scaledDiameter * 2 / 3;  // 孔的直径 * 2/3
-    const thresh2 = thresh * thresh;
-    let bestHole = null;
-    let bestDist = Infinity;
-    for (const hole of this.holes) {
-      const dx = hole.x - center.x;
-      const dy = hole.y - center.y;
-      const dist = dx * dx + dy * dy;
-      if (dist < bestDist && dist <= thresh2) {
-        bestDist = dist;
-        bestHole = hole;
+    // 用角度比较代替空间距离：找 pig 当前方向所对的最近孔位
+    // 角度计算 scale-invariant，不会因 boardScale 不同而选错孔
+    let bestIdx = -1;
+    let bestAngleDiff = Infinity;
+    for (var i = 0; i < this.holes.length; i++) {
+      if (i === tailIndex) continue;
+      var hole = this.holes[i];
+      var dx = hole.x - tailHole.x;
+      var dy = -(hole.y - tailHole.y);  // y 轴与 canvas 反向
+      var holeAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+      if (holeAngle < 0) holeAngle += 360;
+      var diff = Math.abs(holeAngle - rawAngle);
+      if (diff > 180) diff = 360 - diff;
+      if (diff < bestAngleDiff) {
+        bestAngleDiff = diff;
+        bestIdx = i;
       }
     }
-    if (!bestHole) return null;
-    const dx = bestHole.x - tailHole.x;
-    const dy = bestHole.y - tailHole.y;
-    let snapAngle = Math.atan2(-dy, dx) * 180 / Math.PI;
+    if (bestIdx < 0) return null;
+    // 角度差太大 → 不对齐（阈值约 10°，容忍轻微偏差）
+    if (bestAngleDiff > 10) return null;
+    // 用最终角度再做一次 head hole 落孔验证
+    var hole = this.holes[bestIdx];
+    var dx2 = hole.x - tailHole.x;
+    var dy2 = -(hole.y - tailHole.y);
+    var snapAngle = Math.atan2(dy2, dx2) * 180 / Math.PI;
     if (snapAngle < 0) snapAngle += 360;
     if (this.findHeadHole(tailIndex, length, snapAngle) < 0) return null;
     return snapAngle;
+  }
+
+  // 关卡加载后修正所有猪的角度，确保与孔位对齐（历史关卡可能存有未对齐的角度）
+  snapAllPigsAngles() {
+    var corrected = 0;
+    for (var i = 0; i < this.pigs.length; i++) {
+      var pig = this.pigs[i];
+      var snapped = this.snapAngleToHoles(pig.tailIndex, pig.length, pig.angle);
+      if (snapped !== null && Math.abs(snapped - pig.angle) > 0.01) {
+        console.log('[角度修正] 猪#' + pig.id + ' ' + pig.angle.toFixed(1) + '° → ' + snapped.toFixed(1) + '°');
+        pig.angle = snapped;
+        corrected++;
+      }
+    }
+    if (corrected > 0) {
+      this.rebuildOccupancy();
+      console.log('[角度修正] 共修正 ' + corrected + ' 只猪的角度');
+    }
+    return corrected;
   }
 
   // 松手对齐：三点共线 + 长度回退搜索（全模式共用）

@@ -159,6 +159,7 @@ class PlayingEngine {
     this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
+    this.gp.snapAllPigsAngles();
     this.steps = 0;
     this._resetCombo();
   }
@@ -176,7 +177,7 @@ class PlayingEngine {
       if (this._victory) {
         if (this._exitBtn && t.x >= this._exitBtn.x && t.x <= this._exitBtn.x + this._exitBtn.w &&
             t.y >= this._exitBtn.y && t.y <= this._exitBtn.y + this._exitBtn.h) {
-          databus.gameState = 'menu';
+          databus.gameState = databus.returnState || 'menu';
           return;
         }
         if (this._nextBtn && t.x >= this._nextBtn.x && t.x <= this._nextBtn.x + this._nextBtn.w &&
@@ -1365,17 +1366,22 @@ _tryClaimMaster() {
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 16px sans-serif';
-    ctx.fillText('退出', exitX + btnW / 2, btnY + btnH / 2);
+    var exitLabel = databus.returnState === 'editor' ? '返回编辑' : '退出';
+    ctx.fillText(exitLabel, exitX + btnW / 2, btnY + btnH / 2);
 
-    // 下一关按钮
-    const nextX = btnStartX + btnW + gap;
-    const hasNext = databus.currentLevelIndex + 1 < databus.projectLevels.length;
-    this._nextBtn = { x: nextX, y: btnY, w: btnW, h: btnH };
-    ctx.fillStyle = hasNext ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)';
-    this._roundRect(ctx, nextX, btnY, btnW, btnH, 8);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.fillText(hasNext ? '下一关' : '已完成', nextX + btnW / 2, btnY + btnH / 2);
+    // 下一关按钮（试玩模式不显示）
+    if (databus.returnState !== 'editor') {
+      const nextX = btnStartX + btnW + gap;
+      const hasNext = databus.currentLevelIndex + 1 < databus.projectLevels.length;
+      this._nextBtn = { x: nextX, y: btnY, w: btnW, h: btnH };
+      ctx.fillStyle = hasNext ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)';
+      this._roundRect(ctx, nextX, btnY, btnW, btnH, 8);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(hasNext ? '下一关' : '已完成', nextX + btnW / 2, btnY + btnH / 2);
+    } else {
+      this._nextBtn = null;  // 试玩模式无下一关按钮
+    }
   }
 
   // ========== 连击系统 ==========

@@ -53,6 +53,17 @@ class EditorEngine {
 
     // ===== 点击 vs 拖拽区分 =====
     this._pendingTouch = null;  // { x, y, pigInfo } — 未超过阈值前暂存
+
+    // ===== 占用冲突检测 =====
+    this._conflictPigIds = null;     // Set<number> — 孔占用冲突的猪 ID (红色)
+    this._conflictHoleIndices = null; // Set<number> — 被多只猪占用的孔索引
+    this._collisionPigIds = null;    // Set<number> — 身体碰撞的猪 ID (绿色)
+
+    // ===== 关卡选择面板滚动 =====
+    this._levelSheetScrollY = 0;
+    this._levelSheetTouchStartY = 0;
+    this._levelSheetTouchStartScrollY = 0;
+    this._levelSheetIsScrolling = false;
   }
 
   // ============================================================
@@ -104,9 +115,9 @@ class EditorEngine {
         this.checkConfirmDialog(x, y);
         return;
       }
-      // 关卡选择面板优先
+      // 关卡选择面板优先（含滚动处理）
       if (this.showLevelSheet) {
-        this.checkLevelSheetButtons(x, y);
+        this._levelSheetTouchStart(x, y);
         return;
       }
       // 小猪信息面板
@@ -133,6 +144,11 @@ class EditorEngine {
       }
       this.onBoardTouchStart(x, y);
     } else if (e.type === 'touchmove') {
+      // 关卡选择面板滚动
+      if (this.showLevelSheet) {
+        this._levelSheetTouchMove(x, y);
+        return;
+      }
       // 有暂存触摸 → 检查是否超过拖拽阈值
       if (this._pendingTouch) {
         const dx = x - this._pendingTouch.x;
@@ -144,6 +160,11 @@ class EditorEngine {
       }
       if (this.gp.dragState) this.onDragMove(x, y);
     } else if (e.type === 'touchend') {
+      // 关卡选择面板
+      if (this.showLevelSheet) {
+        this._levelSheetTouchEnd(x, y);
+        return;
+      }
       if (this.showPigSheet) return;
       // 暂存触摸 + 无拖拽 → 纯点击
       if (this._pendingTouch) {
@@ -207,9 +228,9 @@ class EditorEngine {
     if (!pig) return;
 
     if (pig.hintId != null) {
-      // 关闭提示
+      // 关闭提示：彻底清除 hint，避免 hintAngle 残留导致 JSON 输出不一致
       pig.hintId = null;
-      pig.hintAngle = pig.angle; // 重置为猪朝向
+      pig.hintAngle = null;
       this.showToast('已取消提示');
     } else {
       // 自动分配：找最小未被占用的自然数（从1开始）
@@ -598,6 +619,7 @@ class EditorEngine {
   _goToPlaying() {
     var lv = this.getLevelData();
     databus.currentLevel = { name: '试玩', data: lv };
+    databus.currentLevelIndex = -1;  // 试玩不属于正式关卡序列，禁用"下一关"
     databus.returnState = 'editor';
     databus.gameState = 'playing';
   }
@@ -629,8 +651,10 @@ class EditorEngine {
       board: { cols: this.gp.cols, hGap: this.gp.hGap, rows: this.gp.rows, vGap: this.gp.vGap, diameter: this.gp.diameter },
       pigs: this.gp.pigs.map(p => {
         const obj = { id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle };
-        if (p.hintId != null) obj.hintId = p.hintId;
-        if (p.hintAngle != null && p.hintAngle !== p.angle) obj.hintAngle = p.hintAngle;
+        if (p.hintId != null) {
+          obj.hintId = p.hintId;
+          obj.hintAngle = (p.hintAngle != null) ? p.hintAngle : p.angle;
+        }
         return obj;
       }),
       ready: (curData && curData.ready != null) ? curData.ready : 0
@@ -656,9 +680,66 @@ class EditorEngine {
     this.gp.flashingPigs = {};
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
-    this.gp.recomputeBoard();
+    // 使用与 PlayingEngine 一致的 maxBoardH 计算棋盘，确保角度修正结果相同
+    // PlayingEngine: topBarH = safeTop + 16 + 48 + 8 + 12, bottomStripH = 56 + 16 + 8 + 12
+    var gameMaxBoardH = SCREEN_HEIGHT - (databus.safeTop + 84) - 92;
+    this.gp.recomputeBoard(gameMaxBoardH);
+    var corrected = this.gp.snapAllPigsAngles();
+    // 用编辑器自身的布局参数重新居中棋盘，不影响 UI 渲染
+    this.gp.topBarH = 48;
+    this.gp.bottomStripH = 128;
     this.gp.recenterBoard();
-    this.dirty = false;
+    this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
+    this._detectConflicts();
+  }
+
+  // 检测冲突：① 孔占用冲突(红色) ② 猪身体碰撞(绿色)
+  _detectConflicts() {
+    this._conflictPigIds = new Set();
+    this._conflictHoleIndices = new Set();
+    this._collisionPigIds = new Set();
+
+    // ① 孔占用冲突：同一孔被 ≥2 只猪占用
+    const holeToPigs = new Map();
+    for (const pig of this.gp.pigs) {
+      const occ = this.gp.getPigOccupiedHoles(pig.tailIndex, pig.length, pig.angle);
+      for (const hi of occ) {
+        if (!holeToPigs.has(hi)) holeToPigs.set(hi, []);
+        holeToPigs.get(hi).push(pig.id);
+      }
+    }
+
+    for (const [hi, pigIds] of holeToPigs) {
+      if (pigIds.length >= 2) {
+        this._conflictHoleIndices.add(hi);
+        for (const pid of pigIds) this._conflictPigIds.add(pid);
+      }
+    }
+
+    if (this._conflictPigIds.size > 0) {
+      console.warn('[编辑器] 检测到占用冲突！猪:', [...this._conflictPigIds], '孔:', [...this._conflictHoleIndices]);
+    }
+
+    // ② 猪身体碰撞：两只猪的胶囊体相交
+    const pigs = this.gp.pigs;
+    for (let i = 0; i < pigs.length; i++) {
+      const pa = pigs[i];
+      const ra = this.gp.getPigRect(pa.tailIndex, pa.length, pa.angle);
+      if (!ra) continue;
+      for (let j = i + 1; j < pigs.length; j++) {
+        const pb = pigs[j];
+        const rb = this.gp.getPigRect(pb.tailIndex, pb.length, pb.angle);
+        if (!rb) continue;
+        if (this.gp._capsuleIntersect(ra, rb)) {
+          this._collisionPigIds.add(pa.id);
+          this._collisionPigIds.add(pb.id);
+        }
+      }
+    }
+
+    if (this._collisionPigIds.size > 0) {
+      console.warn('[编辑器] 检测到身体碰撞！猪:', [...this._collisionPigIds]);
+    }
   }
 
   // ============================================================
@@ -1207,6 +1288,7 @@ class EditorEngine {
 
     this.gp.renderBoard(ctx, opts);
     if (this.showRedFrame) this._renderEffectiveArea();
+    this._renderConflictOverlays();  // 占用冲突红色高亮
     this.renderTopBar();
     // this.renderWidthPanel(); // 屏幕宽度面板暂时隐藏
     this.renderBottomStrip();
@@ -1221,6 +1303,69 @@ class EditorEngine {
 
     // 云端同步加载遮罩
     if (this._cloudLoading) this.renderCloudLoading();
+  }
+
+  // ============================================================
+  // === 冲突红色高亮 + 碰撞绿色高亮 ===
+  // ============================================================
+  _renderConflictOverlays() {
+    var hasRed = this._conflictPigIds && this._conflictPigIds.size > 0;
+    var hasGreen = this._collisionPigIds && this._collisionPigIds.size > 0;
+    if (!hasRed && !hasGreen) return;
+
+    var offY = this.gp.topBarH + this.gp.boardOffsetY;
+
+    // 冲突孔位：红色粗圆环
+    if (hasRed) {
+      ctx.strokeStyle = 'rgba(255, 59, 48, 0.85)';
+      ctx.lineWidth = 3;
+      var r = this.gp.scaledHalfDiameter;
+      if (this._conflictHoleIndices) {
+        this._conflictHoleIndices.forEach(function(hi) {
+          var h = this.gp.holes[hi];
+          if (!h) return;
+          ctx.beginPath();
+          ctx.arc(this.gp.boardOffsetX + h.x, offY + h.y, r + 1, 0, Math.PI * 2);
+          ctx.stroke();
+        }.bind(this));
+      }
+    }
+
+    // 辅助函数：画碰撞胶囊体（与 _capsuleIntersect 尺寸完全一致）
+    var drawPigOverlay = function(pig, color) {
+      var pr = this.gp.getPigRect(pig.tailIndex, pig.length, pig.angle);
+      if (!pr) return;
+      var bx = this.gp.boardOffsetX;
+      var by = offY;
+      var r = pr.collisionCapRadius || pr.capRadius;  // 与 _capsuleIntersect 用同一半径
+      var tw = r * 2;  // 胶囊直径 = strokeWidth
+      ctx.strokeStyle = color;
+      ctx.lineWidth = tw;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bx + pr.capTailX, by + pr.capTailY);
+      ctx.lineTo(bx + pr.capHeadX, by + pr.capHeadY);
+      ctx.stroke();
+    }.bind(this);
+
+    // 绿色碰撞猪：只渲染不在红色集合中的（红优先）
+    if (hasGreen) {
+      for (var i = 0; i < this.gp.pigs.length; i++) {
+        var pig = this.gp.pigs[i];
+        if (!this._collisionPigIds.has(pig.id)) continue;
+        if (hasRed && this._conflictPigIds.has(pig.id)) continue; // 红优先
+        drawPigOverlay(pig, 'rgba(52, 199, 89, 0.3)');  // iOS 绿色
+      }
+    }
+
+    // 红色冲突猪
+    if (hasRed) {
+      for (var j = 0; j < this.gp.pigs.length; j++) {
+        var pig2 = this.gp.pigs[j];
+        if (!this._conflictPigIds.has(pig2.id)) continue;
+        drawPigOverlay(pig2, 'rgba(255, 59, 48, 0.3)');
+      }
+    }
   }
 
   // ============================================================
@@ -1322,13 +1467,12 @@ class EditorEngine {
     ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('小猪推推乐 - 关卡编辑器', titleX, topBarH / 2);
+    ctx.fillText('关卡编辑器', titleX, topBarH / 2);
 
-    const rightBase = SCREEN_WIDTH - 10;
-
-    // 试玩按钮 — 手指友好
-    const btnW = 72, btnH = 36;
-    const btnX = rightBase - btnW, btnY = (topBarH - btnH) / 2;
+    // 试玩按钮 — 紧挨标题右侧
+    const titleWidth = 85; // "关卡编辑器" 五个字 15px bold 大约宽度
+    const btnW = 52, btnH = 32;
+    const btnX = titleX + titleWidth + 4, btnY = (topBarH - btnH) / 2;
     ctx.fillStyle = '#2196F3';
     roundRect(ctx,btnX, btnY, btnW, btnH, 6);
     ctx.fill();
@@ -1386,9 +1530,19 @@ class EditorEngine {
       var midYHint = row1Y2 + row1H2 / 2;
 
       var x2 = 12;
-      // 关卡管理按钮（保留）
-      x2 = this._drawCompactStepper(x2, btnYHint, btnH2, '关卡', this.currentLevelIdx >= 0 ? this.levelList[this.currentLevelIdx].name : '--', 0, 0,
-        function() {}, 0, false); // 只显示，不操作
+      // 关卡名称（纯文本，不画 −/+ 按钮）
+      ctx.fillStyle = '#999';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('关卡', x2, midYHint);
+      x2 += 30;
+      var lvlName = this.currentLevelIdx >= 0 ? this.levelList[this.currentLevelIdx].name : '--';
+      ctx.fillStyle = '#FF8C00';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(lvlName, x2 + 9, midYHint);
+      x2 += 18;
       // 提示模式按钮
       x2 += 60;
       var hintBtnW = 80;
@@ -1721,6 +1875,7 @@ class EditorEngine {
           return;
         }
         this.showLevelSheet = !this.showLevelSheet;
+        if (this.showLevelSheet) this._levelSheetScrollY = 0;
         break;
       }
       case 'newLevel': this.newLevel(); break;
@@ -1844,12 +1999,29 @@ class EditorEngine {
   }
 
   // ============================================================
-  // === 关卡选择子页面 ===
+  // === 关卡选择面板（按钮网格 + 滚动） ===
   // ============================================================
   renderLevelSheet() {
     const barH = 48;  // 操作按钮栏高度
-    const sheetH = Math.min(SCREEN_HEIGHT * 0.65, this.levelList.length * 48 + 70 + barH);
+    const COLS = 6;
+    const PAD = 12;
+    const GAP = 8;
+    const btnW = Math.floor((SCREEN_WIDTH - PAD * 2 - GAP * (COLS - 1)) / COLS);
+    const btnH = 38;
+    const rowGap = 6;
+    const rows = Math.ceil(this.levelList.length / COLS);
+    const gridH = (rows + 2) * btnH + (rows + 1) * rowGap;  // +2 行空底，防误点
+
+    const headerH = 48 + barH;        // 标题 + 操作栏（固定不滚动）
+    const maxScrollH = SCREEN_HEIGHT * 0.75 - headerH;
+    const scrollH = Math.min(gridH, maxScrollH);
+    const sheetH = headerH + scrollH;
     const sheetY = SCREEN_HEIGHT - sheetH;
+
+    // 限制滚动范围
+    const maxScroll = Math.max(0, gridH - scrollH);
+    if (this._levelSheetScrollY < 0) this._levelSheetScrollY = 0;
+    if (this._levelSheetScrollY > maxScroll) this._levelSheetScrollY = maxScroll;
 
     // 半透明遮罩
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
@@ -1872,21 +2044,21 @@ class EditorEngine {
     ctx.textBaseline = 'top';
     ctx.fillText('选择关卡', 20, sheetY + 24);
 
-    // 关闭按钮 — 手指友好
+    // 关闭按钮
     const closeX = SCREEN_WIDTH - 50;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.font = '20px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('✕', closeX + 16, sheetY + 22);
+    ctx.fillText('\u2715', closeX + 16, sheetY + 22);
 
-    // ---- 操作按钮栏：删除 / 清空 / 重载 ----
+    // ---- 操作按钮栏 ----
     const actionBarY = sheetY + 52;
     const actionBtns = [
-      { label: '删除', color: '#f44336', action: 'deleteLevel' },
-      { label: '清空', color: '#FF9800', action: 'clearLevel' },
-      { label: '重载', color: '#9C27B0', action: 'resetLevel' },
+      { label: '\u5220\u9664', color: '#f44336', action: 'deleteLevel' },
+      { label: '\u6e05\u7a7a', color: '#FF9800', action: 'clearLevel' },
+      { label: '\u91cd\u8f7d', color: '#9C27B0', action: 'resetLevel' },
     ];
-    const abW = 80, abH = 36;
+    const abW = 72, abH = 36;
     const totalW = actionBtns.length * abW + (actionBtns.length - 1) * 10;
     let abX = (SCREEN_WIDTH - totalW) / 2;
     const abY = actionBarY + (barH - abH) / 2;
@@ -1896,7 +2068,7 @@ class EditorEngine {
       roundRect(ctx, abX, abY, abW, abH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px sans-serif';
+      ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(b.label, abX + abW / 2, abY + abH / 2);
@@ -1904,68 +2076,98 @@ class EditorEngine {
       abX += abW + 10;
     }
 
-    // 关卡列表 — 手指友好
-    const listY = sheetY + 52 + barH;
-    const itemH = 44;
+    // ---- 按钮网格（可滚动区域） ----
+    const gridTop = sheetY + headerH;
+    this._levelSheetGridTop = gridTop;
+    this._levelSheetGridH = scrollH;
+    this._levelSheetGridContentH = gridH;
+
+    // 裁剪区域
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, gridTop, SCREEN_WIDTH, scrollH);
+    ctx.clip();
+
+    const scrollOffset = -this._levelSheetScrollY;
+    const startRow = gridTop + scrollOffset;
     this.levelSheetItems = [];
 
     for (let i = 0; i < this.levelList.length; i++) {
-      const itemY = listY + i * itemH;
-      if (itemY + itemH > sheetY + sheetH - 8) break;
+      const row = Math.floor(i / COLS);
+      const col = i % COLS;
+      const bx = PAD + col * (btnW + GAP);
+      const by = startRow + row * (btnH + rowGap);
+
+      // 跳过完全不可见的行
+      if (by + btnH < gridTop || by > gridTop + scrollH) continue;
 
       const lv = this.levelList[i];
       const isActive = i === this.currentLevelIdx;
-
-      // 选中项背景
-      if (isActive) {
-        ctx.fillStyle = '#E3F2FD';
-        ctx.fillRect(12, itemY, SCREEN_WIDTH - 24, itemH);
-      }
-
-      // 选中指示器
-      if (isActive) {
-        ctx.fillStyle = '#2196F3';
-        ctx.font = 'bold 14px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('▶', 24, itemY + itemH / 2);
-      }
-
-      // 关卡名称
-      ctx.fillStyle = isActive ? '#1565C0' : '#333';
-      ctx.font = (isActive ? 'bold ' : '') + '15px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      const nameX = isActive ? 44 : 24;
       const dirtyMark = lv.isDirty ? ' *' : '';
-      ctx.fillText(lv.name + dirtyMark, nameX, itemY + itemH / 2);
 
-      // 底部分隔线
-      if (i < this.levelList.length - 1) {
-        ctx.strokeStyle = '#f0f0f0';
-        ctx.beginPath();
-        ctx.moveTo(20, itemY + itemH);
-        ctx.lineTo(SCREEN_WIDTH - 20, itemY + itemH);
-        ctx.stroke();
+      // 按钮背景
+      if (isActive) {
+        ctx.fillStyle = '#1976D2';
+      } else {
+        ctx.fillStyle = '#F5F5F5';
       }
+      roundRect(ctx, bx, by, btnW, btnH, 6);
+      ctx.fill();
 
-      this.levelSheetItems.push({ x: 12, y: itemY, w: SCREEN_WIDTH - 24, h: itemH, index: i });
+      // 文字
+      ctx.fillStyle = isActive ? '#fff' : '#333';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const maxChars = Math.floor(btnW / 8);
+      let label = lv.name;
+      if (label.length > maxChars) label = label.substring(0, maxChars - 1) + '\u2026';
+      ctx.fillText(label + dirtyMark, bx + btnW / 2, by + btnH / 2);
+
+      this.levelSheetItems.push({ x: bx, y: by, w: btnW, h: btnH, index: i });
     }
+
+    ctx.restore();
 
     this.sheetLevelRect = { x: 0, y: sheetY, w: SCREEN_WIDTH, h: sheetH };
     this.sheetLevelCloseRect = { x: closeX, y: sheetY + 16, w: 40, h: 40 };
+  }
+
+  _levelSheetTouchStart(x, y) {
+    this._levelSheetTouchStartY = y;
+    this._levelSheetTouchStartScrollY = this._levelSheetScrollY;
+    this._levelSheetIsScrolling = false;
+  }
+
+  _levelSheetTouchMove(x, y) {
+    const dy = y - this._levelSheetTouchStartY;
+    if (Math.abs(dy) > 4) {
+      this._levelSheetIsScrolling = true;
+    }
+    if (this._levelSheetIsScrolling) {
+      this._levelSheetScrollY = this._levelSheetTouchStartScrollY - dy;
+    }
+  }
+
+  _levelSheetTouchEnd(x, y) {
+    if (this._levelSheetIsScrolling) {
+      this._levelSheetIsScrolling = false;
+      return;
+    }
+    // 没有滚动 → 当作点击处理
+    this.checkLevelSheetButtons(x, y);
   }
 
   checkLevelSheetButtons(x, y) {
     if (!this.showLevelSheet) return false;
 
     if (this.sheetLevelCloseRect && this.hitRect(x, y, this.sheetLevelCloseRect)) {
-      this.showLevelSheet = false;
+      this._closeLevelSheet();
       return true;
     }
 
     if (this.sheetLevelRect && y < this.sheetLevelRect.y) {
-      this.showLevelSheet = false;
+      this._closeLevelSheet();
       return true;
     }
 
@@ -1973,7 +2175,7 @@ class EditorEngine {
     if (this.levelSheetActionBtns) {
       for (const btn of this.levelSheetActionBtns) {
         if (this.hitRect(x, y, btn)) {
-          this.showLevelSheet = false;
+          this._closeLevelSheet();
           this._handleLevelAction(btn.action);
           return true;
         }
@@ -1983,14 +2185,19 @@ class EditorEngine {
     if (this.levelSheetItems) {
       for (const item of this.levelSheetItems) {
         if (this.hitRect(x, y, item)) {
+          this._closeLevelSheet();
           this.switchToLevel(item.index);
-          this.showLevelSheet = false;
           return true;
         }
       }
     }
 
     return true;
+  }
+
+  _closeLevelSheet() {
+    this.showLevelSheet = false;
+    this._levelSheetScrollY = 0;
   }
 
   // ============================================================
