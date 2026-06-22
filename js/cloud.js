@@ -137,12 +137,12 @@ async function reportBug(snapshot) {
 }
 
 /**
- * 获取关卡关主信息
+ * 获取关卡信息（关主 + 小金猪阈值）
  * @param {string} levelId 关卡名（如 "0001"）
- * @returns {Promise<{avatarUrl, nickname, minSteps}|null>}
+ * @returns {Promise<{masterUserId, masterSteps, masterAvatarUrl, masterNickname, crownSteps}|null>}
  */
-async function getLevelMaster(levelId) {
-  const res = await callFunction('getLevelMaster', { levelId });
+async function getLevelInfo(levelId) {
+  const res = await callFunction('getLevelInfo', { levelId });
   return res.data || null;
 }
 
@@ -177,7 +177,7 @@ module.exports = {
   downloadLevel,
   deleteLevel,
   reportBug,
-  getLevelMaster,
+  getLevelInfo,
   claimLevelMaster,
   getOpenId
 };

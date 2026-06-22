@@ -13,10 +13,15 @@ const { drawComposedPig, getComposedPigSize } = require('../render/PigRenderer.j
 
 class GameEngine {
   constructor() {
+    console.log('[GameEngine] constructor 开始');
     this.input = new InputManager();
+    console.log('[GameEngine] InputManager 创建完成');
     this.editor = new EditorEngine(this.input);
+    console.log('[GameEngine] EditorEngine 创建完成');
     this.levelSelect = new LevelSelectEngine(this.input);
+    console.log('[GameEngine] LevelSelectEngine 创建完成');
     this.playing = new PlayingEngine(this.input);
+    console.log('[GameEngine] PlayingEngine 创建完成');
 
     // 背景图
     this.bgImg = wx.createImage();
@@ -27,34 +32,43 @@ class GameEngine {
     this._titleTapCount = 0; // 标题连击计数，满 5 次显示编辑器入口
     this._titleLongPressTimer = null;  // 标题长按计时器（模拟器弹 debug 面板用）
 
+    console.log('[GameEngine] constructor 完成，准备调用 start()');
     this.start();
   }
 
   /** 启动主循环 */
   start() {
+    console.log('[GameEngine] start() 开始');
     databus.screenWidth = SCREEN_WIDTH;
     databus.screenHeight = SCREEN_HEIGHT;
+    console.log('[GameEngine] 屏幕尺寸: ' + SCREEN_WIDTH + 'x' + SCREEN_HEIGHT);
 
     // 安全区：避开状态栏 + 微信胶囊按钮
     try {
-      const menuBtn = wx.getMenuButtonBoundingClientRect();
+      var menuBtn = wx.getMenuButtonBoundingClientRect();
       databus.safeTop = menuBtn.bottom + 8;
+      console.log('[GameEngine] 安全区顶部: ' + databus.safeTop);
     } catch (e) {
-      databus.safeTop = 56; // 典型设备默认值
+      databus.safeTop = 56;
+      console.log('[GameEngine] 安全区获取失败，使用默认值 56');
     }
 
     // 加载章节配置
     try {
       var chapterRaw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');
       databus.chapters = JSON.parse(chapterRaw);
+      console.log('[GameEngine] 章节配置加载成功: ' + databus.chapters.length + '章');
     } catch (e) {
       console.warn('[GameEngine] 加载 chapter.json 失败:', e);
       databus.chapters = [];
     }
 
     databus.gameState = 'menu';
+    console.log('[GameEngine] 设置 gameState=menu');
     this.setupMenuInput();
+    console.log('[GameEngine] 菜单输入注册完成');
     this.loop();
+    console.log('[GameEngine] 主循环已启动');
 
     // 异步从云端拉取玩家数据，合并到本地（换设备恢复进度）
     this._syncFromCloud();
@@ -75,20 +89,19 @@ class GameEngine {
         console.log('[Cloud] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
         wx.setStorageSync('lastLevelIndex', cloudLI);
       }
-      // 合并 records：云端有的且本地没有则补本地
-      var cloudRecords = cloudData.records || {};
-      var merged = 0;
-      for (var k in cloudRecords) {
-        if (cloudRecords.hasOwnProperty(k)) {
-          var localRec = wx.getStorageSync('record_' + k);
-          if (localRec === '' || localRec === undefined || localRec === null) {
-            wx.setStorageSync('record_' + k, cloudRecords[k]);
-            merged++;
-          }
+      // 合并 crowns：云端有的且本地没有则补本地
+      var cloudCrowns = cloudData.crowns || [];
+      var crownMerged = 0;
+      for (var c = 0; c < cloudCrowns.length; c++) {
+        var crownKey = 'crown_' + cloudCrowns[c];
+        var localCrown = wx.getStorageSync(crownKey);
+        if (localCrown === '' || localCrown === undefined || localCrown === null) {
+          wx.setStorageSync(crownKey, true);
+          crownMerged++;
         }
       }
-      if (merged > 0) {
-        console.log('[Cloud] 合并 records: ' + merged + ' 条');
+      if (crownMerged > 0) {
+        console.log('[Cloud] 合并 crowns: ' + crownMerged + ' 条');
       }
       // 云端头像昵称 > 本地缓存
       if (cloudData.avatarUrl && cloudData.nickname) {

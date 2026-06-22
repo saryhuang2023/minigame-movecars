@@ -188,5 +188,6 @@
     }
   ],
   "ready": 1,
-  "version": 4
+  "version": 4,
+  "crownSteps": 36
 }

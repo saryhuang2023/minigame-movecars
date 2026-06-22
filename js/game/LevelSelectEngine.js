@@ -5,6 +5,7 @@ var databus = require('../databus.js');
 var renderModule = require('../render.js');
 var ctx = renderModule.ctx;
 var SCREEN_WIDTH = renderModule.SCREEN_WIDTH;
+var drawPigIcon = require('../render/PigIconRenderer.js').drawPigIcon;
 var SCREEN_HEIGHT = renderModule.SCREEN_HEIGHT;
 
 // ========== 配色（v3 设计） ==========
@@ -28,15 +29,15 @@ var C = {
 
 // ========== 布局常量 ==========
 var TOP_BAR_H = 52;
-var CARD_W = 80;
-var CARD_H = 80;
-var GAP = 10;
+var CARD_W = 50;
+var CARD_H = 40;
+var GAP = 12;
 var ROW_GAP = 12;
-var COLS = 4;
+var COLS = 5;
 var PADDING_X = 20;
-var CARD_RADIUS = 16;
-var SECTION_HEADER_H = 32;
-var SECTION_GAP = 8;
+var CARD_RADIUS = 6;
+var SECTION_HEADER_H =28;
+var SECTION_GAP = 4;
 var SECTION_MARGIN = 20;
 
 function LevelSelectEngine(input) {
@@ -356,21 +357,21 @@ LevelSelectEngine.prototype._renderChapterHeader = function (section, y) {
   var iconCY = y + SECTION_HEADER_H / 2;
 
   // 图标
-  ctx.font = '18px sans-serif';
+  ctx.font = '16px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(ch.icon || '', iconX, iconCY);
 
   // 章节名
-  var nameX = iconX + 28;
+  var nameX = iconX + 26;
   ctx.fillStyle = ch.themeColor || C.primary;
-  ctx.font = 'bold 16px sans-serif';
+  ctx.font = 'bold 14px sans-serif';
   ctx.fillText(ch.name, nameX, iconCY);
 
   // 进度文字（右侧）
   var total = section.cards.length;
   ctx.fillStyle = C.textMuted;
-  ctx.font = '13px sans-serif';
+  ctx.font = '12px sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   ctx.fillText(cleared + '/' + total, SCREEN_WIDTH - PADDING_X, iconCY);
@@ -402,7 +403,7 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
   // 编号文字：全局索引 + 1
   var labelNumber = String(card.globalIndex + 1);
 
-  // === locked ===
+  // === locked（无锁图标，灰色即代表未解锁） ===
   if (status === 'locked') {
     ctx.save();
     ctx.shadowColor = C.cardLockedShadow;
@@ -422,10 +423,7 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
     ctx.font = 'bold 20px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(labelNumber, cx, cy - 8);
-
-    ctx.font = '12px sans-serif';
-    ctx.fillText('🔒', cx, cy + 16);
+    ctx.fillText(labelNumber, cx, cy);
     return;
   }
 
@@ -464,26 +462,28 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
   this._roundRect(ctx, x + 1, y + 1, w - 2, h - 2, r - 1);
   ctx.stroke();
 
-  // 当前关卡：🚩 旗帜图标
-  if (isCurrent) {
-    ctx.font = '14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🚩', cx, cy - 18);
-  }
-
-  // 编号文字
+  // 编号文字（变大变粗，居中）
   ctx.fillStyle = isCurrent ? C.primary : C.textDark;
-  ctx.font = isCurrent ? 'bold 24px sans-serif' : 'bold 20px sans-serif';
+  ctx.font = isCurrent ? 'bold 20px sans-serif' : 'bold 20px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(labelNumber, cx, cy - (isCurrent ? 2 : 6));
+  ctx.fillText(labelNumber, cx, cy);
 
-  // 已完成：⭐ 星星
-  if (!isCurrent) {
-    ctx.font = '12px sans-serif';
-    ctx.fillText('⭐', cx, cy + 20);
+  // 右上角小金猪（金色=已获得皇冠，灰色=未获得）
+  var hasCrown = false;
+  if (status === 'completed') {
+    var levelName = card.level ? card.level.name : null;
+    if (levelName) {
+      try {
+        hasCrown = !!wx.getStorageSync('crown_' + levelName);
+      } catch (e) {}
+    }
+    // 只有获得小金猪才显示（金色），未获得不显示任何猪图标
+    if (hasCrown) {
+      drawPigIcon(ctx, x + w - 4, y + 4, 14, true);
+    }
   }
+
 };
 
 // ========== Canvas 工具 ==========

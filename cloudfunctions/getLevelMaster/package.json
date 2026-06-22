@@ -1,9 +1,0 @@
-{
-  "name": "getLevelMaster",
-  "version": "1.0.0",
-  "description": "查询关卡关主",
-  "main": "index.js",
-  "dependencies": {
-    "wx-server-sdk": "latest"
-  }
-}

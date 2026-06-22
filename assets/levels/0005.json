@@ -245,5 +245,6 @@
     }
   ],
   "ready": 1,
-  "version": 16
+  "version": 16,
+  "crownSteps": 48
 }

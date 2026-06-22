@@ -46,7 +46,7 @@
       "ignore": ["node_modules"]
     },
     {
-      "name": "getLevelMaster",
+      "name": "getLevelInfo",
       "runtime": "Nodejs18.15",
       "handler": "index.main",
       "timeout": 15,

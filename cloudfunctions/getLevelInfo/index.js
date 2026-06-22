@@ -1,4 +1,4 @@
-// 查询关卡关主
+// 查询关卡信息（关主 + 皇冠阈值）
 const cloud = require('wx-server-sdk');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -8,7 +8,7 @@ exports.main = async (event, context) => {
   if (!levelId) return { code: 1, message: '缺少 levelId' };
 
   try {
-    const res = await db.collection('level_masters')
+    const res = await db.collection('level_info')
       .where({ levelId })
       .limit(1)
       .get();
@@ -18,7 +18,7 @@ exports.main = async (event, context) => {
       data: res.data.length > 0 ? res.data[0] : null
     };
   } catch (err) {
-    console.error('[getLevelMaster]', err);
+    console.error('[getLevelInfo]', err);
     return { code: 2, message: err.message };
   }
 };
