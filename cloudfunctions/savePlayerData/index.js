@@ -19,15 +19,17 @@ exports.main = async (event, context) => {
       .get();
 
     if (exist.data.length > 0) {
-      // 更新
+      // 更新：lastLevelIndex 只升不降（防止客户端 bug 导致进度回退）
+      var updateData = { ...data, updatedAt: db.serverDate() };
+      var existing = exist.data[0];
+      if (typeof existing.lastLevelIndex === 'number' &&
+          typeof updateData.lastLevelIndex === 'number' &&
+          updateData.lastLevelIndex < existing.lastLevelIndex) {
+        updateData.lastLevelIndex = existing.lastLevelIndex;
+      }
       await db.collection('players')
         .doc(exist.data[0]._id)
-        .update({
-          data: {
-            ...data,
-            updatedAt: db.serverDate(),
-          },
-        });
+        .update({ data: updateData });
     } else {
       // 新建
       await db.collection('players').add({

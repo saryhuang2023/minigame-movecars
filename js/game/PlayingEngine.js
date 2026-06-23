@@ -293,6 +293,7 @@ class PlayingEngine {
           displayAngle: this._touchState.angle,
           targetAngle: this._touchState.angle,
           lastValid: { tailIndex: this._touchState.tailIndex, length: this._touchState.length, angle: this._touchState.angle },
+          startState: { tailIndex: this._touchState.tailIndex, length: this._touchState.length, angle: this._touchState.angle },
           headHoleIdx: -1,
           lastCollidedId: null,
           lastCollideTime: 0,
@@ -358,12 +359,33 @@ class PlayingEngine {
       }
       this.gp.dragState = null;
 
-      // snap 成功，但只有猪尾换了孔位才计步
-      // （length/angle 是 snap 算法自动对齐，不算玩家主动移动）
+      // 步数判定（3 个触发点）：
+      //   1. 小猪换位后逃脱  2. 小猪未换位但逃脱  3. 小猪换位但未逃脱
+      // 简化为：moved || escaped → +1
+      // 判定 moved 用头孔索引（startState → snapResult）—— 比 length/angle 更可靠：
+      // snapAlignPig 可能因旋转中途长度调整，对同孔位返回不同 length 值，导致误判。
       if (pig && snapResult) {
-        var last = ds.lastValid;
-        var moved = (snapResult.tailIndex !== last.tailIndex);
-        if (moved) {
+        var st = ds.startState;
+        var startHeadIdx = this.gp.findHeadHole(st.tailIndex, st.length, st.angle);
+        var snapHeadIdx = this.gp.findHeadHole(snapResult.tailIndex, snapResult.length, snapResult.angle);
+        var moved = (snapHeadIdx !== startHeadIdx);
+
+        // 头尾孔都没变 + 角度也没变 → 猪完全回到了原位
+        // 此时 _shouldPushAfterSnap 是 handleRotateDrag 的残留标记（猪恰好处于边缘孔），不应触发逃脱
+        if (!moved) {
+          var angleDelta = Math.abs(snapResult.angle - st.angle);
+          if (angleDelta > 180) angleDelta = 360 - angleDelta;
+          if (angleDelta < 3.0) {
+            this._shouldPushAfterSnap = false;
+          }
+        }
+
+        console.log(
+          '[步数] startState={ t:' + st.tailIndex + ' l:' + st.length + ' a:' + st.angle.toFixed(1) + ' } headIdx=' + startHeadIdx +
+          ' | snapResult={ t:' + snapResult.tailIndex + ' l:' + snapResult.length + ' a:' + snapResult.angle.toFixed(1) + ' } headIdx=' + snapHeadIdx +
+          ' | moved=' + moved + ' push=' + this._shouldPushAfterSnap
+        );
+        if (moved || this._shouldPushAfterSnap) {
           this.steps++;
           databus.currentStep = this.steps;
         }
@@ -545,7 +567,12 @@ class PlayingEngine {
       const data = JSON.parse(raw);
       databus.currentLevel = { name: next.name, data };
       databus.currentLevelIndex = idx;
-      wx.setStorageSync('lastLevelIndex', idx);
+      // 只升不降：防止重玩低关卡后点"下一关"回退进度
+      var savedRaw = wx.getStorageSync('lastLevelIndex');
+      var savedIdx = (savedRaw !== '' && savedRaw !== undefined && savedRaw !== null) ? parseInt(savedRaw, 10) : -1;
+      if (idx > savedIdx) {
+        wx.setStorageSync('lastLevelIndex', idx);
+      }
       // 直接加载到当前引擎（gameState 不变，checkStateTransition 不会重新 activate）
       this.levelName = next.name;
       this.loadLevel(data);
