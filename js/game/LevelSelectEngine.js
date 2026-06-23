@@ -2,6 +2,7 @@
 // 正式关卡：读取 assets/levels/index.json，按 chapter.json 分组展示
 
 var databus = require('../databus.js');
+var audio = require('../audio/AudioManager.js');
 var renderModule = require('../render.js');
 var ctx = renderModule.ctx;
 var SCREEN_WIDTH = renderModule.SCREEN_WIDTH;
@@ -240,6 +241,7 @@ LevelSelectEngine.prototype._handleEvent = function (e) {
   if (e.type === 'touchstart') {
     if (this.backBtn && t.x >= this.backBtn.x && t.x <= this.backBtn.x + this.backBtn.w &&
         t.y >= this.backBtn.y && t.y <= this.backBtn.y + this.backBtn.h) {
+      audio.play('button_click');
       databus.gameState = 'menu';
       return;
     }
@@ -257,6 +259,7 @@ LevelSelectEngine.prototype._hitTestCards = function (t) {
       if (t.x >= card.x && t.x <= card.x + card.w &&
           ly >= card.y && ly <= card.y + card.h) {
         if (this._getCardStatus(card.globalIndex) === 'locked') return;
+        audio.play('button_click');
         var lv = card.level;
         try {
           var raw = fs.readFileSync('assets/levels/' + lv.file, 'utf8');
@@ -470,18 +473,16 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
   ctx.fillText(labelNumber, cx, cy);
 
   // 右上角小金猪（金色=已获得皇冠，灰色=未获得）
+  // 不依赖 status（completed/current 都可能已获得皇冠），直接读存储
   var hasCrown = false;
-  if (status === 'completed') {
-    var levelName = card.level ? card.level.name : null;
-    if (levelName) {
-      try {
-        hasCrown = !!wx.getStorageSync('crown_' + levelName);
-      } catch (e) {}
-    }
-    // 只有获得小金猪才显示（金色），未获得不显示任何猪图标
-    if (hasCrown) {
-      drawPigIcon(ctx, x + w - 4, y + 4, 14, true);
-    }
+  var levelName = card.level ? card.level.name : null;
+  if (levelName) {
+    try {
+      hasCrown = !!wx.getStorageSync('crown_' + levelName);
+    } catch (e) {}
+  }
+  if (hasCrown) {
+    drawPigIcon(ctx, x + w - 4, y + 4, 14, true);
   }
 
 };

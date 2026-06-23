@@ -2,6 +2,7 @@
 
 const databus = require('../databus.js');
 const cloud = require('../cloud.js');
+const audio = require('../audio/AudioManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
@@ -473,6 +474,7 @@ class GameEngine {
             var btn = this.menuButtons[i];
             if (t.x >= btn.x && t.x <= btn.x + btn.w &&
                 t.y >= btn.y && t.y <= btn.y + btn.h) {
+              audio.play('button_click');
               if (btn.action) btn.action();
               return;
             }
@@ -669,6 +671,9 @@ class GameEngine {
     const curr = databus.gameState;
     if (curr === this._prevState) return;
 
+    // 切场景：停止所有 SFX，避免残留音效
+    audio.onSceneChange();
+
     // 反激活旧状态
     switch (this._prevState) {
       case 'editor':      this.editor.deactivate();        break;
@@ -681,10 +686,11 @@ class GameEngine {
       case 'menu':
         // 未解锁时重置连击计数（已解锁则保持，入口不再隐藏）
         if (this._titleTapCount < 5) this._titleTapCount = 0;
+        audio.playMusic('menu');
         break;
-      case 'editor':      this.editor.activate();          break;
-      case 'levelSelect': this.levelSelect.activate();     break;
-      case 'playing':     this.playing.activate();         break;
+      case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;
+      case 'levelSelect': this.levelSelect.activate(); audio.playMusic('levelSelect'); break;
+      case 'playing':     this.playing.activate(); audio.playMusic('playing'); break;
     }
 
     this._prevState = curr;

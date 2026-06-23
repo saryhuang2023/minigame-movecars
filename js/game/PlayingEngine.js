@@ -2,6 +2,7 @@
 
 const databus = require('../databus.js');
 const cloud = require('../cloud.js');
+const audio = require('../audio/AudioManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 const { drawPigIcon } = require('../render/PigIconRenderer.js');
@@ -100,6 +101,8 @@ class PlayingEngine {
     this._crownAnimPhase = null;
     this._crownAnimStart = 0;
     this.loadLevel(lv ? lv.data : null);
+    // 关卡开始音效
+    audio.play('level_start');
     // 记住当前关卡索引，供主界面"开始游戏"使用（只升不降）
     if (databus.currentLevelIndex >= 0) {
       var old = wx.getStorageSync('lastLevelIndex') || -1;
@@ -174,11 +177,13 @@ class PlayingEngine {
       if (this._victory) {
         if (this._exitBtn && t.x >= this._exitBtn.x && t.x <= this._exitBtn.x + this._exitBtn.w &&
             t.y >= this._exitBtn.y && t.y <= this._exitBtn.y + this._exitBtn.h) {
+          audio.play('button_click');
           databus.gameState = databus.returnState || 'menu';
           return;
         }
         if (this._nextBtn && t.x >= this._nextBtn.x && t.x <= this._nextBtn.x + this._nextBtn.w &&
             t.y >= this._nextBtn.y && t.y <= this._nextBtn.y + this._nextBtn.h) {
+          audio.play('button_click');
           this._goNextLevel();
           return;
         }
@@ -198,6 +203,7 @@ class PlayingEngine {
     // 顶栏按钮
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
+      audio.play('button_click');
       databus.gameState = databus.returnState || 'levelSelect';
       return;
     }
@@ -205,17 +211,20 @@ class PlayingEngine {
     // 底部按钮
     if (this.restartBtn && x >= this.restartBtn.x && x <= this.restartBtn.x + this.restartBtn.w &&
         y >= this.restartBtn.y && y <= this.restartBtn.y + this.restartBtn.h) {
+      audio.play('button_click');
       this.restartLevel();
       return;
     }
     if (this.hintBtn && !this._hintTarget && x >= this.hintBtn.x && x <= this.hintBtn.x + this.hintBtn.w &&
         y >= this.hintBtn.y && y <= this.hintBtn.y + this.hintBtn.h) {
+      audio.play('button_click');
       this._showHint();
       return;
     }
     // 移除按钮
     if (this._removeBtn && x >= this._removeBtn.x && x <= this._removeBtn.x + this._removeBtn.w &&
         y >= this._removeBtn.y && y <= this._removeBtn.y + this._removeBtn.h) {
+      audio.play('button_click');
       this._removeHintedPig();
       return;
     }
@@ -229,6 +238,7 @@ class PlayingEngine {
           var uid = this._levelMaster.masterUserId || '';
           showName = uid.length > 6 ? '…' + uid.slice(-6) : (uid || '匿名');
         }
+        audio.play('button_click');
         wx.showToast({ title: '关主：' + showName, icon: 'none', duration: 1500 });
         return;
       }
@@ -258,6 +268,7 @@ class PlayingEngine {
       const dy = y - this._touchState.startY;
       if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
         // 超过阈值 → 激活旋转拖拽
+        audio.play('drag_start');
         this.gp.dragState = {
           type: 'rotate',
           pigId: this._touchState.pigId,
@@ -267,12 +278,17 @@ class PlayingEngine {
           lastValid: { tailIndex: this._touchState.tailIndex, length: this._touchState.length, angle: this._touchState.angle },
           headHoleIdx: -1,
           lastCollidedId: null,
+          lastCollideTime: 0,
           isValidNow: true
         };
       }
     }
 
     if (this.gp.dragState && this.gp.dragState.type === 'rotate') {
+      // 旋转持续音效（首次播放）
+      if (!this._rotateHandle) {
+        this._rotateHandle = audio.playLooped('rotate_loop');
+      }
       this.gp.handleRotateDrag(x, y);
     }
   }
@@ -288,6 +304,12 @@ class PlayingEngine {
     this._touchState = null;
 
     if (!this.gp.dragState) return;
+
+    // 停止旋转循环音效
+    if (this._rotateHandle) {
+      audio.stop(this._rotateHandle);
+      this._rotateHandle = null;
+    }
 
     const ds = this.gp.dragState;
     const pigId = ds.pigId;
@@ -319,10 +341,16 @@ class PlayingEngine {
       }
       this.gp.dragState = null;
 
-      // snap 成功 = 猪换了位置 → 计步
+      // snap 成功，但只有位置真正变了才计步
       if (pig && snapResult) {
-        this.steps++;
-        databus.currentStep = this.steps;
+        var last = ds.lastValid;
+        var moved = (snapResult.tailIndex !== last.tailIndex ||
+                     snapResult.length !== last.length ||
+                     Math.abs(snapResult.angle - last.angle) > 0.5);
+        if (moved) {
+          this.steps++;
+          databus.currentStep = this.steps;
+        }
       }
       // 自动推出时 tryPushPig 内 skipStep 防重复计步
       if (pig && this._shouldPushAfterSnap) {
@@ -339,6 +367,9 @@ class PlayingEngine {
     if (!pig) return;
 
     if (result.canPush) {
+      // 逃脱音效
+      audio.play('escape');
+
       // 记录猪头屏幕坐标（供连击浮字使用）
       const pigRect = this.gp.getPigRect(pig.tailIndex, pig.length, pig.angle);
       const headX = pigRect
@@ -371,15 +402,17 @@ class PlayingEngine {
 
       // 所有猪都逃脱 → 通关
       if (this.gp.pigs.length === 0) {
+        // 结算开始，面板就绪但先隐藏
         this._markCleared();
-        this._victory = true;  // 结算面板已就绪，但先隐藏
+        this._victory = true;
         setTimeout(() => {
           if (this._earnedCrown) {
             this._startCrownAnimation();
           } else {
             this._showVictoryPanel = true;
+            audio.play('victory');
           }
-        }, 400);
+        }, 1000);
       }
       // 动画结束后清理渲染层
       setTimeout(() => {
@@ -394,6 +427,7 @@ class PlayingEngine {
   }
 
   restartLevel() {
+    audio.play('reset');
     this._clearHint();
     this._hasUsedRemove = false;
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
@@ -995,6 +1029,7 @@ _tryClaimMaster() {
         this._crownAnimPhase = 'done';
         this._gotCrown = true;
         this._showVictoryPanel = true;
+        audio.play('victory');
         this._crownAnimStart = 0;
       }
       return;
@@ -1208,6 +1243,7 @@ _tryClaimMaster() {
       wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
       return;
     }
+    audio.play('hint_reveal');
     this._hintTarget = best;
     this._startGhostTimer();
   }
@@ -1266,8 +1302,9 @@ _tryClaimMaster() {
           this._startCrownAnimation();
         } else {
           this._showVictoryPanel = true;
+          audio.play('victory');
         }
-      }.bind(this), 400);
+      }.bind(this), 1000);
     }
     wx.showToast({ title: '已移除', icon: 'none', duration: 1000 });
   }
@@ -1420,7 +1457,7 @@ _tryClaimMaster() {
       this._comboTimer = null;
     }, COMBO_WINDOW);
 
-    // 2 连及以上才展示组件
+    // 2 连及以上才展示组件 + 连击音效
     if (this._comboCount >= 2) {
       this._comboWidget.visible = true;
       this._comboWidget.count = this._comboCount;

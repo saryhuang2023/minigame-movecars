@@ -16,6 +16,7 @@ const databus = require('../databus.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 const { roundRect } = require('../render/PigRenderer.js');
 const cloud = require('../cloud.js');
+const audio = require('../audio/AudioManager.js');
 
 
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
@@ -187,6 +188,7 @@ class EditorEngine {
     for (var i = 0; i < this.hintHintBtns.length; i++) {
       var b = this.hintHintBtns[i];
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+        audio.play('button_click');
         this._toggleHintId(b.pigId);
         return;
       }
@@ -309,6 +311,7 @@ class EditorEngine {
         lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
         headHoleIdx: -1,
         lastCollidedId: null,
+        lastCollideTime: 0,
         isValidNow: true
       };
     } else {
@@ -322,6 +325,7 @@ class EditorEngine {
         lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
         headHoleIdx: -1,
         lastCollidedId: null,
+        lastCollideTime: 0,
         isValidNow: true
       };
     }
@@ -1511,6 +1515,7 @@ class EditorEngine {
   checkTopButtons(x, y) {
     for (const btn of this.topBtns) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+        audio.play('button_click');
         if (btn.action === 'play') this._checkDirtyAndDo(() => this._goToPlaying());
         if (btn.action === 'back') this._checkDirtyAndDo(() => this._goToMenu());
         return true;
@@ -1871,6 +1876,7 @@ class EditorEngine {
     // 棋盘参数按钮（列/行 ±）
     for (const btn of this.bottomBtns) {
       if (btn.onClick && x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+        audio.play('button_click');
         btn.onClick();
         return true;
       }
@@ -1879,6 +1885,10 @@ class EditorEngine {
   }
 
   _handleLevelAction(action) {
+    // 编辑器操作音效（关卡列表打开不算操作）
+    if (action !== 'showLevelSheet' && action !== 'closeLevelSheet') {
+      audio.play('button_click');
+    }
     switch (action) {
       case 'showLevelSheet': {
         if (this.levelList.length === 0) {
@@ -1988,15 +1998,18 @@ class EditorEngine {
   checkSheetButtons(x, y) {
     if (this.showPigSheet) {
       if (this.sheetPigCloseRect && this.hitRect(x, y, this.sheetPigCloseRect)) {
+        audio.play('button_click');
         this.showPigSheet = false;
         return true;
       }
       if (this.sheetPigDeleteRect && this.hitRect(x, y, this.sheetPigDeleteRect)) {
+        audio.play('button_click');
         this.deleteSelectedPig();
         return true;
       }
       if (this.sheetPigRect && (x < this.sheetPigRect.x || x > this.sheetPigRect.x + this.sheetPigRect.w ||
           y < this.sheetPigRect.y)) {
+        audio.play('button_click');
         this.showPigSheet = false;
         return true;
       }
@@ -2258,11 +2271,13 @@ class EditorEngine {
     if (!this.showLevelSheet) return false;
 
     if (this.sheetLevelCloseRect && this.hitRect(x, y, this.sheetLevelCloseRect)) {
+      audio.play('button_click');
       this._closeLevelSheet();
       return true;
     }
 
     if (this.sheetLevelRect && y < this.sheetLevelRect.y) {
+      audio.play('button_click');
       this._closeLevelSheet();
       return true;
     }
@@ -2271,6 +2286,7 @@ class EditorEngine {
     if (this._levelSheetStepperBtns) {
       for (const btn of this._levelSheetStepperBtns) {
         if (this.hitRect(x, y, btn)) {
+          audio.play('button_click');
           btn.onClick();
           return true;
         }
@@ -2291,6 +2307,7 @@ class EditorEngine {
     if (this.levelSheetItems) {
       for (const item of this.levelSheetItems) {
         if (this.hitRect(x, y, item)) {
+          audio.play('button_click');
           this._closeLevelSheet();
           this.switchToLevel(item.index);
           return true;
@@ -2393,11 +2410,13 @@ class EditorEngine {
 
   checkConfirmDialog(x, y) {
     if (this.hitRect(x, y, this._confirmSaveRect)) {
+      audio.play('button_click');
       this.confirmDialog.onSave();
       this.confirmDialog = null;
       return true;
     }
     if (this.hitRect(x, y, this._confirmSkipRect)) {
+      audio.play('button_click');
       this.confirmDialog.onSkip();
       this.confirmDialog = null;
       return true;

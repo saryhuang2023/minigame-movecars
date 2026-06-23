@@ -5,6 +5,7 @@
 const { ctx, canvas, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const { PigRenderer, roundRect, AnimType } = require('../render/PigRenderer.js');
 const databus = require('../databus');
+const audio = require('../audio/AudioManager.js');
 
 // ========== 常量 ==========
 // Claymorphism 风格：格子 = 棋盘上的凹陷引导，非独立视觉元素
@@ -835,6 +836,11 @@ class GameplayEngine {
       }
       if (check.collidedId !== ds.lastCollidedId) {
         this.triggerCollisionEffect(check.collidedId);
+        var now = Date.now();
+        if (!ds.lastCollideTime || now - ds.lastCollideTime > 250) {
+          audio.play('collide');
+          ds.lastCollideTime = now;
+        }
         ds.lastCollidedId = check.collidedId;
       }
       ds.isValidNow = false;
