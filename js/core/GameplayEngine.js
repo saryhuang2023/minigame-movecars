@@ -55,7 +55,7 @@ class GameplayEngine {
     this.ghostAnimations = [];
     this.flyingPigs = [];
     this.flashingPigs = {};
-    this._hintOC = null;  // 提示粉色遮罩专用离屏画布（复用）
+    this._overlayOC = null;  // 染色离屏画布（提示/被撞共用）
 
     // ===== 渲染 =====
     this.pigRenderer = new PigRenderer(this);
@@ -96,9 +96,6 @@ class GameplayEngine {
 
   // 碰撞检测射线推进步长 = 孔位半径（diameter/2）
   get collisionStep() { return this.scaledHalfDiameter; }
-
-  // 猪身体宽度 = 渲染对齐，碰撞也用这个值
-  get pigBodyWidth() { return this.scaledDiameter * 1.3; }
 
   computeHoles() {
     this.holes = [];
@@ -174,8 +171,8 @@ class GameplayEngine {
   // ============================================================
 
   // ---- OBB 矩形几何 ----
-  // 返回 { cx, cy, hw, hh, cosL, sinL, cosP, sinP, rad }
-  // hw = 半长（沿方向）, hh = 半宽（垂直方向）
+  // 返回 { cx, cy, hw, cosL, sinL, cosP, sinP, rad }
+  // hw = 半长（沿方向）
   getPigRect(tailIndex, length, angle) {
     const tail = this.holes[tailIndex];
     if (!tail) return null;
@@ -184,7 +181,6 @@ class GameplayEngine {
     const sinL = -Math.sin(rad);       // canvas y-flip
     const totalLen = length * this.boardScale;  // 逻辑长度 → 屏幕像素
     const hw = totalLen / 2;
-    const hh = this.pigBodyWidth / 2;
     // OBB 锚定在孔心；尾正方形中心 = 孔心，头正方形中心 = _headSquareCenter
     const cx = tail.x + hw * cosL;
     const cy = tail.y + hw * sinL;
@@ -208,7 +204,7 @@ class GameplayEngine {
     // 保留 OBB 数据供触控和兼容代码使用
     const collisionHw = hw + this.scaledHalfDiameter;
     const collisionHh = this.scaledDiameter / 3;  // 猪间碰撞半径保持窄，不受占用半径影响
-    return { cx, cy, hw, hh, collisionHw, collisionHh, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,
+    return { cx, cy, hw, collisionHw, collisionHh, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,
       capTailX, capTailY, capHeadX, capHeadY, capRadius, collisionCapRadius };
   }
 
@@ -668,7 +664,7 @@ class GameplayEngine {
   }
 
   // ============================================================
-  // 碰撞效果（全身透明度闪烁 500ms，全模式生效）
+  // 碰撞效果（全身染红闪烁 500ms，全模式生效）
   // ============================================================
   triggerCollisionEffect(pigId) {
     this.flashingPigs[pigId] = Date.now();
@@ -683,13 +679,57 @@ class GameplayEngine {
     for (const pid of toDelete) delete this.flashingPigs[pid];
   }
 
-  _getFlashAlpha(pigId) {
+  // 被撞红色遮罩透明度（恒定，500ms 持续）
+  _getFlashOverlayAlpha(pigId) {
     const start = this.flashingPigs[pigId];
-    if (!start) return 1;
+    if (!start) return 0;
     const elapsed = Date.now() - start;
-    if (elapsed > 500) return 1;
-    const t = elapsed / 500;
-    return 0.25 + 0.75 * Math.abs(Math.sin(t * Math.PI * 4));
+    return elapsed <= 500 ? 0.7 : 0;
+  }
+
+  // ============================================================
+  // 通用染色遮罩：离屏画布画猪 → source-atop 染单色 → 叠回目标画布
+  // tint: { color, alpha }   例如 提示 = { color: '#FF80A8', alpha: 0.35 }
+  // masterAlpha: 外层透明度（提示=1，被撞=振荡值 0~1）
+  // ============================================================
+  _renderTintedPigOverlay(targetCtx, pig, screenCx, screenCy, tint, masterAlpha) {
+    if (masterAlpha === undefined) masterAlpha = 1;
+    if (masterAlpha <= 0) return;
+    var pigR = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    if (!pigR) return;
+
+    var totalLen = Math.ceil(pigR.hw * 2 + this.scaledDiameter);
+    var bodyH = Math.ceil(this.scaledDiameter * 1.3);  // 留足容纳耳朵/尾巴
+    var pad = 8;
+    var ocW = totalLen + pad * 2;
+    var ocH = bodyH * 2 + pad * 2;
+    var halfW = ocW / 2, halfH = ocH / 2;
+
+    if (!this._overlayOC) this._overlayOC = wx.createCanvas();
+    var oc = this._overlayOC;
+    if (oc.width !== ocW || oc.height !== ocH) {
+      oc.width = ocW; oc.height = ocH;
+    }
+    var octx = oc.getContext('2d');
+    octx.clearRect(0, 0, ocW, ocH);
+
+    // 离屏画布：画猪（旋转后居中）
+    octx.save();
+    octx.translate(halfW, halfH);
+    octx.rotate(-pigR.rad);
+    this.pigRenderer._drawPigImage(octx, totalLen, pig);
+
+    // source-atop 染色（只染猪像素，镂空跳过背景）
+    octx.globalCompositeOperation = 'source-atop';
+    octx.globalAlpha = tint.alpha;
+    octx.fillStyle = tint.color;
+    octx.fillRect(-halfW, -halfH, ocW, ocH);
+    octx.restore();
+
+    // 叠到目标画布
+    if (masterAlpha < 1) targetCtx.globalAlpha = masterAlpha;
+    targetCtx.drawImage(oc, screenCx - halfW, screenCy - halfH);
+    if (masterAlpha < 1) targetCtx.globalAlpha = 1;
   }
 
   // ============================================================
@@ -933,50 +973,26 @@ class GameplayEngine {
       const isDragPig = this.dragState && (
         this.dragState.pigId === pig.id || pig.id === this.dragState.pendingId
       );
-      // 被撞效果：全身闪烁 500ms（通过透明度实现，全模式生效）
-      const flashAlpha = this._getFlashAlpha(pig.id);
 
-      // 正常绘制
-      if (flashAlpha < 1) ctx.globalAlpha = flashAlpha;
+      // 正常绘制（无透明度变化）
       pr.draw(ctx, pig, off.dx, off.dy);
-      ctx.globalAlpha = 1;
+
+      // 猪的屏幕中心位置（给遮罩层用）
+      var pigR2 = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+      var pigCx = pigR2 ? this.boardOffsetX + pigR2.cx + off.dx : 0;
+      var pigCy = pigR2 ? offY + pigR2.cy + off.dy : 0;
+
+      // 被撞效果：全身染深红，恒定不闪（与提示共用 _renderTintedPigOverlay）
+      var flashAlpha = this._getFlashOverlayAlpha(pig.id);
+      if (flashAlpha > 0) {
+        this._renderTintedPigOverlay(ctx, pig, pigCx, pigCy,
+          { color: '#CC1111', alpha: 0.6 }, flashAlpha);
+      }
 
       // 提示目标染色：仅静止时染，拖拽/旋转中保持原色
       if (options.hintPigId != null && options.hintPigId === pig.id && !isDragPig) {
-        var pigR = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
-        if (pigR) {
-          var totalLen = Math.ceil(pigR.hw * 2 + this.scaledDiameter);
-          var bodyH = Math.ceil(this.scaledDiameter * 1.3);
-          var pad = 8;
-          var ocW = totalLen + pad * 2;
-          var ocH = bodyH * 2 + pad * 2;  // 猪头耳朵/尾巴会超出 bodyH，留足高度
-
-          if (!this._hintOC) this._hintOC = wx.createCanvas();
-          var oc = this._hintOC;
-          oc.width = ocW; oc.height = ocH;
-          var octx = oc.getContext('2d');
-          octx.clearRect(0, 0, ocW, ocH);
-
-          // 离屏画布：画猪（旋转后居中）
-          octx.save();
-          octx.translate(ocW / 2, ocH / 2);
-          octx.rotate(-pigR.rad);
-          if (flashAlpha < 1) octx.globalAlpha = flashAlpha;
-          pr._drawPigImage(octx, totalLen, pig);
-          octx.globalAlpha = 1;
-
-          // 粉色染色（source-atop，离屏背景透明 → 只染猪像素）
-          octx.globalCompositeOperation = 'source-atop';
-          octx.globalAlpha = 0.35;
-          octx.fillStyle = '#FF80A8';
-          octx.fillRect(-ocW / 2, -ocH / 2, ocW, ocH);
-          octx.restore();
-
-          // 叠到主画布（离屏已旋转，只需平移）
-          var pigCx = this.boardOffsetX + pigR.cx + off.dx;
-          var pigCy = offY + pigR.cy + off.dy;
-          ctx.drawImage(oc, pigCx - ocW / 2, pigCy - ocH / 2);
-        }
+        this._renderTintedPigOverlay(ctx, pig, pigCx, pigCy,
+          { color: '#FF80A8', alpha: 0.35 }, 1);
       }
 
       // 拖拽中：头部绿点 + 碰撞区棕色虚线框 + 触控区蓝色虚线框（仅编辑模式）

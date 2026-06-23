@@ -2098,12 +2098,19 @@ class EditorEngine {
 
     // Row 2: boardWidth（棋盘总宽）
     bx = 12;
-    this._drawCompactStepper(bx, boardY2, stepperH, '宽', this.gp.boardWidth, 100, 600,
+    bx = this._drawCompactStepper(bx, boardY2, stepperH, '宽', this.gp.boardWidth, 100, 600,
       (v) => {
         this.gp.boardWidth = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
       }, 5, this._levelSheetStepperBtns);
+
+    // 孔半径（只读）
+    ctx.fillStyle = '#999';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('R:' + Math.round(this.gp.scaledHalfDiameter), bx + 8, boardY2 + stepperH / 2);
 
     // Row 3: boardRate（孔间距/半径比，调节正六边形密度）
     bx = 12;

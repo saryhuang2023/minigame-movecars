@@ -5,7 +5,7 @@
     "oddCols": 5,
     "rows": 11
   },
-  "crownSteps": 65,
+  "crownSteps": 45,
   "pigs": [
     {
       "angle": 270,
@@ -220,14 +220,6 @@
       "tail": 56
     },
     {
-      "angle": 270,
-      "hintAngle": 359,
-      "hintId": 19,
-      "id": 124,
-      "length": 209,
-      "tail": 47
-    },
-    {
       "angle": 210.00000000000003,
       "hintAngle": 91,
       "hintId": 17,
@@ -250,8 +242,16 @@
       "id": 127,
       "length": 211,
       "tail": 77
+    },
+    {
+      "angle": 270,
+      "hintAngle": 359,
+      "hintId": 19,
+      "id": 124,
+      "length": 227,
+      "tail": 47
     }
   ],
   "ready": 1,
-  "version": 26
+  "version": 31
 }
