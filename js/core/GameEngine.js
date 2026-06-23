@@ -307,6 +307,44 @@ class GameEngine {
   }
 
   /**
+   * 画设置按钮 — 与 drawIconBtn 同款圆形底，但图标用矢量齿轮
+   */
+  _drawSettingsBtn(x, y, iconSize) {
+    var C = this.COLORS;
+    var cx = x + iconSize / 2;
+    var cy = y + iconSize / 2;
+
+    // 圆形底（同 drawIconBtn）
+    ctx.save();
+    ctx.shadowColor = 'rgba(236, 72, 153, 0.08)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = C.cardBg;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = C.cardBg;
+    ctx.fill();
+
+    // 矢量齿轮图标
+    settingsPanel.drawGearIcon(ctx, cx, cy, iconSize * 0.4, C.primary);
+
+    // 标签文字
+    ctx.fillStyle = C.textMuted;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('设置', cx, cy + iconSize / 2 + 6);
+
+    return { x: x, y: y, w: iconSize, h: iconSize + 22 };
+  }
+
+  /**
    * 画猪鼻子 Logo
    */
   drawPigNoseLogo(cx, cy, size) {
@@ -625,7 +663,9 @@ class GameEngine {
     var iconSize = 48;
     var bottomY = SCREEN_HEIGHT - iconSize - 56;
     var shareArea = this.drawIconBtn(cx - iconSize - 24, bottomY, iconSize, '📤', '分享');
-    var setArea = this.drawIconBtn(cx + 24, bottomY, iconSize, '⚙️', '设置');
+    // 设置 — 使用矢量齿轮图标
+    var setX = cx + 24;
+    var setArea = this._drawSettingsBtn(setX, bottomY, iconSize);
 
     // 编辑器入口 — 屏幕右下角，连击标题 5 次后显示
     var editArea = null;

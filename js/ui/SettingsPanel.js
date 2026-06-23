@@ -9,7 +9,7 @@ var _open = false;
 var _panel = null;   // { x, y, w, h }
 
 // 底部按钮配置（仅关卡内使用）
-// [{ label, iconType, wide, action }] — iconType: 'house' | 'restart'; action: function()
+// [{ label, icon, wide, action }] — icon 为 emoji 字符（如 '🏠'、'🔄'）; action: function()
 var _buttons = null;
 
 // 开关热区
@@ -246,18 +246,10 @@ function _renderBottomButtons(ctx, cx, btnY) {
     var bxw = isWide ? midW : bw;
 
     if (isWide) {
-      // "继续游戏" — 粉色渐变填充 + 微阴影
-      ctx.save();
-      ctx.shadowColor = 'rgba(236, 72, 153, 0.25)';
-      ctx.shadowBlur = 8;
-      ctx.shadowOffsetY = 2;
+      // "继续游戏" — 粉色填充
+      ctx.fillStyle = '#EC4899';
       _roundRect(ctx, bx, btnY, bxw, bh, 10);
-      var grad = ctx.createLinearGradient(bx, btnY, bx, btnY + bh);
-      grad.addColorStop(0, '#F472B6');
-      grad.addColorStop(1, '#EC4899');
-      ctx.fillStyle = grad;
       ctx.fill();
-      ctx.restore();
 
       // 文字
       ctx.fillStyle = '#FFFFFF';
@@ -266,31 +258,21 @@ function _renderBottomButtons(ctx, cx, btnY) {
       ctx.textBaseline = 'middle';
       ctx.fillText(b.label || '', bx + bxw / 2, btnY + bh / 2);
     } else {
-      // 图标按钮 — 白底 + 微阴影 + 细边框
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.06)';
-      ctx.shadowBlur = 4;
-      ctx.shadowOffsetY = 1;
-      _roundRect(ctx, bx, btnY, bxw, bh, 10);
+      // 图标按钮 — 白底 + 细边框
       ctx.fillStyle = '#FFFFFF';
+      _roundRect(ctx, bx, btnY, bxw, bh, 10);
       ctx.fill();
-      ctx.restore();
-
-      ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
       ctx.lineWidth = 1;
       _roundRect(ctx, bx, btnY, bxw, bh, 10);
       ctx.stroke();
 
-      // 矢量图标
-      var iconCX = bx + bxw / 2;
-      var iconCY = btnY + bh / 2;
-      var iconColor = '#0F172A';
-
-      if (b.iconType === 'house') {
-        drawHouseIcon(ctx, iconCX, iconCY, 20, iconColor);
-      } else if (b.iconType === 'restart') {
-        drawRestartIcon(ctx, iconCX, iconCY, 18, iconColor);
-      }
+      // emoji 图标
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(b.icon || '', bx + bxw / 2, btnY + bh / 2);
     }
 
     // 存位置给点击检测
@@ -371,98 +353,40 @@ function _roundRect(ctx, x, y, w, h, r) {
 // ===== 矢量图标 =====
 
 /**
- * 齿轮图标 — 中央圆盘 + 8 个齿
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} cx, cy — 中心坐标
- * @param {number} r — 外径（不含齿尖）
- * @param {string} color — 填充色
+ * 齿轮图标 — 外圈齿 + 中心圆盘
+ * 不用 destination-out，用白色内圆覆盖实现镂空效果
+ * @param {number} cx, cy — 中心
+ * @param {number} r — 半径（含齿尖）
+ * @param {string} color — 齿轮颜色
  */
 function drawGearIcon(ctx, cx, cy, r, color) {
-  // 中央圆盘
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-
-  // 8 个齿（小圆）
+  var teethR = r * 0.15;       // 齿半径
+  var bodyR = r * 0.78;        // 齿轮主体半径
+  var innerR = r * 0.28;       // 中心孔半径
   var teethCount = 8;
+
+  // 8 个齿（小圆，贴在外圈）
   for (var i = 0; i < teethCount; i++) {
     var angle = Math.PI * 2 * i / teethCount - Math.PI / 2;
-    var tx = cx + Math.cos(angle) * r * 0.74;
-    var ty = cy + Math.sin(angle) * r * 0.74;
+    var tx = cx + Math.cos(angle) * bodyR;
+    var ty = cy + Math.sin(angle) * bodyR;
     ctx.beginPath();
-    ctx.arc(tx, ty, r * 0.24, 0, Math.PI * 2);
+    ctx.arc(tx, ty, teethR, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
   }
 
-  // 中心镂空（destination-out 掏洞，透出背景）
-  ctx.globalCompositeOperation = 'destination-out';
+  // 中心圆盘（覆盖到齿边缘）
   ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
-}
-
-/**
- * 房子图标 — 尖顶 + 屋身 + 门
- */
-function drawHouseIcon(ctx, cx, cy, size, color) {
-  var hs = size / 2;
-
-  // 屋身
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeRect(cx - hs * 0.6, cy + hs * 0.05, hs * 1.2, hs * 0.65);
-
-  // 尖顶
-  ctx.beginPath();
-  ctx.moveTo(cx - hs * 0.7, cy + hs * 0.08);
-  ctx.lineTo(cx, cy - hs * 0.85);
-  ctx.lineTo(cx + hs * 0.7, cy + hs * 0.08);
-  ctx.closePath();
-  ctx.stroke();
-
-  // 门
+  ctx.arc(cx, cy, bodyR, 0, Math.PI * 2);
   ctx.fillStyle = color;
-  ctx.fillRect(cx - hs * 0.18, cy + hs * 0.28, hs * 0.36, hs * 0.42);
-}
+  ctx.fill();
 
-/**
- * 重开图标 — 圆弧箭头
- */
-function drawRestartIcon(ctx, cx, cy, size, color) {
-  var r = size * 0.5;
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
-
-  // 圆弧（约 300°）
+  // 中心孔 — 用按钮底色覆盖，模拟镂空
   ctx.beginPath();
-  ctx.arc(cx, cy, r, -Math.PI * 0.72, Math.PI * 0.72);
-  ctx.stroke();
-
-  // 箭头（右端）
-  var endAngle = Math.PI * 0.72;
-  var ex = cx + r * Math.cos(endAngle);
-  var ey = cy + r * Math.sin(endAngle);
-  var dirAngle = endAngle + Math.PI / 2; // 切线方向
-
-  ctx.beginPath();
-  var aLen = 6;
-  ctx.moveTo(
-    ex + Math.cos(dirAngle) * aLen,
-    ey + Math.sin(dirAngle) * aLen
-  );
-  ctx.lineTo(ex, ey);
-  ctx.lineTo(
-    ex + Math.cos(dirAngle + Math.PI * 0.55) * aLen,
-    ey + Math.sin(dirAngle + Math.PI * 0.55) * aLen
-  );
-  ctx.stroke();
+  ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';  // 匹配 PlayingEngine 顶栏按钮底色
+  ctx.fill();
 }
 
 module.exports = {

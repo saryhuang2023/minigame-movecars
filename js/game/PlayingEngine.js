@@ -217,9 +217,9 @@ class PlayingEngine {
       audio.play('button_click');
       settingsPanel.open({
         buttons: [
-          { icon: '\uD83C\uDFE0', label: '', action: function() { settingsPanel.close(); databus.gameState = 'menu'; } },
-          { icon: '', label: '\u7EE7\u7EED\u6E38\u620F', wide: true, action: function() { settingsPanel.close(); } },
-          { icon: '\uD83D\uDD04', label: '', action: function() { settingsPanel.close(); self.restartLevel(); } },
+          { icon: '🏠', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
+          { label: '继续游戏', wide: true, action: function() { audio.play('button_click'); settingsPanel.close(); } },
+          { icon: '🔄', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
         ]
       });
       return;
@@ -358,12 +358,11 @@ class PlayingEngine {
       }
       this.gp.dragState = null;
 
-      // snap 成功，但只有位置真正变了才计步
+      // snap 成功，但只有猪尾换了孔位才计步
+      // （length/angle 是 snap 算法自动对齐，不算玩家主动移动）
       if (pig && snapResult) {
         var last = ds.lastValid;
-        var moved = (snapResult.tailIndex !== last.tailIndex ||
-                     snapResult.length !== last.length ||
-                     Math.abs(snapResult.angle - last.angle) > 0.5);
+        var moved = (snapResult.tailIndex !== last.tailIndex);
         if (moved) {
           this.steps++;
           databus.currentStep = this.steps;
@@ -439,6 +438,7 @@ class PlayingEngine {
     } else if (result.collidedPigId !== undefined) {
       if (!opts.silentBlock) {
         this.gp.triggerCollisionEffect(result.collidedPigId);
+        audio.play('collide');
       }
     }
   }
@@ -1165,12 +1165,8 @@ _tryClaimMaster() {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this._roundRect(ctx, backX, backY, backW, backH, 18);
     ctx.fill();
-    // 齿轮图标
-    ctx.fillStyle = DARK;
-    ctx.font = '20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('\u2699', backX + backW / 2, backY + backH / 2);
+    // 齿轮图标（矢量绘制）
+    settingsPanel.drawGearIcon(ctx, backX + backW / 2, backY + backH / 2, 17, DARK);
 
     // === 关卡徽章（居中）— 试玩时隐藏 ===
     if (databus.returnState !== 'editor') {
