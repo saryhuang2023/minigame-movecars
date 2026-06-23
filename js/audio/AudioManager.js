@@ -7,8 +7,23 @@ var sfx = require('./SfxPlayer.js');
 var music = require('./MusicPlayer.js');
 
 var _initialized = false;
-var _enabled = true;
 var _initPromise = null;
+
+// 音乐/音效独立开关（持久化到 storage）
+var _musicEnabled = true;
+var _sfxEnabled = true;
+var _lastMusicScene = null;  // 记录最后播放的场景，用于恢复
+
+(function _loadPrefs() {
+  try {
+    var me = wx.getStorageSync('audio_music_enabled');
+    if (me === false || me === 'false') _musicEnabled = false;
+  } catch (e) {}
+  try {
+    var se = wx.getStorageSync('audio_sfx_enabled');
+    if (se === false || se === 'false') _sfxEnabled = false;
+  } catch (e) {}
+})();
 
 // ===== 内部 =====
 
@@ -49,7 +64,7 @@ function init(onProgress) {
  * @param {Object} opts - { rate: number } 可选变调
  */
 function play(eventName, opts) {
-  if (!_enabled) return;
+  if (!_sfxEnabled) return;
   _ensureInit();
   console.log('[Audio]  play   :', eventName, opts ? JSON.stringify(opts) : '');
   sfx.play(eventName, opts);
@@ -61,7 +76,7 @@ function play(eventName, opts) {
  * @returns {number} 句柄
  */
 function playLooped(eventName) {
-  if (!_enabled) return -1;
+  if (!_sfxEnabled) return -1;
   _ensureInit();
   console.log('[Audio]  loop   :', eventName);
   return sfx.playLooped(eventName);
@@ -80,7 +95,8 @@ function stop(handle) {
  * @param {string} scene - 'menu' | 'gameplay' | 'editor'
  */
 function playMusic(scene) {
-  if (!_enabled) return;
+  _lastMusicScene = scene;
+  if (!_musicEnabled) return;
   _ensureInit();
 
   // 场景 → 音轨映射
@@ -108,12 +124,42 @@ function stopMusic() {
 }
 
 /**
- * 全局静音开关
+ * 音乐开关
  */
-function setEnabled(enabled) {
-  _enabled = enabled;
+function setMusicEnabled(enabled) {
+  _musicEnabled = enabled;
   music.setEnabled(enabled);
-  // 静音只阻止新播放，不杀正在播的音效
+  try { wx.setStorageSync('audio_music_enabled', enabled); } catch (e) {}
+  if (enabled && _lastMusicScene) {
+    // 切回场景对应的 BGM
+    var trackMap = {
+      'menu': 'explore',
+      'levelSelect': 'explore',
+      'playing': 'level',
+      'editor': 'explore',
+    };
+    var track = trackMap[_lastMusicScene] || null;
+    if (track) music.play(track);
+  }
+}
+
+function isMusicEnabled() {
+  return _musicEnabled;
+}
+
+/**
+ * 音效开关
+ */
+function setSfxEnabled(enabled) {
+  _sfxEnabled = enabled;
+  try { wx.setStorageSync('audio_sfx_enabled', enabled); } catch (e) {}
+  if (!enabled) {
+    // 关音效不杀已播放的，只阻止新的
+  }
+}
+
+function isSfxEnabled() {
+  return _sfxEnabled;
 }
 
 /**
@@ -172,7 +218,10 @@ var AudioManager = {
   stop: stop,
   playMusic: playMusic,
   stopMusic: stopMusic,
-  setEnabled: setEnabled,
+  setMusicEnabled: setMusicEnabled,
+  isMusicEnabled: isMusicEnabled,
+  setSfxEnabled: setSfxEnabled,
+  isSfxEnabled: isSfxEnabled,
   onSceneChange: onSceneChange,
   onHide: onHide,
   onShow: onShow,

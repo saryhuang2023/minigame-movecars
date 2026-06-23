@@ -3,6 +3,7 @@
 const databus = require('../databus.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
+const settingsPanel = require('../ui/SettingsPanel.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 const { drawPigIcon } = require('../render/PigIconRenderer.js');
@@ -170,6 +171,12 @@ class PlayingEngine {
     if (!t) return;
 
     if (e.type === 'touchstart') {
+      // 设置面板打开时，所有触控由面板处理
+      if (settingsPanel.isOpen()) {
+        settingsPanel.handleTouch(t.x, t.y);
+        return;
+      }
+
       // 通关后、结算面板尚未显示期间：屏蔽一切触控（防止误点返回等）
       if (this._victory && !this._showVictoryPanel) return;
 
@@ -191,20 +198,30 @@ class PlayingEngine {
       }
       this.onTouchStart(t.x, t.y);
     } else if (e.type === 'touchmove') {
+      if (settingsPanel.isOpen()) return;
       if (this._victory && !this._showVictoryPanel) return;
       this.onTouchMove(t.x, t.y);
     } else if (e.type === 'touchend') {
+      if (settingsPanel.isOpen()) return;
       if (this._victory && !this._showVictoryPanel) return;
       this.onTouchEnd(t.x, t.y);
     }
   }
 
   onTouchStart(x, y) {
-    // 顶栏按钮
+    var self = this;
+
+    // 顶栏设置按钮
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
       audio.play('button_click');
-      databus.gameState = databus.returnState || 'levelSelect';
+      settingsPanel.open({
+        buttons: [
+          { icon: '\uD83C\uDFE0', label: '', action: function() { settingsPanel.close(); databus.gameState = 'menu'; } },
+          { icon: '', label: '\u7EE7\u7EED\u6E38\u620F', wide: true, action: function() { settingsPanel.close(); } },
+          { icon: '\uD83D\uDD04', label: '', action: function() { settingsPanel.close(); self.restartLevel(); } },
+        ]
+      });
       return;
     }
 
@@ -1099,6 +1116,9 @@ _tryClaimMaster() {
     if (this._victory && this._showVictoryPanel) {
       this.renderVictoryOverlay();
     }
+
+    // 7. 设置面板（最顶层）
+    settingsPanel.render(ctx);
   }
 
   _drawBoardCard() {
@@ -1135,7 +1155,7 @@ _tryClaimMaster() {
     const barY = safeTop;
     const barW = this._boardCardW;
 
-    // === 返回按钮（左侧）===
+    // === 设置按钮（左上角，齿轮图标）===
     const backW = 49, backH = 47;
     const backX = PADDING;
     const backY = PADDING;
@@ -1145,12 +1165,12 @@ _tryClaimMaster() {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this._roundRect(ctx, backX, backY, backW, backH, 18);
     ctx.fill();
-    // 箭头（深色矢量 ←）
+    // 齿轮图标
     ctx.fillStyle = DARK;
-    ctx.font = 'bold 18px sans-serif';
+    ctx.font = '20px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('\u2190', backX + backW / 2, backY + backH / 2);
+    ctx.fillText('\u2699', backX + backW / 2, backY + backH / 2);
 
     // === 关卡徽章（居中）— 试玩时隐藏 ===
     if (databus.returnState !== 'editor') {

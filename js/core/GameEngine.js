@@ -3,6 +3,7 @@
 const databus = require('../databus.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
+const settingsPanel = require('../ui/SettingsPanel.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
@@ -449,6 +450,13 @@ class GameEngine {
     this.input.on('menu', (e) => {
       if (e.type === 'touchstart' && e.touches[0]) {
         var t = e.touches[0];
+
+        // 设置面板打开时，所有触控由面板处理
+        if (settingsPanel.isOpen()) {
+          settingsPanel.handleTouch(t.x, t.y);
+          return;
+        }
+
         var inTitle = _inTitleArea(t);
 
         // 标题连击检测（5 次解锁编辑器入口 — 点击猪鼻Logo区域）
@@ -635,7 +643,7 @@ class GameEngine {
         action: function() { wx.shareAppMessage({ title: '猪了个猪呀，快来一起推猪猪！' }); }
       },
       { x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
-        action: function() { wx.showToast({ title: '设置', icon: 'none', duration: 1000 }); }
+        action: function() { settingsPanel.open(); }
       }
     ];
 
@@ -646,6 +654,9 @@ class GameEngine {
         action: function() { databus.gameState = 'editor'; }
       });
     }
+
+    // 设置面板（最顶层）
+    settingsPanel.render(ctx);
   }
 
   // ========== 主循环 ==========
