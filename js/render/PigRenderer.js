@@ -223,52 +223,29 @@ class PigRenderer {
     ctx.fillStyle = '#00C853';
     ctx.fill();
   }
-  // ---- 碰撞区棕色虚线框 ----
+  // ---- 碰撞区空心虚线外轮廓（胶囊体：两端半圆 + 两条平行边） ----
   drawCollisionBox(ctx, pig, offDx, offDy) {
     const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
     if (!r) return;
-    const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
-    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
-    const hw = r.collisionHw;
-    const hh = r.collisionHh;
+    const bx = this.e.boardOffsetX + (offDx || 0);
+    const by = this.e.topBarH + this.e.boardOffsetY + (offDy || 0);
+    const cr = r.collisionCapRadius || r.capRadius;
+    const angle = Math.atan2(r.capHeadY - r.capTailY, r.capHeadX - r.capTailX);
+    const perpX = -Math.sin(angle);
+    const perpY = Math.cos(angle);
 
     ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-r.rad);
-
     ctx.setLineDash([6, 4]);
     ctx.strokeStyle = '#8B6914';
     ctx.lineWidth = 2;
-    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
-
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  // ---- 触控区蓝色虚线框（比碰撞区宽，头部额外延伸） ----
-  drawTouchBox(ctx, pig, offDx, offDy) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    if (!r) return;
-    const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
-    const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
-    const hw = r.touchHw;
-    const hh = r.touchHh;
-    const headExt = r.touchHeadExt;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-r.rad);
-
-    // 触控区矩形：尾部端 hw，头部端 hw + headExt（非对称，需分两半）
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = '#4A90D9';
-    ctx.lineWidth = 1.5;
-
-    // 尾部半边（-hw → 0）
-    ctx.strokeRect(-hw, -hh, hw, hh * 2);
-    // 头部半边（0 → hw + headExt）
-    ctx.strokeRect(0, -hh, hw + headExt, hh * 2);
-
+    ctx.beginPath();
+    // 尾部底端 → 尾部左半圆（底→顶，逆时针） → 头部顶边 → 头部右半圆（顶→底） → 尾部底边闭合
+    ctx.moveTo(bx + r.capTailX + perpX * cr, by + r.capTailY + perpY * cr);
+    ctx.arc(bx + r.capTailX, by + r.capTailY, cr, angle + Math.PI / 2, angle - Math.PI / 2, false);
+    ctx.lineTo(bx + r.capHeadX - perpX * cr, by + r.capHeadY - perpY * cr);
+    ctx.arc(bx + r.capHeadX, by + r.capHeadY, cr, angle - Math.PI / 2, angle + Math.PI / 2, false);
+    ctx.closePath();
+    ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
   }

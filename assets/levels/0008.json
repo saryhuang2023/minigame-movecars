@@ -1,0 +1,219 @@
+{
+  "board": {
+    "boardRate": 2.9,
+    "boardWidth": 365,
+    "oddCols": 5,
+    "rows": 11
+  },
+  "crownSteps": 60,
+  "pigs": [
+    {
+      "angle": 90,
+      "id": 188,
+      "length": 125,
+      "tail": 10
+    },
+    {
+      "angle": 29.999999999999996,
+      "hintAngle": 360,
+      "hintId": 6,
+      "id": 189,
+      "length": 268,
+      "tail": 7
+    },
+    {
+      "angle": 30.000000000000004,
+      "hintAngle": 359,
+      "hintId": 8,
+      "id": 190,
+      "length": 275,
+      "tail": 6
+    },
+    {
+      "angle": 29.999999999999996,
+      "hintAngle": 358,
+      "hintId": 10,
+      "id": 191,
+      "length": 266,
+      "tail": 5
+    },
+    {
+      "angle": 29.999999999999986,
+      "hintAngle": 89,
+      "hintId": 21,
+      "id": 192,
+      "length": 64,
+      "tail": 4
+    },
+    {
+      "angle": 30.000000000000014,
+      "hintAngle": 330,
+      "hintId": 13,
+      "id": 193,
+      "length": 67,
+      "tail": 24
+    },
+    {
+      "angle": 330,
+      "hintAngle": 330,
+      "hintId": 15,
+      "id": 194,
+      "length": 66,
+      "tail": 2
+    },
+    {
+      "angle": 330,
+      "hintAngle": 330,
+      "hintId": 16,
+      "id": 195,
+      "length": 68,
+      "tail": 1
+    },
+    {
+      "angle": 330,
+      "hintAngle": 330,
+      "hintId": 18,
+      "id": 196,
+      "length": 138,
+      "tail": 0
+    },
+    {
+      "angle": 330,
+      "hintAngle": 330,
+      "hintId": 19,
+      "id": 197,
+      "length": 63,
+      "tail": 21
+    },
+    {
+      "angle": 209.99999999999997,
+      "hintAngle": 209.99999999999997,
+      "hintId": 17,
+      "id": 198,
+      "length": 265,
+      "tail": 63
+    },
+    {
+      "angle": 209.99999999999997,
+      "id": 199,
+      "length": 64,
+      "tail": 84
+    },
+    {
+      "angle": 150.00000000000003,
+      "hintAngle": 211,
+      "hintId": 14,
+      "id": 200,
+      "length": 125,
+      "tail": 86
+    },
+    {
+      "angle": 150.00000000000003,
+      "hintAngle": 210,
+      "hintId": 12,
+      "id": 201,
+      "length": 200,
+      "tail": 87
+    },
+    {
+      "angle": 150.00000000000003,
+      "hintAngle": 185,
+      "hintId": 11,
+      "id": 202,
+      "length": 267,
+      "tail": 88
+    },
+    {
+      "angle": 150.00000000000003,
+      "hintAngle": 189,
+      "hintId": 9,
+      "id": 203,
+      "length": 198,
+      "tail": 89
+    },
+    {
+      "angle": 149.99999999999997,
+      "hintAngle": 191,
+      "hintId": 7,
+      "id": 204,
+      "length": 199,
+      "tail": 90
+    },
+    {
+      "angle": 209.99999999999997,
+      "hintAngle": 209.99999999999997,
+      "hintId": 4,
+      "id": 205,
+      "length": 203,
+      "tail": 58
+    },
+    {
+      "angle": 270,
+      "hintAngle": 270,
+      "hintId": 3,
+      "id": 206,
+      "length": 68,
+      "tail": 18
+    },
+    {
+      "angle": 150.00000000000003,
+      "hintAngle": 30,
+      "hintId": 2,
+      "id": 207,
+      "length": 62,
+      "tail": 31
+    },
+    {
+      "angle": 30.000000000000014,
+      "hintAngle": 30.000000000000014,
+      "hintId": 20,
+      "id": 208,
+      "length": 273,
+      "tail": 30
+    },
+    {
+      "angle": 29.999999999999993,
+      "hintAngle": 7,
+      "hintId": 5,
+      "id": 209,
+      "length": 205,
+      "tail": 39
+    },
+    {
+      "angle": 30.000000000000014,
+      "hintAngle": 30.000000000000014,
+      "hintId": 1,
+      "id": 210,
+      "length": 267,
+      "tail": 51
+    },
+    {
+      "angle": 210.00000000000003,
+      "id": 211,
+      "length": 63,
+      "tail": 92
+    },
+    {
+      "angle": 29.99999999999996,
+      "id": 212,
+      "length": 70,
+      "tail": 52
+    },
+    {
+      "angle": 29.99999999999996,
+      "id": 213,
+      "length": 66,
+      "tail": 73
+    },
+    {
+      "angle": 90,
+      "hintAngle": 90,
+      "hintId": 22,
+      "id": 214,
+      "length": 64,
+      "tail": 94
+    }
+  ],
+  "ready": 1,
+  "version": 23
+}

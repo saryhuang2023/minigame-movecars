@@ -4,6 +4,7 @@
 
 const { ctx, canvas, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const { PigRenderer, roundRect, AnimType } = require('../render/PigRenderer.js');
+const databus = require('../databus');
 
 // ========== 常量 ==========
 // Claymorphism 风格：格子 = 棋盘上的凹陷引导，非独立视觉元素
@@ -192,9 +193,10 @@ class GameplayEngine {
     const capRadius = this.scaledDiameter * 2 / 3;
     // 猪间碰撞半径 = 孔直径 * 1/3（保持窄，避免猪之间轻易碰撞）
     const collisionCapRadius = this.scaledDiameter / 3;
-    // 胶囊线段端点（尾部孔心 → 头部正方形中心）
-    const capTailX = tail.x;
-    const capTailY = tail.y;
+    // 胶囊线段端点：尾部收缩孔直径的 1/3（减少尾部碰撞区）
+    const tailShrink = this.scaledDiameter / 3;
+    const capTailX = tail.x + tailShrink * cosL;
+    const capTailY = tail.y + tailShrink * sinL;
     const capHeadX = cx + hw * cosL;
     const capHeadY = cy + hw * sinL;
     // 触控区：半高 = 孔半径 × 1.5（孔直径的1.5倍宽，方便手指点选）
@@ -202,9 +204,11 @@ class GameplayEngine {
     // 触控区头部额外延伸 = 1/4 孔直径
     const touchHeadExt = this.scaledHalfDiameter * 0.5;
     // 保留 OBB 数据供触控和兼容代码使用
-    const collisionHw = hw + this.scaledHalfDiameter;
+    const collisionHw = hw + collisionCapRadius - tailShrink / 2;
     const collisionHh = this.scaledDiameter / 3;  // 猪间碰撞半径保持窄，不受占用半径影响
-    return { cx, cy, hw, collisionHw, collisionHh, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,
+    const collisionCx = cx + (tailShrink / 2) * cosL;
+    const collisionCy = cy + (tailShrink / 2) * sinL;
+    return { cx, cy, hw, collisionHw, collisionHh, collisionCx, collisionCy, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,
       capTailX, capTailY, capHeadX, capHeadY, capRadius, collisionCapRadius };
   }
 
@@ -690,7 +694,7 @@ class GameplayEngine {
   // ============================================================
   // 通用染色遮罩：离屏画布画猪 → source-atop 染单色 → 叠回目标画布
   // tint: { color, alpha }   例如 提示 = { color: '#FF80A8', alpha: 0.35 }
-  // masterAlpha: 外层透明度（提示=1，被撞=振荡值 0~1）
+  // masterAlpha: 外层透明度（提示=1，被撞=恒定 0.7）
   // ============================================================
   _renderTintedPigOverlay(targetCtx, pig, screenCx, screenCy, tint, masterAlpha) {
     if (masterAlpha === undefined) masterAlpha = 1;
@@ -717,6 +721,24 @@ class GameplayEngine {
     octx.save();
     octx.translate(halfW, halfH);
     octx.rotate(-pigR.rad);
+
+    // 风筝抖动（与 PigRenderer.draw() 保持一致，非编辑模式生效）
+    if (databus.gameState !== 'editor') {
+      const halfLen = totalLen / 2;
+      const now = Date.now();
+      // 身体摆动：轴心在尾部往前 25% 处
+      const bodyPivotOff = halfLen * 0.75;
+      const bodyWobble = Math.sin(now * 0.01 + pig.id * 1.7) * 0.005;
+      octx.translate(-bodyPivotOff, 0);
+      octx.rotate(bodyWobble);
+      octx.translate(bodyPivotOff, 0);
+      // 尾部甩动
+      const tailWobble = Math.sin(now * 0.005 + pig.id * 2.3) * 0.015;
+      octx.translate(-halfLen, 0);
+      octx.rotate(tailWobble);
+      octx.translate(halfLen, 0);
+    }
+
     this.pigRenderer._drawPigImage(octx, totalLen, pig);
 
     // source-atop 染色（只染猪像素，镂空跳过背景）
@@ -995,11 +1017,10 @@ class GameplayEngine {
           { color: '#FF80A8', alpha: 0.35 }, 1);
       }
 
-      // 拖拽中：头部绿点 + 碰撞区棕色虚线框 + 触控区蓝色虚线框（仅编辑模式）
+      // 拖拽中：头部绿点 + 碰撞区空心虚线轮廓（仅编辑模式）
       if (options.showCollisionBox && isDragPig) {
         pr.drawHeadDot(ctx, pig, off.dx, off.dy);
         pr.drawCollisionBox(ctx, pig, off.dx, off.dy);
-        pr.drawTouchBox(ctx, pig, off.dx, off.dy);
       }
     }
 
@@ -1022,12 +1043,11 @@ class GameplayEngine {
       pr.draw(ctx, fp, off.dx, off.dy, AnimType.ESCAPE);
     }
 
-    // 选中时：碰撞区棕色虚线框 + 触控区蓝色虚线框 + 头部绿色圆点（仅编辑模式，无拖拽时）
+    // 选中时：碰撞区空心虚线轮廓 + 头部绿色圆点（仅编辑模式，无拖拽时）
     if (options.showCollisionBox && options.showSelection && this.selectedPigId != null && !this.dragState) {
       const pig = this.pigs.find(p => p.id === this.selectedPigId);
       if (pig) {
         pr.drawCollisionBox(ctx, pig, 0, 0);
-        pr.drawTouchBox(ctx, pig, 0, 0);
         pr.drawHeadDot(ctx, pig, 0, 0);
       }
     }
