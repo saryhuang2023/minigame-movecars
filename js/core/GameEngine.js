@@ -535,9 +535,13 @@ class GameEngine {
         }
       }
 
-      // 手抬起或移动过远 → 取消长按
-      if (e.type === 'touchend' || e.type === 'touchmove') {
+      // 手抬起 → 取消长按；移动仅当手指离开标题区域时才取消（真机电容屏有微抖动，不打断区域内长按）
+      if (e.type === 'touchend') {
         this._cancelTitleLongPress();
+      } else if (e.type === 'touchmove' && e.touches[0]) {
+        if (!_inTitleArea(e.touches[0])) {
+          this._cancelTitleLongPress();
+        }
       }
     });
   }

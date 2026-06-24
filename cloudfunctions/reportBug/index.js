@@ -56,6 +56,12 @@ exports.main = async (event, context) => {
     report.meta.lastSeen = now;
     report.meta.dupCount = 1;
 
+    // 管理后台字段
+    report.status = 'open';       // open | investigating | resolved | ignored
+    report.adminNote = '';
+    report.resolvedAt = null;
+    report.resolvedBy = '';
+
     var res = await db.collection('bug_reports').add({ data: report });
     return { code: 0, msg: 'created', id: res._id };
   } catch (err) {

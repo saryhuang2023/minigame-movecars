@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bug 管理后台 — 猪了个猪呀</title>
+<style>
+/* ====== Reset & Base ====== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #0d1117;
+  color: #c9d1d9;
+  min-height: 100vh;
+  line-height: 1.5;
+}
+a { color: #58a6ff; text-decoration: none; }
+button { cursor: pointer; font: inherit; border: none; outline: none; }
+input, select { font: inherit; outline: none; }
+
+/* ====== Login ====== */
+#login-screen {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 2rem;
+}
+.login-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 2.5rem 2rem;
+  width: 100%; max-width: 400px;
+  text-align: center;
+}
+.login-card h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: .5rem; color: #f0f6fc; }
+.login-card p { color: #8b949e; margin-bottom: 1.5rem; font-size: .9rem; }
+.login-card input {
+  width: 100%; padding: .7rem 1rem;
+  background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+  color: #c9d1d9; font-size: .95rem; text-align: center; letter-spacing: .1em;
+  transition: border-color .2s;
+}
+.login-card input:focus { border-color: #1f6feb; }
+.login-card .error { color: #f85149; font-size: .85rem; margin-top: .75rem; }
+.login-card button {
+  margin-top: 1rem; width: 100%; padding: .7rem;
+  background: #238636; color: #fff; border-radius: 8px;
+  font-size: .95rem; font-weight: 500; transition: background .2s;
+}
+.login-card button:hover { background: #2ea043; }
+
+/* ====== Layout ====== */
+#app-screen { display: none; max-width: 1280px; margin: 0 auto; padding: 1.5rem; }
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;
+}
+header h1 { font-size: 1.35rem; font-weight: 600; color: #f0f6fc; }
+.header-actions { display: flex; gap: .75rem; align-items: center; }
+.header-actions button {
+  padding: .45rem 1rem; border-radius: 6px; font-size: .85rem;
+  background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+  transition: background .15s;
+}
+.header-actions button:hover { background: #30363d; }
+
+/* ====== Stats ====== */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .75rem; margin-bottom: 1.5rem;
+}
+.stat-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+  padding: 1rem 1.15rem;
+}
+.stat-card .label { font-size: .78rem; color: #8b949e; text-transform: uppercase; letter-spacing: .05em; }
+.stat-card .value { font-size: 1.6rem; font-weight: 700; color: #f0f6fc; margin-top: .25rem; font-variant-numeric: tabular-nums; }
+.stat-card .sub { font-size: .75rem; color: #8b949e; margin-top: .15rem; }
+.stat-card.highlight { border-color: #1f6feb; }
+
+/* ====== Filters ====== */
+.filters-bar {
+  display: flex; gap: .75rem; flex-wrap: wrap; align-items: center;
+  margin-bottom: 1rem; padding: .85rem 1rem;
+  background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+}
+.filter-group { display: flex; align-items: center; gap: .4rem; }
+.filter-group label { font-size: .8rem; color: #8b949e; white-space: nowrap; }
+.filter-group select, .filter-group input {
+  padding: .4rem .65rem; border-radius: 6px; font-size: .82rem;
+  background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
+}
+.filter-group select:focus, .filter-group input:focus { border-color: #1f6feb; }
+.filter-group input[type="date"] { color-scheme: dark; width: 130px; }
+.btn-refresh {
+  padding: .4rem .9rem; border-radius: 6px; font-size: .82rem;
+  background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+  margin-left: auto; transition: background .15s;
+}
+.btn-refresh:hover { background: #30363d; }
+
+/* ====== Table ====== */
+.table-wrap { overflow-x: auto; margin-bottom: 1rem; border-radius: 10px; border: 1px solid #30363d; }
+table {
+  width: 100%; border-collapse: collapse;
+  background: #161b22; font-size: .85rem;
+}
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+  background: #1c2128; text-align: left; padding: .65rem .85rem;
+  font-weight: 600; font-size: .78rem; color: #8b949e;
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+  border-bottom: 2px solid #30363d; cursor: pointer; user-select: none;
+  transition: color .15s;
+}
+th:hover { color: #c9d1d9; }
+th.sorted { color: #58a6ff; }
+td { padding: .6rem .85rem; border-bottom: 1px solid #21262d; white-space: nowrap; }
+tr:hover td { background: #1a1f28; }
+tr:last-child td { border-bottom: none; }
+
+/* Status badges */
+.badge {
+  display: inline-block; padding: .18rem .55rem; border-radius: 10px;
+  font-size: .75rem; font-weight: 600; letter-spacing: .02em;
+}
+.badge-open { background: rgba(31,111,235,.18); color: #58a6ff; }
+.badge-investigating { background: rgba(210,153,34,.18); color: #d29922; }
+.badge-resolved { background: rgba(35,134,54,.18); color: #3fb950; }
+.badge-ignored { background: rgba(139,148,158,.15); color: #8b949e; }
+
+.badge-crash { background: rgba(248,81,73,.18); color: #f85149; }
+.badge-unhandledRejection { background: rgba(219,109,40,.18); color: #db6d28; }
+.badge-lag { background: rgba(210,153,34,.18); color: #d29922; }
+.badge-user { background: rgba(88,166,255,.18); color: #58a6ff; }
+
+.mono { font-family: "SF Mono", "Cascadia Code", "Fira Code", monospace; font-size: .78rem; }
+.truncate { max-width: 260px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+.clickable { color: #58a6ff; cursor: pointer; }
+.clickable:hover { text-decoration: underline; }
+td.empty { text-align: center; color: #8b949e; padding: 3rem; }
+td.empty .icon { font-size: 2rem; margin-bottom: .5rem; display: block; }
+
+/* ====== Status select inline ====== */
+.status-select {
+  padding: .25rem .5rem; border-radius: 6px; font-size: .78rem;
+  background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
+  min-width: 110px;
+}
+.status-select:focus { border-color: #1f6feb; }
+
+/* ====== Pagination ====== */
+.pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: .5rem; padding: .75rem 0;
+}
+.pagination button {
+  padding: .4rem .85rem; border-radius: 6px; font-size: .82rem;
+  background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+  transition: background .15s;
+}
+.pagination button:hover:not(:disabled) { background: #30363d; }
+.pagination button:disabled { opacity: .4; cursor: default; }
+.pagination .page-info { font-size: .82rem; color: #8b949e; }
+
+/* ====== Modal ====== */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: rgba(1,4,9,.75); align-items: center; justify-content: center;
+  padding: 1.5rem;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+  width: 100%; max-width: 720px; max-height: 85vh; overflow-y: auto;
+  animation: modalIn .2s cubic-bezier(.16,1,.3,1);
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(.96) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.25rem; border-bottom: 1px solid #21262d;
+  position: sticky; top: 0; background: #161b22; z-index: 1;
+}
+.modal-header h2 { font-size: 1.1rem; font-weight: 600; color: #f0f6fc; }
+.modal-close {
+  width: 32px; height: 32px; border-radius: 6px; background: transparent;
+  color: #8b949e; font-size: 1.2rem; display: flex; align-items: center;
+  justify-content: center; transition: background .15s;
+}
+.modal-close:hover { background: #21262d; }
+.modal-body { padding: 1.25rem; }
+.modal-section { margin-bottom: 1.25rem; }
+.modal-section:last-child { margin-bottom: 0; }
+.modal-section h3 {
+  font-size: .8rem; font-weight: 600; color: #8b949e;
+  text-transform: uppercase; letter-spacing: .04em; margin-bottom: .5rem;
+}
+.modal-field {
+  display: flex; gap: .75rem; padding: .4rem 0; font-size: .85rem;
+}
+.modal-field .key { color: #8b949e; min-width: 90px; flex-shrink: 0; }
+.modal-field .val { color: #c9d1d9; word-break: break-all; }
+
+pre.log-block {
+  background: #0d1117; border: 1px solid #21262d; border-radius: 8px;
+  padding: .85rem; font-size: .75rem; line-height: 1.55;
+  max-height: 300px; overflow: auto; white-space: pre-wrap;
+  word-break: break-all; color: #8b949e;
+}
+
+/* ====== Toast ====== */
+.toast {
+  position: fixed; top: 1.25rem; right: 1.25rem; z-index: 200;
+  padding: .7rem 1.2rem; border-radius: 8px; font-size: .85rem;
+  animation: toastIn .25s cubic-bezier(.16,1,.3,1);
+  pointer-events: none; opacity: 0; transition: opacity .3s;
+}
+.toast.show { opacity: 1; }
+.toast.success { background: #1a3a24; color: #3fb950; border: 1px solid #238636; }
+.toast.error { background: #3a1a1a; color: #f85149; border: 1px solid #da3633; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ====== Loading ====== */
+.spinner {
+  display: inline-block; width: 18px; height: 18px; border: 2px solid #30363d;
+  border-top-color: #58a6ff; border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(1,4,9,.4); pointer-events: all;
+}
+.loading-overlay .spinner { width: 36px; height: 36px; border-width: 3px; }
+
+@media (max-width: 768px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .filters-bar { flex-direction: column; align-items: flex-start; }
+  .btn-refresh { margin-left: 0; }
+  td, th { padding: .45rem .55rem; font-size: .78rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ====== Login Screen ====== -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>Bug 管理后台</h1>
+    <p>请输入管理密钥以继续</p>
+    <input type="password" id="key-input" placeholder="管理密钥" autofocus>
+    <div class="error" id="login-error"></div>
+    <button onclick="doLogin()">进入后台</button>
+  </div>
+</div>
+
+<!-- ====== App Screen ====== -->
+<div id="app-screen">
+  <header>
+    <h1>Bug Reports</h1>
+    <div class="header-actions">
+      <span style="font-size:.82rem;color:#8b949e;" id="last-refresh"></span>
+      <button onclick="logout()">退出</button>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid"></div>
+
+  <!-- Filters -->
+  <div class="filters-bar">
+    <div class="filter-group">
+      <label>触发器</label>
+      <select id="filter-trigger" onchange="applyFilters()">
+        <option value="">全部</option>
+        <option value="crash">crash</option>
+        <option value="unhandledRejection">unhandledRejection</option>
+        <option value="lag">lag</option>
+        <option value="user">user</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>状态</label>
+      <select id="filter-status" onchange="applyFilters()">
+        <option value="">全部</option>
+        <option value="open">open</option>
+        <option value="investigating">investigating</option>
+        <option value="resolved">resolved</option>
+        <option value="ignored">ignored</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>从</label>
+      <input type="date" id="filter-dateFrom" onchange="applyFilters()">
+    </div>
+    <div class="filter-group">
+      <label>到</label>
+      <input type="date" id="filter-dateTo" onchange="applyFilters()">
+    </div>
+    <div class="filter-group">
+      <label>排序</label>
+      <select id="filter-sort" onchange="applyFilters()">
+        <option value="newest">最新优先</option>
+        <option value="oldest">最早优先</option>
+        <option value="dupCount">重复最多</option>
+      </select>
+    </div>
+    <button class="btn-refresh" onclick="refresh()">刷新</button>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>触发器</th>
+          <th>状态</th>
+          <th>错误信息</th>
+          <th>设备</th>
+          <th>关卡</th>
+          <th>重复</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="bug-table-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<!-- ====== Detail Modal ====== -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Bug 详情</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ====== Toast ====== -->
+<div class="toast" id="toast"></div>
+
+<!-- ====== Loading ====== -->
+<div class="loading-overlay" id="loading-overlay" style="display:none;">
+  <div class="spinner"></div>
+</div>
+
+<script>
+// ====== Config ======
+const API_BASE = 'https://cloud1-4gmoyu9g16089510.service.tcloudbase.com/adminBugs';
+const ADMIN_KEY_KEY = 'bug_admin_key';
+
+// ====== State ======
+var adminKey = '';
+var currentPage = 1;
+var totalPages = 1;
+var stats = null;
+
+// ====== Init ======
+(function init() {
+  // Check for stored key
+  var stored = sessionStorage.getItem(ADMIN_KEY_KEY);
+  if (stored) {
+    adminKey = stored;
+    showApp();
+    refresh();
+  }
+
+  // Enter key on Enter
+  document.getElementById('key-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  // Close modal on overlay click
+  document.getElementById('detail-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // Close modal on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+})();
+
+// ====== Login ======
+function doLogin() {
+  var key = document.getElementById('key-input').value.trim();
+  if (!key) {
+    document.getElementById('login-error').textContent = '请输入密钥';
+    return;
+  }
+
+  // Quick validate by fetching stats
+  showLoading();
+  fetchAPI('stats', {}, true).then(function(res) {
+    hideLoading();
+    if (res.code === 0) {
+      adminKey = key;
+      sessionStorage.setItem(ADMIN_KEY_KEY, key);
+      document.getElementById('login-error').textContent = '';
+      showApp();
+      refresh();
+    } else {
+      document.getElementById('login-error').textContent = res.msg || '密钥错误';
+    }
+  }).catch(function(err) {
+    hideLoading();
+    document.getElementById('login-error').textContent = '网络错误: ' + err.message;
+  });
+}
+
+function logout() {
+  sessionStorage.removeItem(ADMIN_KEY_KEY);
+  adminKey = '';
+  document.getElementById('app-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('key-input').value = '';
+}
+
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'block';
+}
+
+// ====== API ======
+async function fetchAPI(action, params, noToast) {
+  params = params || {};
+  params.action = action;
+  params.key = adminKey;
+
+  var url = API_BASE;
+  var options = { method: 'GET', headers: { 'Content-Type': 'application/json' } };
+
+  if (action === 'updateStatus') {
+    options.method = 'POST';
+    options.body = JSON.stringify(params);
+  } else {
+    var qs = Object.keys(params).map(function(k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+    url += '?' + qs;
+  }
+
+  var res = await fetch(url, options);
+  if (!res.ok) {
+    var text = await res.text();
+    throw new Error(text || res.statusText);
+  }
+  var data = await res.json();
+  if (!noToast && data.code !== 0) {
+    showToast(data.msg || '请求失败', 'error');
+  }
+  return data;
+}
+
+// ====== Refresh ======
+function refresh() {
+  currentPage = 1;
+  loadStats();
+  loadList();
+}
+
+function applyFilters() {
+  currentPage = 1;
+  loadList();
+}
+
+function loadStats() {
+  fetchAPI('stats', {}, true).then(function(res) {
+    if (res.code === 0) {
+      stats = res.data;
+      renderStats(stats);
+    }
+  }).catch(function(err) {
+    console.error('Stats error:', err);
+  });
+}
+
+function loadList() {
+  showLoading();
+  var params = {
+    page: currentPage,
+    pageSize: 25,
+    sort: document.getElementById('filter-sort').value,
+  };
+  var trigger = document.getElementById('filter-trigger').value;
+  var status = document.getElementById('filter-status').value;
+  var dateFrom = document.getElementById('filter-dateFrom').value;
+  var dateTo = document.getElementById('filter-dateTo').value;
+
+  if (trigger) params.trigger = trigger;
+  if (status) params.status = status;
+  if (dateFrom) params.dateFrom = new Date(dateFrom).getTime();
+  if (dateTo) params.dateTo = new Date(dateTo).getTime() + 86400000 - 1;
+
+  fetchAPI('list', params).then(function(res) {
+    hideLoading();
+    if (res.code === 0) {
+      totalPages = res.data.totalPages;
+      renderTable(res.data);
+      renderPagination(res.data);
+      document.getElementById('last-refresh').textContent =
+        '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+    }
+  }).catch(function(err) {
+    hideLoading();
+    showToast('加载失败: ' + err.message, 'error');
+  });
+}
+
+// ====== Render ======
+function renderStats(stats) {
+  var el = document.getElementById('stats-grid');
+  el.innerHTML =
+    '<div class="stat-card">' +
+      '<div class="label">总计</div>' +
+      '<div class="value">' + stats.total + '</div>' +
+      '<div class="sub">今日 +' + stats.today + ' · 本周 +' + stats.week + '</div>' +
+    '</div>' +
+    '<div class="stat-card highlight">' +
+      '<div class="label">待处理</div>' +
+      '<div class="value">' + (stats.byStatus.open + stats.byStatus.investigating) + '</div>' +
+      '<div class="sub">open ' + stats.byStatus.open + ' · investigating ' + stats.byStatus.investigating + '</div>' +
+    '</div>' +
+    '<div class="stat-card">' +
+      '<div class="label">已解决</div>' +
+      '<div class="value">' + (stats.byStatus.resolved + stats.byStatus.ignored) + '</div>' +
+      '<div class="sub">resolved ' + stats.byStatus.resolved + ' · ignored ' + stats.byStatus.ignored + '</div>' +
+    '</div>' +
+    '<div class="stat-card">' +
+      '<div class="label">崩溃</div>' +
+      '<div class="value">' + (stats.byTrigger.crash + stats.byTrigger.unhandledRejection) + '</div>' +
+      '<div class="sub">crash ' + stats.byTrigger.crash + ' · rejection ' + stats.byTrigger.unhandledRejection + '</div>' +
+    '</div>' +
+    '<div class="stat-card">' +
+      '<div class="label">卡顿</div>' +
+      '<div class="value">' + stats.byTrigger.lag + '</div>' +
+      '<div class="sub">用户反馈 ' + stats.byTrigger.user + '</div>' +
+    '</div>';
+}
+
+function renderTable(data) {
+  var tbody = document.getElementById('bug-table-body');
+  if (data.list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty"><span class="icon">🐷</span>暂无 Bug 记录</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.list.map(function(bug) {
+    var m = bug.meta || {};
+    var d = bug.device || {};
+    var e = bug.error || {};
+    var g = bug.game || {};
+    var clientTime = m.clientTime || m.timestamp || 0;
+    var timeStr = clientTime ? new Date(clientTime).toLocaleString('zh-CN') : '-';
+    var errorMsg = (e.message || '').slice(0, 80);
+    var deviceInfo = (d.model || '') + ' ' + (d.system || '');
+    var levelInfo = g.levelName || (g.levelIndex != null ? '第' + (g.levelIndex + 1) + '关' : '-');
+
+    return '<tr>' +
+      '<td><span class="mono" title="客户端时间: ' + timeStr + '&#10;服务器时间: ' + (m.timestamp ? new Date(m.timestamp).toLocaleString('zh-CN') : '-') + '">' + timeStr + '</span></td>' +
+      '<td><span class="badge badge-' + (m.trigger || '') + '">' + (m.trigger || '-') + '</span></td>' +
+      '<td><span class="badge badge-' + (bug.status || 'open') + '">' + (bug.status || 'open') + '</span></td>' +
+      '<td><span class="truncate clickable" onclick="openDetail(\'' + bug._id + '\')" title="' + escapeHtml(e.message || '') + '">' + escapeHtml(errorMsg) + '</span></td>' +
+      '<td><span class="truncate" title="' + escapeHtml(deviceInfo) + '">' + escapeHtml(deviceInfo.slice(0, 25)) + '</span></td>' +
+      '<td>' + escapeHtml(levelInfo) + '</td>' +
+      '<td>' + (m.dupCount || 1) + '</td>' +
+      '<td>' +
+        '<select class="status-select" onchange="changeStatus(\'' + bug._id + '\', this.value)" data-current="' + (bug.status || 'open') + '">' +
+          '<option value="open"' + (bug.status === 'open' ? ' selected' : '') + '>open</option>' +
+          '<option value="investigating"' + (bug.status === 'investigating' ? ' selected' : '') + '>investigating</option>' +
+          '<option value="resolved"' + (bug.status === 'resolved' ? ' selected' : '') + '>resolved</option>' +
+          '<option value="ignored"' + (bug.status === 'ignored' ? ' selected' : '') + '>ignored</option>' +
+        '</select>' +
+        ' <span class="clickable mono" onclick="openDetail(\'' + bug._id + '\')">详情</span>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function renderPagination(data) {
+  var el = document.getElementById('pagination');
+  el.innerHTML =
+    '<button ' + (currentPage <= 1 ? 'disabled' : '') + ' onclick="goPage(' + (currentPage - 1) + ')">上一页</button>' +
+    '<span class="page-info">第 ' + data.page + ' / ' + data.totalPages + ' 页（共 ' + data.total + ' 条）</span>' +
+    '<button ' + (currentPage >= data.totalPages ? 'disabled' : '') + ' onclick="goPage(' + (currentPage + 1) + ')">下一页</button>';
+}
+
+function goPage(page) {
+  currentPage = page;
+  loadList();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ====== Status Change ======
+async function changeStatus(id, newStatus) {
+  var oldStatus = event.target.dataset.current;
+  if (newStatus === oldStatus) return;
+  if (!confirm('确定将状态改为 ' + newStatus + ' ？')) {
+    event.target.value = oldStatus;
+    return;
+  }
+
+  showLoading();
+  try {
+    var res = await fetchAPI('updateStatus', { id: id, status: newStatus });
+    hideLoading();
+    if (res.code === 0) {
+      showToast('状态已更新为 ' + newStatus, 'success');
+      loadList();
+    } else {
+      event.target.value = oldStatus;
+    }
+  } catch (err) {
+    hideLoading();
+    event.target.value = oldStatus;
+    showToast('更新失败: ' + err.message, 'error');
+  }
+}
+
+// ====== Detail Modal ======
+async function openDetail(id) {
+  showLoading();
+  try {
+    var res = await fetchAPI('detail', { id: id });
+    hideLoading();
+    if (res.code === 0) {
+      renderDetail(res.data);
+      document.getElementById('detail-modal').classList.add('active');
+    }
+  } catch (err) {
+    hideLoading();
+    showToast('加载失败: ' + err.message, 'error');
+  }
+}
+
+function renderDetail(bug) {
+  var m = bug.meta || {};
+  var d = bug.device || {};
+  var e = bug.error || {};
+  var g = bug.game || {};
+  var p = bug.perf || {};
+  var clientTime = m.clientTime || m.timestamp || 0;
+  var serverTime = m.timestamp || 0;
+
+  var html = '';
+
+  // Meta
+  html += '<div class="modal-section"><h3>基本信息</h3>';
+  html += field('报告 ID', bug._id);
+  html += field('触发器', '<span class="badge badge-' + (m.trigger || '') + '">' + (m.trigger || '-') + '</span>');
+  html += field('状态', '<span class="badge badge-' + (bug.status || 'open') + '">' + (bug.status || 'open') + '</span>');
+  html += field('客户端时间', clientTime ? new Date(clientTime).toLocaleString('zh-CN') : '-');
+  html += field('服务器时间', serverTime ? new Date(serverTime).toLocaleString('zh-CN') : '-');
+  html += field('重复次数', m.dupCount || 1);
+  html += field('版本', m.version || '-');
+  html += field('会话计数', m.sessionCount != null ? m.sessionCount : '-');
+  html += '</div>';
+
+  // Device
+  html += '<div class="modal-section"><h3>设备信息</h3>';
+  html += field('平台', d.platform || '-');
+  html += field('型号', d.model || '-');
+  html += field('系统', d.system || '-');
+  html += field('品牌', d.brand || '-');
+  html += field('屏幕', (d.screenWidth || 0) + ' x ' + (d.screenHeight || 0) + ' @' + (d.pixelRatio || 1) + 'x');
+  html += field('SDK', d.SDKVersion || '-');
+  html += field('性能等级', d.benchmarkLevel != null ? d.benchmarkLevel : '-');
+  html += field('内存', d.memorySize ? (d.memorySize + ' MB') : '-');
+  html += '</div>';
+
+  // Game
+  html += '<div class="modal-section"><h3>游戏状态</h3>';
+  html += field('场景', g.scene || '-');
+  html += field('关卡', g.levelName || (g.levelIndex != null ? '第' + (g.levelIndex + 1) + '关' : '-'));
+  html += field('步数', g.step != null ? g.step : '-');
+  html += field('帧率', g.fps != null ? g.fps : '-');
+  html += field('活跃引擎', g.activeEngine || '-');
+  html += '</div>';
+
+  // Error
+  html += '<div class="modal-section"><h3>错误详情</h3>';
+  html += field('错误消息', e.message || '-');
+  if (e.stack) {
+    html += '<pre class="log-block">' + escapeHtml(e.stack) + '</pre>';
+  }
+  html += '</div>';
+
+  // Perf
+  if (p.avgFps != null) {
+    html += '<div class="modal-section"><h3>性能数据</h3>';
+    html += field('平均 FPS', p.avgFps);
+    html += '</div>';
+  }
+
+  // Replay
+  if (bug.replay && bug.replay.length > 0) {
+    html += '<div class="modal-section"><h3>操作回放（最近 ' + bug.replay.length + ' 条）</h3>';
+    html += '<pre class="log-block">' + escapeHtml(JSON.stringify(bug.replay, null, 2)) + '</pre>';
+    html += '</div>';
+  }
+
+  // Logs
+  if (bug.logs && bug.logs.length > 0) {
+    html += '<div class="modal-section"><h3>控制台日志（最近 ' + bug.logs.length + ' 条）</h3>';
+    html += '<pre class="log-block">' + bug.logs.map(function(l) {
+      var t = l.time ? new Date(l.time).toLocaleTimeString('zh-CN') + ' ' : '';
+      return t + escapeHtml(l.text || '');
+    }).join('\n') + '</pre>';
+    html += '</div>';
+  }
+
+  // Admin
+  html += '<div class="modal-section"><h3>管理备注</h3>';
+  html += field('备注', bug.adminNote || '（无）');
+  html += field('处理时间', bug.resolvedAt ? new Date(bug.resolvedAt).toLocaleString('zh-CN') : '-');
+  html += field('处理人', bug.resolvedBy || '-');
+  html += '</div>';
+
+  document.getElementById('modal-title').textContent = 'Bug 详情 — ' + (e.message || '').slice(0, 40);
+  document.getElementById('modal-body').innerHTML = html;
+}
+
+function field(key, val) {
+  return '<div class="modal-field"><span class="key">' + escapeHtml(key) + '</span><span class="val">' + val + '</span></div>';
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.remove('active');
+}
+
+// ====== Utilities ======
+function showToast(msg, type) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + (type || 'success') + ' show';
+  clearTimeout(el._timeout);
+  el._timeout = setTimeout(function() { el.classList.remove('show'); }, 2500);
+}
+
+function showLoading() {
+  document.getElementById('loading-overlay').style.display = 'flex';
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').style.display = 'none';
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+</script>
+
+</body>
+</html>
