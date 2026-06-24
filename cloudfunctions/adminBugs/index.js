@@ -6,6 +6,7 @@ const cloud = require('wx-server-sdk');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 const _ = db.command;
+const $ = db.command.aggregate;
 
 // --- 配置 ---
 const ADMIN_KEY = 'pigpush2026admin';  // 管理后台密钥，可通过环境变量覆盖
@@ -118,6 +119,8 @@ exports.main = async (event, context) => {
         return await handleStats();
       case 'updateStatus':
         return await handleUpdateStatus(rest);
+      case 'delete':
+        return await handleDelete(rest);
       default:
         return jsonResponse({
           code: 0,
@@ -254,12 +257,12 @@ async function handleStats() {
     // 按状态统计
     db.collection('bug_reports')
       .aggregate()
-      .group({ _id: '$status', count: _.sum(1) })
+      .group({ _id: '$status', count: $.sum(1) })
       .end(),
     // 按触发器统计
     db.collection('bug_reports')
       .aggregate()
-      .group({ _id: '$meta.trigger', count: _.sum(1) })
+      .group({ _id: '$meta.trigger', count: $.sum(1) })
       .end(),
     // 今日新增
     db.collection('bug_reports').where({ 'meta.timestamp': _.gte(todayStart) }).count(),
@@ -339,6 +342,59 @@ async function handleUpdateStatus(params) {
     if (err.errCode === -1) {
       return errResponse('记录不存在', 404);
     }
+    throw err;
+  }
+}
+
+// --- delete：删除单条或批量删除 ---
+async function handleDelete(params) {
+  const { id, ids } = params;
+
+  // 支持单个 id 或 ids 数组
+  var idList = [];
+  if (id) {
+    idList = [id];
+  } else if (ids) {
+    if (typeof ids === 'string') {
+      idList = ids.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    } else if (Array.isArray(ids)) {
+      idList = ids;
+    }
+  }
+
+  if (idList.length === 0) {
+    return errResponse('缺少 id 或 ids 参数');
+  }
+
+  if (idList.length > 50) {
+    return errResponse('单次最多删除 50 条');
+  }
+
+  try {
+    const collection = db.collection('bug_reports');
+    var deleted = 0;
+    var errors = [];
+
+    // 逐条删除（云开发不支持批量 delete by _id 数组）
+    for (var i = 0; i < idList.length; i++) {
+      try {
+        await collection.doc(idList[i]).remove();
+        deleted++;
+      } catch (err) {
+        errors.push({ id: idList[i], error: err.message || '删除失败' });
+      }
+    }
+
+    return jsonResponse({
+      code: 0,
+      data: {
+        deleted: deleted,
+        total: idList.length,
+        errors: errors.length > 0 ? errors : undefined,
+      },
+      msg: '成功删除 ' + deleted + ' 条' + (errors.length > 0 ? '，' + errors.length + ' 条失败' : '')
+    });
+  } catch (err) {
     throw err;
   }
 }

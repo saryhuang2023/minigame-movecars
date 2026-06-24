@@ -79,6 +79,27 @@
       "handler": "index.main",
       "timeout": 15,
       "ignore": ["node_modules"]
+    },
+    {
+      "name": "adminBugs",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 15,
+      "ignore": ["node_modules"]
+    },
+    {
+      "name": "cleanupBugs",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 30,
+      "ignore": ["node_modules"],
+      "triggers": [
+        {
+          "name": "dailyCleanup",
+          "type": "timer",
+          "config": "0 0 3 * * * *"
+        }
+      ]
     }
   ]
 }

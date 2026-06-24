@@ -98,6 +98,22 @@ header h1 { font-size: 1.35rem; font-weight: 600; color: #f0f6fc; }
   margin-left: auto; transition: background .15s;
 }
 .btn-refresh:hover { background: #30363d; }
+.btn-danger {
+  padding: .4rem .9rem; border-radius: 6px; font-size: .82rem;
+  background: #3a1a1a; color: #f85149; border: 1px solid #da3633;
+  transition: background .15s;
+}
+.btn-danger:hover { background: #4a1a1a; }
+.btn-danger:disabled { opacity: .4; cursor: default; }
+.btn-danger-sm {
+  padding: .2rem .55rem; border-radius: 5px; font-size: .75rem;
+  background: #3a1a1a; color: #f85149; border: 1px solid #da3633;
+  transition: background .15s;
+}
+.btn-danger-sm:hover { background: #4a1a1a; }
+
+/* checkboxes */
+.row-cb { width: 16px; height: 16px; cursor: pointer; accent-color: #1f6feb; }
 
 /* ====== Table ====== */
 .table-wrap { overflow-x: auto; margin-bottom: 1rem; border-radius: 10px; border: 1px solid #30363d; }
@@ -261,6 +277,8 @@ pre.log-block {
   <header>
     <h1>Bug Reports</h1>
     <div class="header-actions">
+      <span style="font-size:.82rem;color:#8b949e;" id="selection-info" hidden></span>
+      <button class="btn-danger" id="btn-batch-delete" onclick="batchDelete()" disabled hidden>批量删除</button>
       <span style="font-size:.82rem;color:#8b949e;" id="last-refresh"></span>
       <button onclick="logout()">退出</button>
     </div>
@@ -315,6 +333,7 @@ pre.log-block {
     <table>
       <thead>
         <tr>
+          <th style="width:36px;"><input type="checkbox" class="row-cb" id="select-all-cb" onclick="toggleSelectAll()" title="全选"></th>
           <th>时间</th>
           <th>触发器</th>
           <th>状态</th>
@@ -398,20 +417,22 @@ function doLogin() {
   }
 
   // Quick validate by fetching stats
+  adminKey = key;  // 先临时设置，让 fetchAPI 带上 key
   showLoading();
   fetchAPI('stats', {}, true).then(function(res) {
     hideLoading();
     if (res.code === 0) {
-      adminKey = key;
       sessionStorage.setItem(ADMIN_KEY_KEY, key);
       document.getElementById('login-error').textContent = '';
       showApp();
       refresh();
     } else {
+      adminKey = '';  // 验证失败，清掉
       document.getElementById('login-error').textContent = res.msg || '密钥错误';
     }
   }).catch(function(err) {
     hideLoading();
+    adminKey = '';  // 网络错误，清掉
     document.getElementById('login-error').textContent = '网络错误: ' + err.message;
   });
 }
@@ -438,7 +459,7 @@ async function fetchAPI(action, params, noToast) {
   var url = API_BASE;
   var options = { method: 'GET', headers: { 'Content-Type': 'application/json' } };
 
-  if (action === 'updateStatus') {
+  if (action === 'updateStatus' || action === 'delete') {
     options.method = 'POST';
     options.body = JSON.stringify(params);
   } else {
@@ -549,7 +570,7 @@ function renderStats(stats) {
 function renderTable(data) {
   var tbody = document.getElementById('bug-table-body');
   if (data.list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty"><span class="icon">🐷</span>暂无 Bug 记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty"><span class="icon">🐷</span>暂无 Bug 记录</td></tr>';
     return;
   }
 
@@ -565,6 +586,7 @@ function renderTable(data) {
     var levelInfo = g.levelName || (g.levelIndex != null ? '第' + (g.levelIndex + 1) + '关' : '-');
 
     return '<tr>' +
+      '<td><input type="checkbox" class="row-cb" value="' + bug._id + '" onchange="onCheckChange()"></td>' +
       '<td><span class="mono" title="客户端时间: ' + timeStr + '&#10;服务器时间: ' + (m.timestamp ? new Date(m.timestamp).toLocaleString('zh-CN') : '-') + '">' + timeStr + '</span></td>' +
       '<td><span class="badge badge-' + (m.trigger || '') + '">' + (m.trigger || '-') + '</span></td>' +
       '<td><span class="badge badge-' + (bug.status || 'open') + '">' + (bug.status || 'open') + '</span></td>' +
@@ -580,6 +602,7 @@ function renderTable(data) {
           '<option value="ignored"' + (bug.status === 'ignored' ? ' selected' : '') + '>ignored</option>' +
         '</select>' +
         ' <span class="clickable mono" onclick="openDetail(\'' + bug._id + '\')">详情</span>' +
+        ' <button class="btn-danger-sm" onclick="deleteBug(\'' + bug._id + '\')" title="删除此条">删</button>' +
       '</td>' +
     '</tr>';
   }).join('');
@@ -734,6 +757,81 @@ function field(key, val) {
 
 function closeModal() {
   document.getElementById('detail-modal').classList.remove('active');
+}
+
+// ====== Delete ======
+function toggleSelectAll() {
+  var master = document.getElementById('select-all-cb');
+  var checked = master.checked;
+  var cbs = document.querySelectorAll('#bug-table-body .row-cb');
+  for (var i = 0; i < cbs.length; i++) {
+    cbs[i].checked = checked;
+  }
+  onCheckChange();
+}
+
+function onCheckChange() {
+  var cbs = document.querySelectorAll('#bug-table-body .row-cb:checked');
+  var count = cbs.length;
+  var infoEl = document.getElementById('selection-info');
+  var btnEl = document.getElementById('btn-batch-delete');
+  var master = document.getElementById('select-all-cb');
+
+  if (count > 0) {
+    infoEl.hidden = false;
+    infoEl.textContent = '已选 ' + count + ' 条';
+    btnEl.hidden = false;
+    btnEl.disabled = false;
+    btnEl.textContent = '批量删除(' + count + ')';
+  } else {
+    infoEl.hidden = true;
+    btnEl.hidden = true;
+    master.checked = false;
+  }
+}
+
+async function deleteBug(id) {
+  if (!confirm('确定删除这条 Bug 记录？此操作不可撤销。')) return;
+
+  showLoading();
+  try {
+    var res = await fetchAPI('delete', { id: id });
+    hideLoading();
+    if (res.code === 0) {
+      showToast('已删除', 'success');
+      refresh();
+    }
+  } catch (err) {
+    hideLoading();
+    showToast('删除失败: ' + err.message, 'error');
+  }
+}
+
+async function batchDelete() {
+  var cbs = document.querySelectorAll('#bug-table-body .row-cb:checked');
+  if (cbs.length === 0) return;
+
+  var ids = [];
+  for (var i = 0; i < cbs.length; i++) {
+    ids.push(cbs[i].value);
+  }
+
+  if (!confirm('确定删除选中的 ' + ids.length + ' 条 Bug 记录？此操作不可撤销。')) return;
+
+  showLoading();
+  try {
+    var res = await fetchAPI('delete', { ids: ids });
+    hideLoading();
+    if (res.code === 0) {
+      showToast('成功删除 ' + res.data.deleted + ' 条', 'success');
+      document.getElementById('select-all-cb').checked = false;
+      onCheckChange();
+      refresh();
+    }
+  } catch (err) {
+    hideLoading();
+    showToast('删除失败: ' + err.message, 'error');
+  }
 }
 
 // ====== Utilities ======

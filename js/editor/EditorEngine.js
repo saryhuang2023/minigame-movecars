@@ -1265,6 +1265,7 @@ class EditorEngine {
   // === 渲染入口 ===
   // ============================================================
   render() {
+    var self = this;
     this.gp.update();
     ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     // 与游玩界面相同的渐变背景：淡紫 → 浅粉 → 米粉
@@ -1712,50 +1713,47 @@ class EditorEngine {
     }});
     x += hintModeW + 12;
 
-    // 金猪标签
+    // 金猪输入框
     ctx.fillStyle = '#999';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('金猪', x, midY1);
     x += 30;
-
-    // 金猪输入框
     const crownW = 54, crownH = btnH;
-    this._drawBtn('btm:crown', x, btnY1, crownW, crownH, function() {
-      ctx.strokeStyle = '#FF8C00';
-      ctx.lineWidth = 1.5;
-      roundRect(ctx, x, btnY1, crownW, crownH, 6);
-      ctx.stroke();
-      ctx.fillStyle = '#FF8C00';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      var crownLabel = self._crownSteps > 0 ? String(self._crownSteps) : '无';
-      ctx.fillText(crownLabel, x + crownW / 2, midY1);
-    });
+    ctx.strokeStyle = '#FF8C00';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, x, btnY1, crownW, crownH, 6);
+    ctx.stroke();
+    ctx.fillStyle = '#FF8C00';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var crownLabel = this._crownSteps > 0 ? String(this._crownSteps) : '无';
+    ctx.fillText(crownLabel, x + crownW / 2, midY1);
     this.bottomBtns.push({
       x: x, y: btnY1, w: crownW, h: crownH, id: 'btm:crown',
-      onClick: function() {
-        var self = this;
+      onClick: (function() {
+        var engine = this;
         wx.showModal({
           title: '金猪阈值',
           editable: true,
           placeholderText: '输入数字，0 表示无',
-          content: String(self._crownSteps),
+          content: String(engine._crownSteps),
           success: function(res) {
             if (res.confirm && res.content != null) {
               var v = parseInt(res.content, 10);
               if (!isNaN(v)) {
                 v = Math.max(0, Math.min(999, v));
-                self._crownSteps = v;
-                self.markCurrentDirty();
+                engine._crownSteps = v;
+                engine.markCurrentDirty();
               }
             }
           }
         });
-      }
+      }).bind(this)
     });
+    x += crownW;
 
     // ============================
     // 第二行：关卡管理
@@ -2206,27 +2204,7 @@ class EditorEngine {
     // 点击数值区域可直接输入（像金猪阈值一样）
     this._levelSheetStepperBtns.push({
       x: bx + 30, y: boardY3, w: 42, h: stepperH,
-      onClick: () => {
-        var self = this;
-        wx.showModal({
-          title: 'Rate',
-          editable: true,
-          placeholderText: '1.500~4.000',
-          content: String(self.gp.boardRate),
-          success: function(res) {
-            if (res.confirm && res.content != null) {
-              var v = parseFloat(res.content);
-              if (!isNaN(v)) {
-                v = Math.round(Math.max(1.5, Math.min(4.0, v)) * 1000) / 1000;
-                self.gp.boardRate = v;
-                self.gp.recomputeBoard(); self.gp.recenterBoard();
-                self._adaptPigsToBoard();
-                self.markCurrentDirty();
-              }
-            }
-          }
-        });
-      }
+      onClick: () => {} // no-op — 小游戏不支持 showModal editable，Rate 已有 +/- 步进器
     });
 
     // ---- 操作按钮栏 ----
