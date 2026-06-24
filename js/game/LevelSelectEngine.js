@@ -8,6 +8,7 @@ var ctx = renderModule.ctx;
 var SCREEN_WIDTH = renderModule.SCREEN_WIDTH;
 var drawPigIcon = require('../render/PigIconRenderer.js').drawPigIcon;
 var SCREEN_HEIGHT = renderModule.SCREEN_HEIGHT;
+var ButtonPress = require('../anim/ButtonPress.js');
 
 // ========== 配色（v3 设计） ==========
 var C = {
@@ -48,6 +49,7 @@ function LevelSelectEngine(input) {
   this.titleCenterX = 0;
   this.titleCenterY = 0;
   this._sections = [];       // [{ chapter, headerY, cards: [{x,y,w,h,level,globalIndex}] }]
+  this._btnPress = new ButtonPress();
 
   // 滚动
   this._scrollTop = 0;
@@ -242,6 +244,7 @@ LevelSelectEngine.prototype._handleEvent = function (e) {
     if (this.backBtn && t.x >= this.backBtn.x && t.x <= this.backBtn.x + this.backBtn.w &&
         t.y >= this.backBtn.y && t.y <= this.backBtn.y + this.backBtn.h) {
       audio.play('button_click');
+      this._btnPress.press('back');
       databus.gameState = 'menu';
       return;
     }
@@ -260,6 +263,7 @@ LevelSelectEngine.prototype._hitTestCards = function (t) {
           ly >= card.y && ly <= card.y + card.h) {
         if (this._getCardStatus(card.globalIndex) === 'locked') return;
         audio.play('button_click');
+        this._btnPress.press('card_' + card.globalIndex);
         var lv = card.level;
         try {
           var raw = fs.readFileSync('assets/levels/' + lv.file, 'utf8');
@@ -303,6 +307,14 @@ LevelSelectEngine.prototype._renderTopBar = function () {
   var btnCY_box = btnY + btnSize / 2;
   this.backBtn = { x: btnX, y: btnY, w: btnSize, h: btnSize };
 
+  // 按压微交互缩放
+  var backScale = this._btnPress.getScale('back');
+
+  ctx.save();
+  ctx.translate(btnCX, btnCY_box);
+  ctx.scale(backScale, backScale);
+  ctx.translate(-btnCX, -btnCY_box);
+
   // 阴影
   ctx.save();
   ctx.shadowColor = C.cyanShadow;
@@ -331,6 +343,7 @@ LevelSelectEngine.prototype._renderTopBar = function () {
   ctx.lineTo(btnCX - 4, btnCY_box);
   ctx.lineTo(btnCX + 5, btnCY_box + 7);
   ctx.stroke();
+  ctx.restore(); // 按压缩放
 
   // 居中标题 "选择关卡"
   ctx.fillStyle = C.textDark;
@@ -406,6 +419,15 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
   // 编号文字：全局索引 + 1
   var labelNumber = String(card.globalIndex + 1);
 
+  // 按压微交互缩放
+  var cardScale = this._btnPress.getScale('card_' + card.globalIndex);
+  ctx.save();
+  if (cardScale !== 1) {
+    ctx.translate(cx, cy);
+    ctx.scale(cardScale, cardScale);
+    ctx.translate(-cx, -cy);
+  }
+
   // === locked（无锁图标，灰色即代表未解锁） ===
   if (status === 'locked') {
     ctx.save();
@@ -427,6 +449,7 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(labelNumber, cx, cy);
+    ctx.restore(); // 按压缩放
     return;
   }
 
@@ -485,6 +508,7 @@ LevelSelectEngine.prototype._renderCard = function (card, status) {
     drawPigIcon(ctx, x + w - 4, y + 4, 14, true);
   }
 
+  ctx.restore(); // 按压缩放
 };
 
 // ========== Canvas 工具 ==========

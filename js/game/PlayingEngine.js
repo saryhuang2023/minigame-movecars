@@ -4,6 +4,9 @@ const databus = require('../databus.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
+const Easing = require('../core/Easing.js');
+const ButtonPress = require('../anim/ButtonPress.js');
+const PopupAnimator = require('../ui/PopupAnimator.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 const { drawPigIcon } = require('../render/PigIconRenderer.js');
@@ -33,8 +36,6 @@ const COMBO_WIDGET_W = 120;            // 连击组件宽度
 const COMBO_WIDGET_H = 30;             // 连击组件高度
 const COMBO_WIDGET_R = 20;             // 连击组件圆角
 const COMBO_WIDGET_OFFSET = 12;        // 距卡片内容区边缘偏移
-const COMBO_ENTRANCE_DURATION = 200;   // 入场弹性动画时长（毫秒）
-const COMBO_EXPIRE_FLASH = 200;        // 到期闪烁时长（毫秒）
 // 进度条颜色阈值
 const COMBO_COLOR_SAFE = '#4ADE80';   // >50% 绿色
 const COMBO_COLOR_WARN = '#F59E0B';   // 25-50% 黄色
@@ -49,6 +50,7 @@ class PlayingEngine {
     this.backBtn = null;
     this.restartBtn = null;
     this.hintBtn = null;       // 提示按钮
+    this._btnPress = new ButtonPress();
     this._victory = false;
     this._exitBtn = null;
     this._nextBtn = null;
@@ -57,7 +59,8 @@ class PlayingEngine {
     this._comboTimer = null;        // 重置窗口定时器
     this._maxCombo = 0;             // 本局最大连击
     this._comboStartTime = 0;       // 当前连击窗口起始时间
-    this._comboWidget = { visible: false, scale: 1, count: 0, createdAt: 0 };
+    this._comboWidget = { visible: false, count: 0, bumpStart: 0 };
+    this._comboAnimator = PopupAnimator.createPopupAnimator();
     // 关主系统
     this._levelMaster = null;       // { masterUserId, masterSteps, masterAvatarUrl, masterNickname } | null
     this._myRecord = null;          // 个人最好成绩（步数）| null
@@ -71,6 +74,9 @@ class PlayingEngine {
     this._earnedCrown = false;      // 本局是否达到了小金猪门槛（用于判断是否播动画）
     this._hadCrownBefore = false;   // 本局开始前是否已拥有小金猪（已获得则跳过所有皇冠逻辑）
     this._showVictoryPanel = false; // 结算面板是否可见（通关后可能先隐藏播动画）
+    this._victoryAnimStart = 0;     // 结算面板入场动画起始时间
+    this._victoryAnimator = PopupAnimator.createPopupAnimator();
+    this._victoryClosing = false;   // 结算面板是否正在关闭动画中
     // 小金猪通关动画
     this._crownAnimPhase = null;    // null | 'flying' | 'flashing' | 'done'
     this._crownAnimStart = 0;
@@ -84,6 +90,7 @@ class PlayingEngine {
     this._masterClaimPending = false; // _tryClaimMaster 异步请求是否还在进行
     // 关主授权对话框
     this._showAuthDialog = false;  // 是否显示授权对话框
+    this._authAnimator = PopupAnimator.createPopupAnimator();
     this._skipAuthBtnRect = null;  // 跳过按钮碰撞区
     // 提示系统
     this._hintTarget = null;        // 当前被提示的猪
@@ -101,6 +108,9 @@ class PlayingEngine {
     databus.currentStep = 0;
     this._victory = false;
     this._showVictoryPanel = false;
+    this._victoryAnimStart = 0;
+    this._victoryAnimator.close();  // 立即关闭（无动画）
+    this._victoryClosing = false;
     this._resetCombo();
     this._clearHint();
     this._hasUsedRemove = false;
@@ -116,6 +126,7 @@ class PlayingEngine {
     this._masterClaimPending = false;
     // 授权/对话框状态
     this._showAuthDialog = false;
+    this._authAnimator.close();  // 立即关闭（无动画）
     this._skipAuthBtnRect = null;
     this._authShown = false;
     this._destroyAuthBtn();
@@ -149,7 +160,7 @@ class PlayingEngine {
   deactivate() {
     this.input.off('playing');
     this._resetCombo();
-    this._destroyAuthBtn();
+    this._destroyAuthBtn(true);  // 立即关闭，无动画
     this._isNewMaster = false;
   }
 
@@ -190,7 +201,7 @@ class PlayingEngine {
     if (e.type === 'touchstart') {
       // 设置面板打开时，所有触控由面板处理
       if (settingsPanel.isOpen()) {
-        settingsPanel.handleTouch(t.x, t.y);
+        settingsPanel.handleTouch(t.x, t.y, e.type);
         return;
       }
 
@@ -199,9 +210,7 @@ class PlayingEngine {
         if (this._skipAuthBtnRect && t.x >= this._skipAuthBtnRect.x && t.x <= this._skipAuthBtnRect.x + this._skipAuthBtnRect.w &&
             t.y >= this._skipAuthBtnRect.y && t.y <= this._skipAuthBtnRect.y + this._skipAuthBtnRect.h) {
           audio.play('button_click');
-          this._destroyAuthBtn();
-          this._showAuthDialog = false;
-          this._skipAuthBtnRect = null;
+          this._destroyAuthBtn();  // 内部有 close 动画 + 回调清理
         }
         return;
       }
@@ -209,18 +218,31 @@ class PlayingEngine {
       // 通关后、结算面板尚未显示期间：屏蔽一切触控（防止误点返回等）
       if (this._victory && !this._showVictoryPanel) return;
 
+      // 结算面板关闭动画中：屏蔽触控
+      if (this._victoryClosing) return;
+
       // 通关界面按钮
       if (this._victory) {
         if (this._exitBtn && t.x >= this._exitBtn.x && t.x <= this._exitBtn.x + this._exitBtn.w &&
             t.y >= this._exitBtn.y && t.y <= this._exitBtn.y + this._exitBtn.h) {
           audio.play('button_click');
-          databus.gameState = databus.returnState || 'menu';
+          var that = this;
+          this._victoryClosing = true;
+          this._victoryAnimator.close(function() {
+            that._victoryClosing = false;
+            databus.gameState = databus.returnState || 'menu';
+          });
           return;
         }
         if (this._nextBtn && t.x >= this._nextBtn.x && t.x <= this._nextBtn.x + this._nextBtn.w &&
             t.y >= this._nextBtn.y && t.y <= this._nextBtn.y + this._nextBtn.h) {
           audio.play('button_click');
-          this._goNextLevel();
+          var self = this;
+          this._victoryClosing = true;
+          this._victoryAnimator.close(function() {
+            self._victoryClosing = false;
+            self._goNextLevel();
+          });
           return;
         }
         return; // 屏蔽棋盘操作
@@ -246,6 +268,7 @@ class PlayingEngine {
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
       audio.play('button_click');
+      this._btnPress.press('settings');
       settingsPanel.open({
         buttons: [
           { icon: '🏠', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
@@ -260,12 +283,14 @@ class PlayingEngine {
     if (this.restartBtn && x >= this.restartBtn.x && x <= this.restartBtn.x + this.restartBtn.w &&
         y >= this.restartBtn.y && y <= this.restartBtn.y + this.restartBtn.h) {
       audio.play('button_click');
+      this._btnPress.press('restart');
       this.restartLevel();
       return;
     }
     if (this.hintBtn && !this._hintTarget && x >= this.hintBtn.x && x <= this.hintBtn.x + this.hintBtn.w &&
         y >= this.hintBtn.y && y <= this.hintBtn.y + this.hintBtn.h) {
       audio.play('button_click');
+      this._btnPress.press('hint');
       this._showHint();
       return;
     }
@@ -273,6 +298,7 @@ class PlayingEngine {
     if (this._removeBtn && x >= this._removeBtn.x && x <= this._removeBtn.x + this._removeBtn.w &&
         y >= this._removeBtn.y && y <= this._removeBtn.y + this._removeBtn.h) {
       audio.play('button_click');
+      this._btnPress.press('remove');
       this._removeHintedPig();
       return;
     }
@@ -755,13 +781,24 @@ _tryClaimMaster() {
   }
 
   // 销毁授权按钮（切换关卡或退出时清理）
-  _destroyAuthBtn() {
+  _destroyAuthBtn(instant) {
     if (this._authBtn) {
       try { this._authBtn.destroy(); } catch (e) {}
       this._authBtn = null;
     }
-    this._showAuthDialog = false;
-    this._skipAuthBtnRect = null;
+    if (instant || this._authAnimator.isClosed()) {
+      // 立即关闭（deactivate 等场景无需动画）
+      this._showAuthDialog = false;
+      this._skipAuthBtnRect = null;
+      this._authAnimator.close();
+    } else {
+      // 使用关闭动画
+      var that = this;
+      this._authAnimator.close(function() {
+        that._showAuthDialog = false;
+        that._skipAuthBtnRect = null;
+      });
+    }
   }
 
   // 乐观 UI：通关后弹出授权对话框（Canvas 绘制），
@@ -785,6 +822,7 @@ _tryClaimMaster() {
 
     // 显示 Canvas 对话框
     this._showAuthDialog = true;
+    this._authAnimator.open();
 
     // 原生授权按钮：覆盖在 Canvas 绘制的"授权"按钮上方（透明背景）
     var that = this;
@@ -836,9 +874,11 @@ _tryClaimMaster() {
       }
       that._authBtn.destroy();
       that._authBtn = null;
-      // 关闭对话框
-      that._showAuthDialog = false;
-      that._skipAuthBtnRect = null;
+      // 关闭对话框（带弹出动画）
+      that._authAnimator.close(function() {
+        that._showAuthDialog = false;
+        that._skipAuthBtnRect = null;
+      });
     });
   }
 
@@ -899,9 +939,9 @@ _tryClaimMaster() {
       if (this._masterAnimPhase === 'flying') {
         // 飞行动画中：头像不在此处显示（由 _renderFlyingMaster 绘制）
       } else if (this._masterAnimPhase === 'flashing') {
-        // 闪烁阶段：交替 alpha
+        // 闪烁阶段：平滑正弦脉冲
         var flashElapsed = Date.now() - this._masterAnimStart;
-        var flashAlpha = Math.floor(flashElapsed / 166) % 2 === 0 ? 1 : 0.2;
+        var flashAlpha = 0.6 + 0.4 * Math.sin(flashElapsed * 0.015);
         ctx.save();
         ctx.globalAlpha = flashAlpha;
         ctx.beginPath();
@@ -1019,8 +1059,9 @@ _tryClaimMaster() {
     }
     // 闪烁阶段：原位猪交替灰/金（金色猪已到达）
     if (this._crownAnimPhase === 'flashing') {
-      var elapsed = Date.now() - this._crownAnimStart;
-      var flashAlpha = (Math.floor(elapsed / 166) % 2 === 0) ? 1 : 0.2;
+      var flashElapsed = Date.now() - this._crownAnimStart;
+      // 平滑正弦脉冲：在 0.2~1.0 之间柔和呼吸
+      var flashAlpha = 0.6 + 0.4 * Math.sin(flashElapsed * 0.015);
       drawPigIcon(ctx, cx, cy, 21, true, flashAlpha);
       return;
     }
@@ -1112,8 +1153,7 @@ _tryClaimMaster() {
 
   _renderFlyingPig(elapsed) {
     var t = Math.min(elapsed / 1500, 1);
-    // ease-out cubic：快到慢
-    t = 1 - Math.pow(1 - t, 3);
+    t = Easing.easeOutCubic(t);
     var startX = this._crownFlyFromX;
     var startY = this._crownFlyFromY;
     var targetX = this._boardCardX + this._boardCardW - 36;
@@ -1200,8 +1240,7 @@ _tryClaimMaster() {
 
   _renderFlyingMaster(elapsed) {
     var t = Math.min(elapsed / 1500, 1);
-    // ease-out cubic：快到慢
-    t = 1 - Math.pow(1 - t, 3);
+    t = Easing.easeOutCubic(t);
     var startX = this._masterFlyFromX;
     var startY = this._masterFlyFromY;
     // 目标：关主徽章中头像圆心 (badgeX+30, SCREEN_HEIGHT-34)
@@ -1232,6 +1271,8 @@ _tryClaimMaster() {
    */
   _finishVictorySequence() {
     this._showVictoryPanel = true;
+    this._victoryAnimStart = Date.now();
+    this._victoryAnimator.open();
     audio.play('victory');
   }
 
@@ -1331,12 +1372,23 @@ _tryClaimMaster() {
     const backY = PADDING;
     this.backBtn = { x: backX, y: backY, w: backW, h: backH };
 
+    // 按压微交互缩放
+    var setScale = this._btnPress.getScale('settings');
+    var setCX = backX + backW / 2;
+    var setCY = backY + backH / 2;
+
+    ctx.save();
+    ctx.translate(setCX, setCY);
+    ctx.scale(setScale, setScale);
+    ctx.translate(-setCX, -setCY);
+
     // 白色半透明底 + 圆角 18
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this._roundRect(ctx, backX, backY, backW, backH, 18);
     ctx.fill();
     // 齿轮图标（矢量绘制）
     settingsPanel.drawGearIcon(ctx, backX + backW / 2, backY + backH / 2, 17, DARK);
+    ctx.restore(); // 按压缩放
 
     // === 关卡徽章（居中）— 试玩时隐藏 ===
     if (databus.returnState !== 'editor') {
@@ -1369,31 +1421,58 @@ _tryClaimMaster() {
     const btnY = barY + (BOTTOM_BAR_H - btnH) / 2;
     this.restartBtn = { x: resetX, y: btnY, w: btnW, h: btnH };
 
+    var rstScale = this._btnPress.getScale('restart');
+    var rstCX = resetX + btnW / 2;
+    var rstCY = btnY + btnH / 2;
+    ctx.save();
+    ctx.translate(rstCX, rstCY);
+    ctx.scale(rstScale, rstScale);
+    ctx.translate(-rstCX, -rstCY);
+
     this._whiteBtn(resetX, btnY, btnW, btnH);
     ctx.fillStyle = RED;
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('\u91CD\u7F6E', resetX + btnW / 2, btnY + btnH / 2);
+    ctx.restore();
 
     // === 提示按钮 ===
     var hintX = resetX - btnW - gap;
     this.hintBtn = { x: hintX, y: btnY, w: btnW, h: btnH };
+
+    var hintScale = this._btnPress.getScale('hint');
+    var hintCX = hintX + btnW / 2;
+    var hintCY = btnY + btnH / 2;
+    ctx.save();
+    ctx.translate(hintCX, hintCY);
+    ctx.scale(hintScale, hintScale);
+    ctx.translate(-hintCX, -hintCY);
 
     var hintDisabled = !!this._hintTarget;
     this._whiteBtn(hintX, btnY, btnW, btnH);
     ctx.fillStyle = hintDisabled ? 'rgba(139,92,246,0.3)' : PURPLE;
     ctx.font = 'bold 13px sans-serif';
     ctx.fillText('\u63D0\u793A', hintX + btnW / 2, btnY + btnH / 2);
+    ctx.restore();
 
     // === 移除按钮（提示激活时出现）===
     if (this._hintTarget) {
       var removeX = hintX - btnW - gap;
       this._removeBtn = { x: removeX, y: btnY, w: btnW, h: btnH };
+
+      var rmvScale = this._btnPress.getScale('remove');
+      var rmvCX = removeX + btnW / 2;
+      ctx.save();
+      ctx.translate(rmvCX, btnY + btnH / 2);
+      ctx.scale(rmvScale, rmvScale);
+      ctx.translate(-rmvCX, -(btnY + btnH / 2));
+
       this._whiteBtn(removeX, btnY, btnW, btnH);
       ctx.fillStyle = '#FF5252';
       ctx.font = 'bold 13px sans-serif';
       ctx.fillText('\u79FB\u9664', removeX + btnW / 2, btnY + btnH / 2);
+      ctx.restore();
     } else {
       this._removeBtn = null;
     }
@@ -1524,16 +1603,35 @@ _tryClaimMaster() {
   }
 
   // ========== 通关界面 ==========
+  // ========== 结算面板（弹簧入场 + 元素错开动画）==========
   renderVictoryOverlay() {
-    // 半透明遮罩
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    const now = Date.now();
+    const elapsed = now - this._victoryAnimStart;
+
+    // 驱动 PopupAnimator 获取 scale/alpha/maskAlpha
+    var state = this._victoryAnimator.update();
+
+    // 如果正在关闭且动画已结束
+    if (this._victoryClosing && this._victoryAnimator.isClosed()) {
+      this._victoryClosing = false;
+    }
+
+    var maskAlpha = state.maskAlpha;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, ' + maskAlpha.toFixed(3) + ')';
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
+    // === 面板 spring 弹入 ===
+    var panelScale = state.scale;
+    var panelAlpha = state.alpha;
+
+    if (panelAlpha < 0.01) return;
+
+    // === 计算布局（与原来一致）===
     const hasCombo = this._maxCombo >= 2;
     const isNewMaster = this._isNewMaster;
     const hasCrown = this._earnedCrown;
 
-    // 弹窗面板（有连击或新关主时加高）
     var ph = 200;
     if (hasCombo) ph += 20;
     if (isNewMaster) ph += 22;
@@ -1542,6 +1640,17 @@ _tryClaimMaster() {
     const px = (SCREEN_WIDTH - pw) / 2;
     const py = (SCREEN_HEIGHT - ph) / 2 - 20;
 
+    ctx.save();
+    ctx.globalAlpha = panelAlpha;
+
+    // 缩放变换（围绕面板中心）
+    const pCenterX = px + pw / 2;
+    const pCenterY = py + ph / 2;
+    ctx.translate(pCenterX, pCenterY);
+    ctx.scale(panelScale, panelScale);
+    ctx.translate(-pCenterX, -pCenterY);
+
+    // 面板背景
     ctx.fillStyle = 'rgba(26, 26, 46, 0.95)';
     this._roundRect(ctx, px, py, pw, ph, 16);
     ctx.fill();
@@ -1550,44 +1659,94 @@ _tryClaimMaster() {
     this._roundRect(ctx, px, py, pw, ph, 16);
     ctx.stroke();
 
-    // 标题
+    // === 元素错开渲染 ===
+    const STAGGER_START = 80;   // 第一个元素开始时间 (ms)
+    const STAGGER_INTERVAL = 55; // 每个元素间隔 (ms)
+
+    // 辅助函数：计算单个元素的动画进度
+    const _elAnim = (delayMs) => {
+      const t = Math.max(0, Math.min(1, (elapsed - delayMs) / 280));
+      const s = Easing.spring(t * 3.5, 200, 11);
+      return { alpha: s, scale: 0.6 + 0.4 * s };
+    };
+
+    var staggerIdx = 0;
+
+    // --- 标题（独立 spring，稍快）---
+    const titleAnim = _elAnim(0);
+    ctx.save();
+    ctx.globalAlpha = titleAnim.alpha;
+    const titleCX = SCREEN_WIDTH / 2;
+    const titleCY = py + 44;
+    ctx.translate(titleCX, titleCY);
+    ctx.scale(titleAnim.scale, titleAnim.scale);
+    ctx.translate(-titleCX, -titleCY);
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 26px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('通关成功！', SCREEN_WIDTH / 2, py + 44);
+    ctx.fillText('通关成功！', titleCX, titleCY);
+    ctx.restore();
 
-    // 步数
+    // --- 步数 ---
+    staggerIdx++;
+    const stepsAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
+    ctx.save();
+    ctx.globalAlpha = stepsAnim.alpha;
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillText(`共 ${this.steps} 步`, SCREEN_WIDTH / 2, py + 78);
+    ctx.restore();
 
-    // 最大连击（≥2 时展示）
-    var nextY = py + 78;  // 追踪下一行 Y 坐标
+    // --- 最大连击 ---
+    var nextY = py + 78;
     if (hasCombo) {
+      staggerIdx++;
+      const comboAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
+      ctx.save();
+      ctx.globalAlpha = comboAnim.alpha;
       ctx.fillStyle = '#FF9800';
       ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText(`🔥 最大连击 ${this._maxCombo}`, SCREEN_WIDTH / 2, py + 112);
+      ctx.restore();
       nextY = py + 112;
     }
 
-    // 新关主文案
+    // --- 新关主 ---
     if (isNewMaster) {
+      staggerIdx++;
+      const masterAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
+      ctx.save();
+      ctx.globalAlpha = masterAnim.alpha;
       ctx.fillStyle = '#FFD700';
       ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText('👑 恭喜你成为新的关主！', SCREEN_WIDTH / 2, nextY + 22);
+      ctx.restore();
       nextY = nextY + 22;
     }
 
-    // 小金猪
+    // --- 小金猪 ---
     if (hasCrown) {
+      staggerIdx++;
+      const crownAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
+      ctx.save();
+      ctx.globalAlpha = crownAnim.alpha;
       ctx.fillStyle = '#FBBF24';
       ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText('🐷 获得小金猪！', SCREEN_WIDTH / 2, nextY + 22);
+      ctx.restore();
       nextY = nextY + 22;
     }
 
-    // 按钮（紧随最后一行内容）
+    // --- 按钮（最后两个元素并排，同批次但分别缩放）---
     const btnY = nextY + 34;
     const btnW = 100, btnH = 42;
     const gap = 20;
@@ -1595,41 +1754,89 @@ _tryClaimMaster() {
     const btnStartX = (SCREEN_WIDTH - totalBtnW) / 2;
 
     // 退出按钮
+    staggerIdx++;
+    const exitAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     const exitX = btnStartX;
     this._exitBtn = { x: exitX, y: btnY, w: btnW, h: btnH };
+    ctx.save();
+    ctx.globalAlpha = exitAnim.alpha;
+    const exitCX = exitX + btnW / 2;
+    const exitCY = btnY + btnH / 2;
+    ctx.translate(exitCX, exitCY);
+    ctx.scale(exitAnim.scale, exitAnim.scale);
+    ctx.translate(-exitCX, -exitCY);
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
     this._roundRect(ctx, exitX, btnY, btnW, btnH, 8);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     var exitLabel = databus.returnState === 'editor' ? '返回编辑' : '退出';
-    ctx.fillText(exitLabel, exitX + btnW / 2, btnY + btnH / 2);
+    ctx.fillText(exitLabel, exitCX, exitCY);
+    ctx.restore();
 
-    // 下一关按钮（试玩模式不显示）
+    // 下一关按钮（比退出按钮再晚 40ms）
     if (databus.returnState !== 'editor') {
+      staggerIdx++;
+      const nextAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 60);
       const nextX = btnStartX + btnW + gap;
       const hasNext = databus.currentLevelIndex + 1 < databus.projectLevels.length;
       this._nextBtn = { x: nextX, y: btnY, w: btnW, h: btnH };
+      ctx.save();
+      ctx.globalAlpha = nextAnim.alpha;
+      const nextCX = nextX + btnW / 2;
+      ctx.translate(nextCX, btnY + btnH / 2);
+      ctx.scale(nextAnim.scale, nextAnim.scale);
+      ctx.translate(-nextCX, -(btnY + btnH / 2));
       ctx.fillStyle = hasNext ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)';
       this._roundRect(ctx, nextX, btnY, btnW, btnH, 8);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.fillText(hasNext ? '下一关' : '已完成', nextX + btnW / 2, btnY + btnH / 2);
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(hasNext ? '下一关' : '已完成', nextCX, btnY + btnH / 2);
+      ctx.restore();
     } else {
-      this._nextBtn = null;  // 试玩模式无下一关按钮
+      this._nextBtn = null;
     }
+
+    ctx.restore();
   }
 
   // ========== 关主授权对话框（Canvas 弹窗，匹配通关面板风格）==========
   _renderAuthDialog() {
+    // 驱动 PopupAnimator
+    var state = this._authAnimator.update();
+
+    // 动画结束 → 检查是否需要清理
+    if (this._authAnimator.isClosed()) return;
+
+    var maskAlpha = state.maskAlpha;
+    var scale = state.scale;
+    var alpha = state.alpha;
+
+    if (alpha < 0.01) return;
+
     // 半透明遮罩
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillStyle = 'rgba(0, 0, 0, ' + maskAlpha.toFixed(3) + ')';
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     var pw = 260;
     var ph = 200;
     var px = (SCREEN_WIDTH - pw) / 2;
     var py = (SCREEN_HEIGHT - ph) / 2 - 20;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // 缩放变换
+    var pCenterX = px + pw / 2;
+    var pCenterY = py + ph / 2;
+    ctx.translate(pCenterX, pCenterY);
+    ctx.scale(scale, scale);
+    ctx.translate(-pCenterX, -pCenterY);
 
     // 面板背景 + 金色边框
     ctx.fillStyle = 'rgba(26, 26, 46, 0.95)';
@@ -1675,6 +1882,8 @@ _tryClaimMaster() {
     ctx.fillStyle = '#fff';
     ctx.font = '14px sans-serif';
     ctx.fillText('跳过', skipX + btnW / 2, btnY + btnH / 2);
+
+    ctx.restore();
   }
 
   // ========== 连击系统 ==========
@@ -1683,7 +1892,11 @@ _tryClaimMaster() {
     if (this._comboTimer) { clearTimeout(this._comboTimer); this._comboTimer = null; }
     this._maxCombo = 0;
     this._comboStartTime = 0;
-    this._comboWidget = { visible: false, scale: 1, count: 0, createdAt: 0 };
+    this._comboWidget = { visible: false, count: 0, bumpStart: 0 };
+    // 强制复位 animator（如果有挂起的 close 回调则忽略）
+    if (this._comboAnimator && this._comboAnimator.getPhase() !== 'closed') {
+      this._comboAnimator.close(function() {}); // 静默关闭
+    }
   }
 
   _triggerCombo() {
@@ -1695,16 +1908,34 @@ _tryClaimMaster() {
     if (this._comboTimer) clearTimeout(this._comboTimer);
     this._comboTimer = setTimeout(() => {
       this._comboCount = 0;
-      this._comboWidget.visible = false;
+      this._comboWidget.count = 0;
       this._comboTimer = null;
+      // 关闭动画 → 回调中隐藏
+      var that = this;
+      this._comboAnimator.close(function() {
+        // 只有当前没有新连击才真正隐藏（防止竞态）
+        if (that._comboCount === 0) {
+          that._comboWidget.visible = false;
+        }
+      });
     }, COMBO_WINDOW);
 
     // 2 连及以上才展示组件 + 连击音效
+    const w = this._comboWidget;
     if (this._comboCount >= 2) {
-      this._comboWidget.visible = true;
-      this._comboWidget.count = this._comboCount;
-      this._comboWidget.scale = 0;   // 入场从 0 开始
-      this._comboWidget.createdAt = Date.now();
+      if (!w.visible) {
+        // 首次显示：弹出动画
+        w.visible = true;
+        w.count = this._comboCount;
+        this._comboAnimator.open();
+      } else {
+        // 已可见：如果正在关闭动画中，取消关闭、重新弹出
+        if (this._comboAnimator.getPhase() === 'closing') {
+          this._comboAnimator.open();
+        }
+        w.count = this._comboCount;
+        w.bumpStart = Date.now(); // 递增弹跳
+      }
     }
   }
 
@@ -1713,72 +1944,77 @@ _tryClaimMaster() {
     if (!w.visible) return;
 
     const now = Date.now();
+    const anim = this._comboAnimator.update();
+
+    // animator 已关闭则不再渲染
+    if (this._comboAnimator.getPhase() === 'closed') return;
+
     const remaining = COMBO_WINDOW - (now - this._comboStartTime);
-    if (remaining <= 0) return;
+    const progress = Math.max(0, Math.min(1, remaining / COMBO_WINDOW));  // 1.0 → 0.0
 
-    const progress = remaining / COMBO_WINDOW;  // 1.0 → 0.0
-
-    // 入场弹性动画：scale 0→1.15→1.0 持续 200ms
-    const age = now - w.createdAt;
-    if (age < COMBO_ENTRANCE_DURATION) {
-      const t = age / COMBO_ENTRANCE_DURATION;
-      // easeOutBack: overshoot then settle
-      w.scale = 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
-      w.scale = Math.max(0, Math.min(w.scale, 1.15));
-    } else {
-      w.scale = 1;
+    // 用 animator 统一驱动 scale + alpha（打开/关闭都走 spring）
+    // 递增弹跳 bump：连击数+1 时短暂 1.0→1.08→1.0（150ms easeOutCubic）
+    var bumpMult = 1;
+    if (w.bumpStart > 0) {
+      var bumpAge = now - w.bumpStart;
+      if (bumpAge < 150) {
+        var bt = bumpAge / 150;
+        bumpMult = 1 + 0.08 * Easing.easeOutCubic(1 - Math.abs(bt * 2 - 1));
+      } else {
+        w.bumpStart = 0;
+      }
     }
+    const useScale = anim.scale * bumpMult;
+    const useAlpha = anim.alpha;
 
     // 进度条颜色
-    let barColor, textAlpha;
+    let barColor;
     if (progress > 0.75) {
       barColor = COMBO_COLOR_SAFE;
-      textAlpha = 1;
     } else if (progress > 0.5) {
       barColor = COMBO_COLOR_WARN;
-      textAlpha = 1;
     } else {
       barColor = COMBO_COLOR_DANGER;
-      textAlpha = 0.5 + 0.5 * (progress / 0.25); // 0.25→0.0 映射 1→0.5
     }
 
     // 计算位置
-    const wx = 0;  // 屏幕最左边贴边
-    const wy = this._boardCardY-COMBO_WIDGET_H;  // 下边缘贴着棋盘卡片
+    const wx = 0;
+    const wy = this._boardCardY - COMBO_WIDGET_H;
     const barWidth = COMBO_WIDGET_W * progress;
 
     ctx.save();
+    ctx.globalAlpha = useAlpha;
 
-    // 入场缩放变换（围绕组件中心）
+    // 缩放变换（围绕组件中心）
     const centerX = wx + COMBO_WIDGET_W / 2;
     const centerY = wy + COMBO_WIDGET_H / 2;
     ctx.translate(centerX, centerY);
-    ctx.scale(w.scale, w.scale);
+    ctx.scale(useScale, useScale);
     ctx.translate(-centerX, -centerY);
 
     // 1. 容器背景 — 主题粉 5%（最底层）
     ctx.fillStyle = 'rgba(236, 72, 153, 0.05)';
     ctx.beginPath();
-    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
+    this._roundRectPath(ctx, wx + 0.5, wy + 0.5, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
     ctx.fill();
 
     // 2. 暗色占位槽（进度条空余部分）
     ctx.fillStyle = 'rgba(61, 61, 92, 0.12)';
     ctx.beginPath();
-    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
+    this._roundRectPath(ctx, wx + 0.5, wy + 0.5, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
     ctx.fill();
 
     // 3. 进度条填充（从右向左收拢 — clip 到容器圆角内确保不越界）
     ctx.save();
     ctx.beginPath();
-    this._roundRectPath(ctx, wx, wy, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
+    this._roundRectPath(ctx, wx + 0.5, wy + 0.5, COMBO_WIDGET_W, COMBO_WIDGET_H, COMBO_WIDGET_R);
     ctx.clip();
     ctx.fillStyle = barColor;
     ctx.fillRect(wx, wy, barWidth, COMBO_WIDGET_H);
     ctx.restore();
 
-    // 4. 文字（居中覆盖）— 字号调小一号，Y 坐标下移 2px 修正视觉对齐
-    ctx.globalAlpha = textAlpha;
+    // 4. 文字（居中覆盖）
+    ctx.globalAlpha = 1;
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 20px sans-serif';
     ctx.textAlign = 'left';

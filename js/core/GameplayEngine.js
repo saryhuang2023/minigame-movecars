@@ -6,6 +6,7 @@ const { ctx, canvas, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const { PigRenderer, roundRect, AnimType } = require('../render/PigRenderer.js');
 const databus = require('../databus');
 const audio = require('../audio/AudioManager.js');
+const Easing = require('./Easing.js');
 
 // ========== 常量 ==========
 // Claymorphism 风格：格子 = 棋盘上的凹陷引导，非独立视觉元素
@@ -684,12 +685,16 @@ class GameplayEngine {
     for (const pid of toDelete) delete this.flashingPigs[pid];
   }
 
-  // 被撞红色遮罩透明度（恒定，500ms 持续）
+  // 被撞红色遮罩透明度（smoothstep 淡入淡出，500ms）
   _getFlashOverlayAlpha(pigId) {
     const start = this.flashingPigs[pigId];
     if (!start) return 0;
     const elapsed = Date.now() - start;
-    return elapsed <= 500 ? 0.7 : 0;
+    if (elapsed > 500) return 0;
+    // fade-in 0-80ms, hold 80-380ms, fade-out 380-500ms
+    if (elapsed < 80) return 0.7 * Easing.smoothstep(elapsed / 80);
+    if (elapsed > 380) return 0.7 * (1 - Easing.smoothstep((elapsed - 380) / 120));
+    return 0.7;
   }
 
   // ============================================================
@@ -907,14 +912,15 @@ class GameplayEngine {
     for (const a of this.animations) {
       const elapsed = now - a.startTime;
       const progress = Math.min(1, elapsed / a.duration);
-      const eased = 1 - Math.pow(1 - progress, 3);
+      const eased = Easing.easeOutCubic(progress);
       a.currentDx = a.dirX * a.totalDist * eased;
       a.currentDy = a.dirY * a.totalDist * eased;
     }
     for (const g of this.ghostAnimations) {
       const elapsed = now - g.startTime;
       const progress = Math.min(1, elapsed / g.duration);
-      const eased = 1 - Math.pow(1 - progress, 3);
+      g.progress = progress;  // 存储进度供渲染淡入淡出
+      const eased = Easing.easeOutCubic(progress);
       g.currentDx = g.dirX * g.totalDist * eased;
       g.currentDy = g.dirY * g.totalDist * eased;
     }
@@ -1030,13 +1036,18 @@ class GameplayEngine {
       }
     }
 
-    // 幽灵动画（面向 hintAngle 飞行）
+    // 幽灵动画（面向 hintAngle 飞行，首尾淡入淡出）
     for (const g of this.ghostAnimations) {
       const pig = this.pigs.find(p => p.id === g.pigId);
       if (pig) {
         const savedAngle = pig.angle;
         pig.angle = g.hintAngle != null ? g.hintAngle : pig.angle;
-        ctx.globalAlpha = 0.70;
+        // 前 15% 淡入，后 15% 淡出，中间保持 70%
+        var gAlpha = 0.70;
+        var gp = g.progress || 0;
+        if (gp < 0.15) gAlpha = 0.70 * Easing.smoothstep(gp / 0.15);
+        else if (gp > 0.85) gAlpha = 0.70 * (1 - Easing.smoothstep((gp - 0.85) / 0.15));
+        ctx.globalAlpha = gAlpha;
         pr.draw(ctx, pig, g.currentDx, g.currentDy, AnimType.ESCAPE);
         ctx.globalAlpha = 1;
         pig.angle = savedAngle;

@@ -4,6 +4,8 @@ const databus = require('../databus.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
+const Easing = require('./Easing.js');
+const TransitionManager = require('./TransitionManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
@@ -33,6 +35,8 @@ class GameEngine {
     this.menuButtons = [];
     this._titleTapCount = 0; // 标题连击计数，满 5 次显示编辑器入口
     this._titleLongPressTimer = null;  // 标题长按计时器（模拟器弹 debug 面板用）
+    this._pressedBtnIdx = -1;   // 当前被按下的按钮索引（用于按压动画）
+    this._pressedBtnTime = 0;   // 按钮按下时间
 
     console.log('[GameEngine] constructor 完成，准备调用 start()');
     this.start();
@@ -491,7 +495,7 @@ class GameEngine {
 
         // 设置面板打开时，所有触控由面板处理
         if (settingsPanel.isOpen()) {
-          settingsPanel.handleTouch(t.x, t.y);
+          settingsPanel.handleTouch(t.x, t.y, e.type);
           return;
         }
 
@@ -521,6 +525,9 @@ class GameEngine {
             if (t.x >= btn.x && t.x <= btn.x + btn.w &&
                 t.y >= btn.y && t.y <= btn.y + btn.h) {
               audio.play('button_click');
+              // 按钮按压动画
+              this._pressedBtnIdx = i;
+              this._pressedBtnTime = Date.now();
               if (btn.action) btn.action();
               return;
             }
@@ -546,6 +553,15 @@ class GameEngine {
     var C = this.COLORS;
     var safeTop = databus.safeTop;
     var cx = SCREEN_WIDTH / 2;
+
+    // 计算按钮按压缩放
+    var pressScale = this._getBtnPressScale();
+    var mainScale = this._pressedBtnIdx === 0 ? pressScale : 1;
+    var secScale  = this._pressedBtnIdx === 1 ? pressScale : 1;
+    var arenaScale = this._pressedBtnIdx === 2 ? pressScale : 1;
+    var shareScale = this._pressedBtnIdx === 3 ? pressScale : 1;
+    var setScale   = this._pressedBtnIdx === 4 ? pressScale : 1;
+    var editScale  = this._pressedBtnIdx === 5 ? pressScale : 1;
 
     // ===== 天空渐变背景 =====
     var bgGrad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
@@ -585,6 +601,14 @@ class GameEngine {
     var btnH = 64;
     var btnX = (SCREEN_WIDTH - btnW) / 2;
     var mainBtnY = titleY + 80;
+    var mainBtnCX = btnX + btnW / 2;
+    var mainBtnCY = mainBtnY + btnH / 2;
+
+    // 按压缩放
+    ctx.save();
+    ctx.translate(mainBtnCX, mainBtnCY);
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-mainBtnCX, -mainBtnCY);
     this.drawClayButton(btnX, mainBtnY, btnW, btnH, 32);
 
     // 按钮文字
@@ -593,10 +617,18 @@ class GameEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🎮 开始游戏', cx, mainBtnY + btnH / 2);
+    ctx.restore();
 
     // ===== 次按钮：关卡选择 =====
     var secBtnH = 52;
     var secBtnY = mainBtnY + btnH + 12;
+    var secBtnCX = btnX + btnW / 2;
+    var secBtnCY = secBtnY + secBtnH / 2;
+
+    ctx.save();
+    ctx.translate(secBtnCX, secBtnCY);
+    ctx.scale(secScale, secScale);
+    ctx.translate(-secBtnCX, -secBtnCY);
     this.drawClaySecondary(btnX, secBtnY, btnW, secBtnH, 28);
 
     ctx.fillStyle = C.primary;
@@ -604,10 +636,18 @@ class GameEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('📋 关卡选择', cx, secBtnY + secBtnH / 2);
+    ctx.restore();
 
     // ===== 次按钮：竞技大厅（金色边框） =====
     var arenaBtnH = 52;
     var arenaBtnY = secBtnY + secBtnH + 12;
+    var arenaBtnCX = btnX + btnW / 2;
+    var arenaBtnCY = arenaBtnY + arenaBtnH / 2;
+
+    ctx.save();
+    ctx.translate(arenaBtnCX, arenaBtnCY);
+    ctx.scale(arenaScale, arenaScale);
+    ctx.translate(-arenaBtnCX, -arenaBtnCY);
     this.drawClaySecondary(btnX, arenaBtnY, btnW, arenaBtnH, 28);
 
     // 覆盖边框为金色（而非默认粉色）
@@ -621,6 +661,7 @@ class GameEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🏆 竞技大厅', cx, arenaBtnY + arenaBtnH / 2);
+    ctx.restore();
 
     // ===== 统计卡片 =====
     var cardY = arenaBtnY + arenaBtnH + 20;
@@ -662,15 +703,38 @@ class GameEngine {
     // ===== 底部图标行：分享 + 设置 + 编辑（隐藏入口） =====
     var iconSize = 48;
     var bottomY = SCREEN_HEIGHT - iconSize - 56;
+
+    var shareCX = cx - iconSize - 24 + iconSize / 2;
+    var shareCY = bottomY + iconSize / 2;
+    ctx.save();
+    ctx.translate(shareCX, shareCY);
+    ctx.scale(shareScale, shareScale);
+    ctx.translate(-shareCX, -shareCY);
     var shareArea = this.drawIconBtn(cx - iconSize - 24, bottomY, iconSize, '📤', '分享');
+    ctx.restore();
+
     // 设置 — 使用矢量齿轮图标
     var setX = cx + 24;
+    var setCX = setX + iconSize / 2;
+    var setCY = bottomY + iconSize / 2;
+    ctx.save();
+    ctx.translate(setCX, setCY);
+    ctx.scale(setScale, setScale);
+    ctx.translate(-setCX, -setCY);
     var setArea = this._drawSettingsBtn(setX, bottomY, iconSize);
+    ctx.restore();
 
     // 编辑器入口 — 屏幕右下角，连击标题 5 次后显示
     var editArea = null;
     if (this._titleTapCount >= 5) {
-      editArea = this.drawIconBtn(SCREEN_WIDTH - iconSize - 20, bottomY, iconSize, '🔧', '编辑');
+      var editBtnX = SCREEN_WIDTH - iconSize - 20;
+      var editBtnCX = editBtnX + iconSize / 2;
+      ctx.save();
+      ctx.translate(editBtnCX, shareCY);
+      ctx.scale(editScale, editScale);
+      ctx.translate(-editBtnCX, -shareCY);
+      editArea = this.drawIconBtn(editBtnX, bottomY, iconSize, '🔧', '编辑');
+      ctx.restore();
     }
 
     // ===== 注册按钮碰撞区域 =====
@@ -703,6 +767,12 @@ class GameEngine {
   update() {
     databus.frame++;
 
+    // 过渡动画进行中 → 屏蔽输入（让动画跑完）
+    if (TransitionManager.isActive()) {
+      TransitionManager.getProgress(); // 驱动状态机
+      return;
+    }
+
     // 状态切换（在事件处理之前，确保引擎已激活）
     this.checkStateTransition();
 
@@ -722,11 +792,18 @@ class GameEngine {
     const curr = databus.gameState;
     if (curr === this._prevState) return;
 
+    const prev = this._prevState;
+
+    // 启动场景过渡动画（在引擎切换之前）
+    if (prev && curr && curr !== prev) {
+      TransitionManager.start(prev, curr);
+    }
+
     // 切场景：停止所有 SFX，避免残留音效
     audio.onSceneChange();
 
     // 反激活旧状态
-    switch (this._prevState) {
+    switch (prev) {
       case 'editor':      this.editor.deactivate();        break;
       case 'levelSelect': this.levelSelect.deactivate();   break;
       case 'playing':     this.playing.deactivate();       break;
@@ -750,6 +827,40 @@ class GameEngine {
   render() {
     beginFrame();
     this.drawBackground();
+
+    // 场景过渡动画
+    var trans = TransitionManager.getProgress();
+    if (trans && !trans.done) {
+      var sw = databus.screenWidth;
+      var offset = 0;
+
+      if (trans.direction === 'forward') {
+        // 新场景从右侧滑入
+        offset = sw * (1 - trans.t);
+      } else if (trans.direction === 'back') {
+        // 新场景从左侧滑入
+        offset = -sw * (1 - trans.t);
+      }
+      // fade: offset = 0（无滑入，直接叠在上面）
+
+      ctx.save();
+      if (trans.direction === 'fade') {
+        ctx.globalAlpha = trans.t;
+      } else {
+        ctx.translate(offset, 0);
+      }
+      this._renderCurrentScene();
+      ctx.restore();
+    } else {
+      this._renderCurrentScene();
+    }
+
+    // 开发者调试面板 — 最顶层渲染
+    DebugPanel.render(databus, this);
+    present();
+  }
+
+  _renderCurrentScene() {
     switch (databus.gameState) {
       case 'menu':
         this.renderMenu();
@@ -764,9 +875,6 @@ class GameEngine {
         this.editor.render();
         break;
     }
-    // 开发者调试面板 — 最顶层渲染
-    DebugPanel.render(databus, this);
-    present();
   }
 
   drawBackground() {
@@ -796,6 +904,30 @@ class GameEngine {
     this.update();
     this.render();
     requestAnimationFrame(this.loop.bind(this));
+  }
+
+  /**
+   * 计算按钮按压回弹缩放值
+   * 按下时 scale 1→0.95（80ms），松手后 0.95→1.0（120ms easeOutBack）
+   */
+  _getBtnPressScale() {
+    if (this._pressedBtnIdx < 0) return 1;
+    var elapsed = Date.now() - this._pressedBtnTime;
+    var pressDuration = 100;
+    var releaseDuration = 140;
+
+    if (elapsed < pressDuration) {
+      // 按压阶段
+      return 1 - 0.05 * Easing.easeOutCubic(Math.min(elapsed / pressDuration, 1));
+    } else {
+      // 回弹阶段
+      var t = Math.min((elapsed - pressDuration) / releaseDuration, 1);
+      if (t >= 1) {
+        this._pressedBtnIdx = -1;
+        return 1;
+      }
+      return 0.95 + 0.05 * Easing.easeOutBack(t, 1.5);
+    }
   }
 
   roundRect(ctx, x, y, w, h, r) {

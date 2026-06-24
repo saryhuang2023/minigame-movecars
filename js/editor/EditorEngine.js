@@ -17,6 +17,7 @@ const GameplayEngine = require('../core/GameplayEngine.js');
 const { roundRect } = require('../render/PigRenderer.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
+const ButtonPress = require('../anim/ButtonPress.js');
 
 
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
@@ -42,6 +43,7 @@ class EditorEngine {
     this.showLevelSheet = false;
     this.hintMode = false;              // 提示编辑模式
     this.hintHintBtns = [];             // 提示模式下底部栏按钮
+    this._btnPress = new ButtonPress(); // 按钮按压微交互
 
     // ===== Toast =====
     this.toastText = '';
@@ -189,6 +191,7 @@ class EditorEngine {
       var b = this.hintHintBtns[i];
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
         audio.play('button_click');
+        this._btnPress.press('hintbadge_' + b.pigId);
         this._toggleHintId(b.pigId);
         return;
       }
@@ -1476,6 +1479,15 @@ class EditorEngine {
     // 返回按钮（左上角）— 手指友好
     const backW = 44, backH = 36;
     const backX = 6, backY = (topBarH - backH) / 2;
+    var backCX = backX + backW / 2;
+    var backCY = backY + backH / 2;
+
+    var backScale = this._btnPress.getScale('top:back');
+    ctx.save();
+    ctx.translate(backCX, backCY);
+    ctx.scale(backScale, backScale);
+    ctx.translate(-backCX, -backCY);
+
     ctx.fillStyle = '#f0f0f0';
     roundRect(ctx,backX, backY, backW, backH, 6);
     ctx.fill();
@@ -1484,6 +1496,7 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('←', backX + backW / 2, backY + backH / 2);
+    ctx.restore();
 
     const titleX = backX + backW + 8;
 
@@ -1497,6 +1510,15 @@ class EditorEngine {
     const titleWidth = 85; // "关卡编辑器" 五个字 15px bold 大约宽度
     const btnW = 52, btnH = 32;
     const btnX = titleX + titleWidth + 4, btnY = (topBarH - btnH) / 2;
+
+    var playScale = this._btnPress.getScale('top:play');
+    var playCX = btnX + btnW / 2;
+    var playCY = btnY + btnH / 2;
+    ctx.save();
+    ctx.translate(playCX, playCY);
+    ctx.scale(playScale, playScale);
+    ctx.translate(-playCX, -playCY);
+
     ctx.fillStyle = '#2196F3';
     roundRect(ctx,btnX, btnY, btnW, btnH, 6);
     ctx.fill();
@@ -1505,10 +1527,11 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('试玩', btnX + btnW / 2, btnY + btnH / 2);
+    ctx.restore();
 
     this.topBtns = [
-      { x: backX, y: backY, w: backW, h: backH, action: 'back' },
-      { x: btnX, y: btnY, w: btnW, h: btnH, action: 'play' }
+      { x: backX, y: backY, w: backW, h: backH, action: 'back', id: 'top:back' },
+      { x: btnX, y: btnY, w: btnW, h: btnH, action: 'play', id: 'top:play' }
     ];
   }
 
@@ -1516,12 +1539,35 @@ class EditorEngine {
     for (const btn of this.topBtns) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         audio.play('button_click');
+        this._btnPress.press(btn.id);
         if (btn.action === 'play') this._checkDirtyAndDo(() => this._goToPlaying());
         if (btn.action === 'back') this._checkDirtyAndDo(() => this._goToMenu());
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * 带按压缩放的按钮绘制包装器
+   * @param {string} id - 按钮唯一标识
+   * @param {number} x, y, w, h - 按钮位置和尺寸
+   * @param {function} drawFn - 按钮绘制回调（在缩放变换内执行）
+   */
+  _drawBtn(id, x, y, w, h, drawFn) {
+    var scale = this._btnPress.getScale(id);
+    var cx = x + w / 2;
+    var cy = y + h / 2;
+    if (scale !== 1) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(scale, scale);
+      ctx.translate(-cx, -cy);
+      drawFn();
+      ctx.restore();
+    } else {
+      drawFn();
+    }
   }
 
   // ============================================================
@@ -1571,15 +1617,17 @@ class EditorEngine {
       // 提示模式按钮
       x2 += 60;
       var hintBtnW = 80;
-      ctx.fillStyle = '#8B5CF6';
-      roundRect(ctx, x2, btnYHint, hintBtnW, btnH2, 6);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('退出提示', x2 + hintBtnW / 2, midYHint);
-      this.bottomBtns.push({ x: x2, y: btnYHint, w: hintBtnW, h: btnH2, onClick: function() {
+      this._drawBtn('hint:exit', x2, btnYHint, hintBtnW, btnH2, function() {
+        ctx.fillStyle = '#8B5CF6';
+        roundRect(ctx, x2, btnYHint, hintBtnW, btnH2, 6);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('退出提示', x2 + hintBtnW / 2, midYHint);
+      });
+      this.bottomBtns.push({ x: x2, y: btnYHint, w: hintBtnW, h: btnH2, id: 'hint:exit', onClick: function() {
         this.hintMode = false;
         this.gp.selectedPigId = null;
         this.showToast('已退出提示模式');
@@ -1588,15 +1636,17 @@ class EditorEngine {
 
       // 保存按钮
       var saveBtnW = 66;
-      ctx.fillStyle = '#2196F3';
-      roundRect(ctx, x2, btnYHint, saveBtnW, btnH2, 6);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('保存', x2 + saveBtnW / 2, midYHint);
-      this.bottomBtns.push({ x: x2, y: btnYHint, w: saveBtnW, h: btnH2, onClick: function() {
+      this._drawBtn('hint:save', x2, btnYHint, saveBtnW, btnH2, function() {
+        ctx.fillStyle = '#2196F3';
+        roundRect(ctx, x2, btnYHint, saveBtnW, btnH2, 6);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('保存', x2 + saveBtnW / 2, midYHint);
+      });
+      this.bottomBtns.push({ x: x2, y: btnYHint, w: saveBtnW, h: btnH2, id: 'hint:save', onClick: function() {
         this.saveLevel();
         this.showToast('已保存关卡');
       }.bind(this) });
@@ -1619,15 +1669,17 @@ class EditorEngine {
     // 猪按钮
     const pigW = 66;
     const pigLabel = this.gp.selectedPigId != null ? '#' + this.gp.selectedPigId : '猪';
-    ctx.fillStyle = '#FF9800';
-    roundRect(ctx, x, btnY1, pigW, btnH, 6);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(pigLabel, x + pigW / 2, midY1);
-    this.bottomBtns.push({ x, y: btnY1, w: pigW, h: btnH, onClick: () => {
+    this._drawBtn('btm:pig', x, btnY1, pigW, btnH, function() {
+      ctx.fillStyle = '#FF9800';
+      roundRect(ctx, x, btnY1, pigW, btnH, 6);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(pigLabel, x + pigW / 2, midY1);
+    });
+    this.bottomBtns.push({ x, y: btnY1, w: pigW, h: btnH, id: 'btm:pig', onClick: () => {
       if (this.gp.selectedPigId == null) {
         this.showToast('请先在棋盘上选中小猪');
         return;
@@ -1638,15 +1690,17 @@ class EditorEngine {
 
     // 提示按钮
     const hintModeW = 66;
-    ctx.fillStyle = this.hintMode ? '#8B5CF6' : 'rgba(139, 92, 246, 0.2)';
-    roundRect(ctx, x, btnY1, hintModeW, btnH, 6);
-    ctx.fill();
-    ctx.fillStyle = this.hintMode ? '#fff' : '#8B5CF6';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('提示', x + hintModeW / 2, midY1);
-    this.bottomBtns.push({ x, y: btnY1, w: hintModeW, h: btnH, onClick: () => {
+    this._drawBtn('btm:hint', x, btnY1, hintModeW, btnH, function() {
+      ctx.fillStyle = this.hintMode ? '#8B5CF6' : 'rgba(139, 92, 246, 0.2)';
+      roundRect(ctx, x, btnY1, hintModeW, btnH, 6);
+      ctx.fill();
+      ctx.fillStyle = this.hintMode ? '#fff' : '#8B5CF6';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('提示', x + hintModeW / 2, midY1);
+    }.bind(this));
+    this.bottomBtns.push({ x, y: btnY1, w: hintModeW, h: btnH, id: 'btm:hint', onClick: () => {
       this.hintMode = !this.hintMode;
       if (this.hintMode) {
         this.gp.selectedPigId = null;
@@ -1668,21 +1722,22 @@ class EditorEngine {
 
     // 金猪输入框
     const crownW = 54, crownH = btnH;
-    ctx.strokeStyle = '#FF8C00';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, x, btnY1, crownW, crownH, 6);
-    ctx.stroke();
-    ctx.fillStyle = '#FF8C00';
-    ctx.font = 'bold 13px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    var crownLabel = this._crownSteps > 0 ? String(this._crownSteps) : '无';
-    ctx.fillText(crownLabel, x + crownW / 2, midY1);
-
-    var self = this;
+    this._drawBtn('btm:crown', x, btnY1, crownW, crownH, function() {
+      ctx.strokeStyle = '#FF8C00';
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, x, btnY1, crownW, crownH, 6);
+      ctx.stroke();
+      ctx.fillStyle = '#FF8C00';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      var crownLabel = self._crownSteps > 0 ? String(self._crownSteps) : '无';
+      ctx.fillText(crownLabel, x + crownW / 2, midY1);
+    });
     this.bottomBtns.push({
-      x: x, y: btnY1, w: crownW, h: crownH,
+      x: x, y: btnY1, w: crownW, h: crownH, id: 'btm:crown',
       onClick: function() {
+        var self = this;
         wx.showModal({
           title: '金猪阈值',
           editable: true,
@@ -1726,53 +1781,61 @@ class EditorEngine {
       && this.levelList[this.currentLevelIdx].isDirty;
 
     const lvlBtnW = 72;
-    ctx.fillStyle = '#f5f5f5';
-    ctx.strokeStyle = '#ccc';
-    ctx.lineWidth = 1;
-    roundRect(ctx, x, btnY2, lvlBtnW, btnH, 6);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = isDirty ? '#E65100' : '#333';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const lvlLabel = (isDirty ? '*' : '') + curName + ' ▼';
-    ctx.fillText(lvlLabel, x + lvlBtnW / 2, midY2);
-    this.levelBtns.push({ x, y: btnY2, w: lvlBtnW, h: btnH, action: 'showLevelSheet' });
+    this._drawBtn('lvl:show', x, btnY2, lvlBtnW, btnH, function() {
+      ctx.fillStyle = '#f5f5f5';
+      ctx.strokeStyle = '#ccc';
+      ctx.lineWidth = 1;
+      roundRect(ctx, x, btnY2, lvlBtnW, btnH, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = isDirty ? '#E65100' : '#333';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      var lvlLabel2 = (isDirty ? '*' : '') + curName + ' ▼';
+      ctx.fillText(lvlLabel2, x + lvlBtnW / 2, midY2);
+    });
+    this.levelBtns.push({ x, y: btnY2, w: lvlBtnW, h: btnH, id: 'lvl:show', action: 'showLevelSheet' });
     x += lvlBtnW + 4;
 
     // 操作按钮：新建 / 保存 / 复制
     const opBtns = [
-      { label: '新建', color: '#4CAF50', action: 'newLevel' },
-      { label: '保存', color: '#2196F3', action: 'saveLevel' },
-      { label: '复制', color: '#00BCD4', action: 'exportLevel' },
+      { label: '新建', color: '#4CAF50', action: 'newLevel', id: 'lvl:new' },
+      { label: '保存', color: '#2196F3', action: 'saveLevel', id: 'lvl:save' },
+      { label: '复制', color: '#00BCD4', action: 'exportLevel', id: 'lvl:clone' },
     ];
 
     const opW = 38;
     for (const b of opBtns) {
-      ctx.fillStyle = b.color;
-      roundRect(ctx, x, btnY2, opW, btnH, 6);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(b.label, x + opW / 2, midY2);
-      this.levelBtns.push({ x, y: btnY2, w: opW, h: btnH, action: b.action });
+      this._drawBtn(b.id, x, btnY2, opW, btnH, function(bx, by, bw, bh, bmY) {
+        return function() {
+          ctx.fillStyle = b.color;
+          roundRect(ctx, bx, btnY2, opW, btnH, 6);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(b.label, bx + opW / 2, bmY);
+        };
+      }(x, btnY2, opW, btnH, midY2));
+      this.levelBtns.push({ x, y: btnY2, w: opW, h: btnH, id: b.id, action: b.action });
       x += opW + 4;
     }
 
     // 本地同步按钮
     const syncW = 50;
-    ctx.fillStyle = '#ff9800';
-    roundRect(ctx, x, btnY2, syncW, btnH, 6);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('本地同步', x + syncW / 2, midY2);
-    this.levelBtns.push({ x, y: btnY2, w: syncW, h: btnH, action: 'localSync' });
+    this._drawBtn('lvl:sync', x, btnY2, syncW, btnH, function() {
+      ctx.fillStyle = '#ff9800';
+      roundRect(ctx, x, btnY2, syncW, btnH, 6);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('本地同步', x + syncW / 2, midY2);
+    });
+    this.levelBtns.push({ x, y: btnY2, w: syncW, h: btnH, id: 'lvl:sync', action: 'localSync' });
     x += syncW + 4;
 
     // 发布按钮：toggle ready 0↔1
@@ -1780,15 +1843,17 @@ class EditorEngine {
       ? (this.levelList[this.currentLevelIdx].data.ready || 0) : 0;
     const publishW = 50;
     const publishColor = ready === 1 ? '#E91E63' : '#9E9E9E';
-    ctx.fillStyle = publishColor;
-    roundRect(ctx, x, btnY2, publishW, btnH, 6);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ready === 1 ? '待发布' : '设计中', x + publishW / 2, midY2);
-    this.levelBtns.push({ x, y: btnY2, w: publishW, h: btnH, action: 'toggleReady' });
+    this._drawBtn('lvl:publish', x, btnY2, publishW, btnH, function() {
+      ctx.fillStyle = publishColor;
+      roundRect(ctx, x, btnY2, publishW, btnH, 6);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ready === 1 ? '待发布' : '设计中', x + publishW / 2, midY2);
+    });
+    this.levelBtns.push({ x, y: btnY2, w: publishW, h: btnH, id: 'lvl:publish', action: 'toggleReady' });
   }
 
   // ---- 紧凑步进器：label [-][+] — 手指友好 ----
@@ -1825,7 +1890,7 @@ class EditorEngine {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x + btnW / 2, midY);
-    targetArray.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.max(min, value - step)) });
+    targetArray.push({ x, y: btnY, w: btnW, h: btnH, id: 'stp:' + label + ':minus', onClick: () => onChange(Math.max(min, value - step)) });
     x += btnW + 3;
 
     // 加号
@@ -1834,7 +1899,7 @@ class EditorEngine {
     ctx.stroke();
     ctx.fillStyle = '#333';
     ctx.fillText('+', x + btnW / 2, midY);
-    targetArray.push({ x, y: btnY, w: btnW, h: btnH, onClick: () => onChange(Math.min(max, value + step)) });
+    targetArray.push({ x, y: btnY, w: btnW, h: btnH, id: 'stp:' + label + ':plus', onClick: () => onChange(Math.min(max, value + step)) });
     x += btnW;
 
     return x;
@@ -1869,6 +1934,7 @@ class EditorEngine {
     // 关卡管理按钮
     for (const btn of this.levelBtns) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+        this._btnPress.press(btn.id);
         this._handleLevelAction(btn.action);
         return true;
       }
@@ -1877,6 +1943,7 @@ class EditorEngine {
     for (const btn of this.bottomBtns) {
       if (btn.onClick && x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         audio.play('button_click');
+        this._btnPress.press(btn.id);
         btn.onClick();
         return true;
       }
@@ -1999,11 +2066,13 @@ class EditorEngine {
     if (this.showPigSheet) {
       if (this.sheetPigCloseRect && this.hitRect(x, y, this.sheetPigCloseRect)) {
         audio.play('button_click');
+        this._btnPress.press('sheet:close');
         this.showPigSheet = false;
         return true;
       }
       if (this.sheetPigDeleteRect && this.hitRect(x, y, this.sheetPigDeleteRect)) {
         audio.play('button_click');
+        this._btnPress.press('sheet:delete');
         this.deleteSelectedPig();
         return true;
       }
@@ -2411,12 +2480,14 @@ class EditorEngine {
   checkConfirmDialog(x, y) {
     if (this.hitRect(x, y, this._confirmSaveRect)) {
       audio.play('button_click');
+      this._btnPress.press('confirm:save');
       this.confirmDialog.onSave();
       this.confirmDialog = null;
       return true;
     }
     if (this.hitRect(x, y, this._confirmSkipRect)) {
       audio.play('button_click');
+      this._btnPress.press('confirm:skip');
       this.confirmDialog.onSkip();
       this.confirmDialog = null;
       return true;
