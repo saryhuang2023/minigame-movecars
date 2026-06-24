@@ -17,11 +17,10 @@ const PINK = '#EC4899';     // 关卡徽章
 const DARK = '#0F172A';     // 深色文字
 const MUTED = '#64748B';    // 次要文字
 const PURPLE = '#8B5CF6';   // 提示按钮
-const RED = '#DC2626';      // 重置按钮
 
 // 布局常量（来自 Ardot 设计稿 375×812）
 const TOP_BAR_H = 48;
-const BOTTOM_BAR_H = 56;
+const BOTTOM_BAR_H = 90;
 const PADDING = 16;         // 内容区外边距
 const CARD_GAP = 8;         // 卡片之间的间距
 const CARD_PADDING = 12;    // 棋盘卡片内边距
@@ -48,7 +47,6 @@ class PlayingEngine {
     this.levelName = '';
     this.steps = 0;
     this.backBtn = null;
-    this.restartBtn = null;
     this.hintBtn = null;       // 提示按钮
     this._btnPress = new ButtonPress();
     this._victory = false;
@@ -295,14 +293,6 @@ class PlayingEngine {
       return;
     }
 
-    // 底部按钮
-    if (this.restartBtn && x >= this.restartBtn.x && x <= this.restartBtn.x + this.restartBtn.w &&
-        y >= this.restartBtn.y && y <= this.restartBtn.y + this.restartBtn.h) {
-      audio.play('button_click');
-      this._btnPress.press('restart');
-      this.restartLevel();
-      return;
-    }
     if (this.hintBtn && !this._hintTarget && x >= this.hintBtn.x && x <= this.hintBtn.x + this.hintBtn.w &&
         y >= this.hintBtn.y && y <= this.hintBtn.y + this.hintBtn.h) {
       audio.play('button_click');
@@ -1407,32 +1397,12 @@ _tryClaimMaster() {
   _drawBottomBar() {
     const barY = this._bottomBarY;
     const barW = this._boardCardW;
-    const btnW = 46, btnH = 36;
-    const gap = 12;
-
-    // === 重置按钮（最右）===
-    const resetX = PADDING + barW - btnW;
-    const btnY = barY + (BOTTOM_BAR_H - btnH) / 2;
-    this.restartBtn = { x: resetX, y: btnY, w: btnW, h: btnH };
-
-    var rstScale = this._btnPress.getScale('restart');
-    var rstCX = resetX + btnW / 2;
-    var rstCY = btnY + btnH / 2;
-    ctx.save();
-    ctx.translate(rstCX, rstCY);
-    ctx.scale(rstScale, rstScale);
-    ctx.translate(-rstCX, -rstCY);
-
-    this._whiteBtn(resetX, btnY, btnW, btnH);
-    ctx.fillStyle = RED;
-    ctx.font = 'bold 13px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('\u91CD\u7F6E', resetX + btnW / 2, btnY + btnH / 2);
-    ctx.restore();
+    const btnW = 90, btnH = 68;
+    const gap = 14;
+    const btnY = barY + (BOTTOM_BAR_H - btnH);
 
     // === 提示按钮 ===
-    var hintX = resetX - btnW - gap;
+    const hintX = PADDING + barW - btnW;
     this.hintBtn = { x: hintX, y: btnY, w: btnW, h: btnH };
 
     var hintScale = this._btnPress.getScale('hint');
@@ -1444,10 +1414,10 @@ _tryClaimMaster() {
     ctx.translate(-hintCX, -hintCY);
 
     var hintDisabled = !!this._hintTarget;
-    this._whiteBtn(hintX, btnY, btnW, btnH);
+    this._styledBtn(hintX, btnY, btnW, btnH, '#F3EEFF', '#8B5CF6', hintDisabled);
     ctx.fillStyle = hintDisabled ? 'rgba(139,92,246,0.3)' : PURPLE;
-    ctx.font = 'bold 13px sans-serif';
-    ctx.fillText('\u63D0\u793A', hintX + btnW / 2, btnY + btnH / 2);
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('\uD83D\uDCA1 \u63D0\u793A', hintX + btnW / 2, btnY + btnH / 2);
     ctx.restore();
 
     // === 移除按钮（提示激活时出现）===
@@ -1462,26 +1432,40 @@ _tryClaimMaster() {
       ctx.scale(rmvScale, rmvScale);
       ctx.translate(-rmvCX, -(btnY + btnH / 2));
 
-      this._whiteBtn(removeX, btnY, btnW, btnH);
+      this._styledBtn(removeX, btnY, btnW, btnH, '#FFF0F0', '#FF5252', false);
       ctx.fillStyle = '#FF5252';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.fillText('\u79FB\u9664', removeX + btnW / 2, btnY + btnH / 2);
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText('\u274C \u79FB\u9664', removeX + btnW / 2, btnY + btnH / 2);
       ctx.restore();
     } else {
       this._removeBtn = null;
     }
   }
 
-  _whiteBtn(x, y, w, h) {
+  _styledBtn(x, y, w, h, fillColor, borderColor, disabled) {
     ctx.save();
-    // 按钮阴影 rgba(161,150,181,0.15) offset(4,4) blur 12
-    ctx.shadowColor = 'rgba(161, 150, 181, 0.15)';
-    ctx.shadowBlur = 12;
+    // 按钮阴影
+    ctx.shadowColor = 'rgba(161, 150, 181, 0.2)';
+    ctx.shadowBlur = 16;
     ctx.shadowOffsetX = 4;
-    ctx.shadowOffsetY = 4;
-    ctx.fillStyle = '#FFFFFF';
-    this._roundRect(ctx, x, y, w, h, 16);
+    ctx.shadowOffsetY = 6;
+
+    if (disabled) {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(139,92,246,0.2)';
+    } else {
+      // 渐变填充
+      var grad = ctx.createLinearGradient(x, y, x, y + h);
+      grad.addColorStop(0, fillColor);
+      grad.addColorStop(1, '#FFFFFF');
+      ctx.fillStyle = grad;
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = borderColor;
+    }
+    this._roundRect(ctx, x, y, w, h, 22);
     ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
 
