@@ -81,9 +81,11 @@ class GameEngine {
   }
 
   _syncFromCloud() {
+    var self = this;
     cloud.getPlayerData().then(function(res) {
       if (!res || res.code !== 0 || !res.data) {
         console.log('[Cloud] 无云端存档或拉取失败，沿用本地数据');
+        self._checkAutoStart();
         return;
       }
       var cloudData = res.data;
@@ -119,9 +121,23 @@ class GameEngine {
           });
         }
       }
+      self._checkAutoStart();
     }).catch(function(err) {
       console.warn('[Cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
+      self._checkAutoStart();
     });
+  }
+
+  // 新玩家自动开始游戏：进度未到第5关时，进入主菜单后立刻自动进入关卡
+  _checkAutoStart() {
+    if (this._didAutoStart) return;
+    this._didAutoStart = true;
+    var li = wx.getStorageSync('lastLevelIndex');
+    var liNum = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : -1;
+    if (liNum < 5) {
+      console.log('[AutoStart] 新玩家进度=' + liNum + '，自动开始游戏');
+      this.startLastLevel();
+    }
   }
 
   // ========== 设计常量 ==========

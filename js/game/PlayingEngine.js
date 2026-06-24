@@ -230,18 +230,29 @@ class PlayingEngine {
           this._victoryClosing = true;
           this._victoryAnimator.close(function() {
             that._victoryClosing = false;
-            databus.gameState = databus.returnState || 'menu';
+            databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu';
+          });
+          return;
+        }
+        if (this._restartBtn && t.x >= this._restartBtn.x && t.x <= this._restartBtn.x + this._restartBtn.w &&
+            t.y >= this._restartBtn.y && t.y <= this._restartBtn.y + this._restartBtn.h) {
+          audio.play('button_click');
+          var restartSelf = this;
+          this._victoryClosing = true;
+          this._victoryAnimator.close(function() {
+            restartSelf._victoryClosing = false;
+            restartSelf.restartLevel();
           });
           return;
         }
         if (this._nextBtn && t.x >= this._nextBtn.x && t.x <= this._nextBtn.x + this._nextBtn.w &&
             t.y >= this._nextBtn.y && t.y <= this._nextBtn.y + this._nextBtn.h) {
           audio.play('button_click');
-          var self = this;
+          var nextSelf = this;
           this._victoryClosing = true;
           this._victoryAnimator.close(function() {
-            self._victoryClosing = false;
-            self._goNextLevel();
+            nextSelf._victoryClosing = false;
+            nextSelf._goNextLevel();
           });
           return;
         }
@@ -264,18 +275,23 @@ class PlayingEngine {
   onTouchStart(x, y) {
     var self = this;
 
-    // 顶栏设置按钮
+    // 顶栏按钮（试玩模式返回编辑器，其他打开设置面板）
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
       audio.play('button_click');
-      this._btnPress.press('settings');
-      settingsPanel.open({
-        buttons: [
-          { icon: '🏠', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
-          { label: '继续游戏', wide: true, action: function() { audio.play('button_click'); settingsPanel.close(); } },
-          { icon: '🔄', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
-        ]
-      });
+      if (databus.returnState === 'editor') {
+        this._btnPress.press('settings');
+        databus.gameState = 'editor';
+      } else {
+        this._btnPress.press('settings');
+        settingsPanel.open({
+          buttons: [
+            { icon: '🏠', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
+            { label: '继续游戏', wide: true, action: function() { audio.play('button_click'); settingsPanel.close(); } },
+            { icon: '🔄', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+          ]
+        });
+      }
       return;
     }
 
@@ -567,8 +583,8 @@ class PlayingEngine {
   _goNextLevel() {
     const idx = databus.currentLevelIndex + 1;
     if (idx >= databus.projectLevels.length) {
-      // 已是最后一关，回到关卡选择
-      databus.gameState = databus.returnState || 'levelSelect';
+      // 已是最后一关，退回主界面
+      databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu';
       return;
     }
     const next = databus.projectLevels[idx];
@@ -1330,7 +1346,7 @@ _tryClaimMaster() {
     const barY = safeTop;
     const barW = this._boardCardW;
 
-    // === 设置按钮（左上角，齿轮图标）===
+    // === 左上角按钮 ===
     const backW = 49, backH = 47;
     const backX = PADDING;
     const backY = PADDING;
@@ -1350,8 +1366,22 @@ _tryClaimMaster() {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this._roundRect(ctx, backX, backY, backW, backH, 18);
     ctx.fill();
-    // 齿轮图标（矢量绘制）
-    settingsPanel.drawGearIcon(ctx, backX + backW / 2, backY + backH / 2, 17, DARK);
+
+    if (databus.returnState === 'editor') {
+      // 试玩模式：返回箭头
+      ctx.strokeStyle = DARK;
+      ctx.lineWidth = 2.8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(setCX + 8, setCY - 10);
+      ctx.lineTo(setCX - 5, setCY);
+      ctx.lineTo(setCX + 8, setCY + 10);
+      ctx.stroke();
+    } else {
+      // 正常模式：齿轮图标
+      settingsPanel.drawGearIcon(ctx, setCX, setCY, 17, DARK);
+    }
     ctx.restore(); // 按压缩放
 
     // === 关卡徽章（居中）— 试玩时隐藏 ===
@@ -1564,6 +1594,7 @@ _tryClaimMaster() {
   // ========== 通关界面 ==========
   // ========== 结算面板（弹簧入场 + 元素错开动画）==========
   renderVictoryOverlay() {
+    var self = this;
     const now = Date.now();
     const elapsed = now - this._victoryAnimStart;
 
@@ -1705,60 +1736,66 @@ _tryClaimMaster() {
       nextY = nextY + 22;
     }
 
-    // --- 按钮（最后两个元素并排，同批次但分别缩放）---
+    // --- 按钮 ---
+    // 三种布局：menu入口=居中"继续"，levelSelect入口="重玩"+"继续"，editor入口="返回编辑"
     const btnY = nextY + 34;
     const btnW = 100, btnH = 42;
-    const gap = 20;
-    const totalBtnW = btnW * 2 + gap;
-    const btnStartX = (SCREEN_WIDTH - totalBtnW) / 2;
+    const rState = databus.returnState;
 
-    // 退出按钮
-    staggerIdx++;
-    const exitAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
-    const exitX = btnStartX;
-    this._exitBtn = { x: exitX, y: btnY, w: btnW, h: btnH };
-    ctx.save();
-    ctx.globalAlpha = exitAnim.alpha;
-    const exitCX = exitX + btnW / 2;
-    const exitCY = btnY + btnH / 2;
-    ctx.translate(exitCX, exitCY);
-    ctx.scale(exitAnim.scale, exitAnim.scale);
-    ctx.translate(-exitCX, -exitCY);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    this._roundRect(ctx, exitX, btnY, btnW, btnH, 8);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    var exitLabel = databus.returnState === 'editor' ? '返回编辑' : '退出';
-    ctx.fillText(exitLabel, exitCX, exitCY);
-    ctx.restore();
-
-    // 下一关按钮（比退出按钮再晚 40ms）
-    if (databus.returnState !== 'editor') {
-      staggerIdx++;
-      const nextAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 60);
-      const nextX = btnStartX + btnW + gap;
-      const hasNext = databus.currentLevelIndex + 1 < databus.projectLevels.length;
-      this._nextBtn = { x: nextX, y: btnY, w: btnW, h: btnH };
+    // 通用按钮渲染函数
+    const _renderBtn = function(x, y, w, h, anim, bgColor, label) {
       ctx.save();
-      ctx.globalAlpha = nextAnim.alpha;
-      const nextCX = nextX + btnW / 2;
-      ctx.translate(nextCX, btnY + btnH / 2);
-      ctx.scale(nextAnim.scale, nextAnim.scale);
-      ctx.translate(-nextCX, -(btnY + btnH / 2));
-      ctx.fillStyle = hasNext ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)';
-      this._roundRect(ctx, nextX, btnY, btnW, btnH, 8);
+      ctx.globalAlpha = anim.alpha;
+      const cx = x + w / 2, cy = y + h / 2;
+      ctx.translate(cx, cy);
+      ctx.scale(anim.scale, anim.scale);
+      ctx.translate(-cx, -cy);
+      ctx.fillStyle = bgColor;
+      self._roundRect(ctx, x, y, w, h, 8);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 16px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(hasNext ? '下一关' : '已完成', nextCX, btnY + btnH / 2);
+      ctx.fillText(label, cx, cy);
       ctx.restore();
+    };
+
+    if (rState === 'menu') {
+      // "开始游戏"入口 → 只有"继续"居中
+      this._exitBtn = null;
+      this._restartBtn = null;
+      staggerIdx++;
+      var contAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var contX = (SCREEN_WIDTH - btnW) / 2;
+      this._nextBtn = { x: contX, y: btnY, w: btnW, h: btnH };
+      _renderBtn(contX, btnY, btnW, btnH, contAnim, '#4CAF50', '继续');
+    } else if (rState === 'levelSelect') {
+      // "关卡选择"入口 → "重玩" + "继续"
+      this._exitBtn = null;
+      const gap = 20;
+      const totalW = btnW * 2 + gap;
+      const startX = (SCREEN_WIDTH - totalW) / 2;
+      staggerIdx++;
+      var restAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var restX = startX;
+      this._restartBtn = { x: restX, y: btnY, w: btnW, h: btnH };
+      _renderBtn(restX, btnY, btnW, btnH, restAnim, 'rgba(255,255,255,0.12)', '重玩');
+      staggerIdx++;
+      var contAnim2 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 40);
+      var contX2 = startX + btnW + gap;
+      this._nextBtn = { x: contX2, y: btnY, w: btnW, h: btnH };
+      _renderBtn(contX2, btnY, btnW, btnH, contAnim2, '#4CAF50', '继续');
     } else {
+      // editor 或其他 → "返回编辑"居中
       this._nextBtn = null;
+      this._restartBtn = null;
+      staggerIdx++;
+      var exitAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var exitX = (SCREEN_WIDTH - btnW) / 2;
+      this._exitBtn = { x: exitX, y: btnY, w: btnW, h: btnH };
+      var exitLabel = rState === 'editor' ? '返回编辑' : '退出';
+      _renderBtn(exitX, btnY, btnW, btnH, exitAnim, 'rgba(255,255,255,0.12)', exitLabel);
     }
 
     ctx.restore();

@@ -75,13 +75,20 @@ class EditorEngine {
   // 激活 / 反激活
   // ============================================================
   activate() {
+    // 从试玩返回时不重置状态，仅恢复输入监听
+    if (databus.returnState === 'editor') {
+      this._cloudLoading = false;
+      this.input.on('editor', (e) => this.handleEvent(e));
+      return;
+    }
+
     this.gp.bottomStripH = 92;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.dirty = false;
     this.input.on('editor', (e) => this.handleEvent(e));
 
-    // 先同步云端覆盖本地 → 再加载本地文件
+    // 从主界面进入：先同步云端覆盖本地 → 再加载本地文件
     this._cloudLoading = true;
     this._pullCloudLevels().then(() => {
       this.loadLevelList();
