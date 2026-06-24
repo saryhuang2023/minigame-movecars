@@ -78,13 +78,17 @@ class EditorEngine {
     this.gp.bottomStripH = 92;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
-    this.loadLevelList();
     this.dirty = false;
     this.input.on('editor', (e) => this.handleEvent(e));
 
-    // 每次进入编辑器都从云端拉取最新配置
+    // 先同步云端覆盖本地 → 再加载本地文件
     this._cloudLoading = true;
-    this._pullCloudLevels().finally(() => {
+    this._pullCloudLevels().then(() => {
+      this.loadLevelList();
+    }).catch(() => {
+      // 云端失败，回退到本地已缓存版本
+      this.loadLevelList();
+    }).finally(() => {
       this._cloudLoading = false;
     });
   }
@@ -1009,83 +1013,28 @@ class EditorEngine {
     fs.writeFileSync(`${metaDir}/${name}.json`, JSON.stringify({ cloudId, version: version || 0 }), 'utf8');
   }
 
-  // 异步从云端拉取关卡列表，合并到本地
+  // 从云端下载所有关卡，全量覆盖本地文件（不依赖 this.levelList）
   async _pullCloudLevels() {
-    try {
-      const cloudList = await cloud.listLevels();
-      if (!cloudList || cloudList.length === 0) return;
+    const cloudList = await cloud.listLevels();
+    if (!cloudList || cloudList.length === 0) return;
 
-      const nameSet = new Set(this.levelList.map(lv => lv.name));
-      const fs = wx.getFileSystemManager();
-      const dir = `${wx.env.USER_DATA_PATH}/levels`;
-      try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
+    const fs = wx.getFileSystemManager();
+    const dir = `${wx.env.USER_DATA_PATH}/levels`;
+    try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
 
-      for (const cl of cloudList) {
-        if (!nameSet.has(cl.name)) {
-          // 云端有但本地没有 → 下载完整数据写入本地
-          try {
-              const full = await cloud.downloadLevel(cl._id);
-            if (full && full.data) {
-              const cloudVersion = (full.version != null) ? full.version : (cl.version || 1);
-              const fileName = cl.name + '.json';
-              fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(full.data, null, 2), 'utf8');
-              this._saveCloudMeta(cl.name, cl._id, cloudVersion);
-              this.levelList.push({
-                name: cl.name, fileName, data: full.data, isDirty: false,
-                _cloudId: cl._id, _version: cloudVersion
-              });
-              nameSet.add(cl.name);
-            }
-          } catch (e) {
-            console.warn(`[Cloud] 下载 ${cl.name} 失败:`, e);
-          }
-        } else {
-          // 本地已有 → 同步 cloudId 和 version
-          const local = this.levelList.find(lv => lv.name === cl.name);
-          if (local) {
-            const cloudVersion = cl.version || 1;
-            if (!local._cloudId) {
-              local._cloudId = cl._id;
-              this._saveCloudMeta(cl.name, cl._id, cloudVersion);
-            }
-            // 云端版本比本地新 → 自动拉取最新数据
-            if (cloudVersion > (local._version || 0) && !local.isDirty) {
-              try {
-                const full = await cloud.downloadLevel(cl._id);
-                if (full && full.data) {
-                  const dir = `${wx.env.USER_DATA_PATH}/levels`;
-                  const fullPath = `${dir}/${local.fileName}`;
-                  fs.writeFileSync(fullPath, JSON.stringify(full.data, null, 2), 'utf8');
-                  local.data = full.data;
-                  local._version = cloudVersion;
-                  this._saveCloudMeta(cl.name, cl._id, cloudVersion);
-                  // 如果当前正在编辑这个关卡，刷新编辑器
-                  if (this.currentLevelIdx >= 0 && this.levelList[this.currentLevelIdx] === local) {
-                    this.loadLevelData(local.data);
-                  }
-                  console.log(`[Cloud] 关卡 ${cl.name} 已自动更新到 v${cloudVersion}`);
-                }
-              } catch (e) {
-                console.warn(`[Cloud] 自动更新 ${cl.name} 失败:`, e);
-              }
-            }
-            // 同步版本号（即使数据没更新）
-            if (!local._version || cloudVersion > local._version) {
-              local._version = cloudVersion;
-            }
-          }
+    for (const cl of cloudList) {
+      try {
+        const full = await cloud.downloadLevel(cl._id);
+        if (full && full.data) {
+          const cloudVersion = (full.version != null) ? full.version : (cl.version || 1);
+          const fileName = cl.name + '.json';
+          full.data.version = cloudVersion;
+          fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(full.data, null, 2), 'utf8');
+          this._saveCloudMeta(cl.name, cl._id, cloudVersion);
         }
+      } catch (e) {
+        console.warn(`[Cloud] 下载 ${cl.name} 失败:`, e);
       }
-
-      // 刷新当前关卡选择
-      this.levelList.sort((a, b) => a.name.localeCompare(b.name));
-      if (this.currentLevelIdx < 0 && this.levelList.length > 0) {
-        this.currentLevelIdx = 0;
-        this.loadLevelData(this.levelList[0].data);
-      }
-    } catch (e) {
-      console.warn('[Cloud] 拉取云端列表失败:', e);
-      // 静默失败 — 继续使用本地数据
     }
   }
 
@@ -1227,6 +1176,63 @@ class EditorEngine {
     this.gp.rebuildOccupancy();
     this.markCurrentDirty();
     this.showToast(`已清空 ${count} 只小猪`);
+  }
+
+  // ---- 清空所有关卡缓存（删除 USER_DATA_PATH/levels/ 下全部文件） ----
+  clearAllCache() {
+    const self = this;
+    wx.showModal({
+      title: '清空所有关卡缓存',
+      content: '将删除本地保存的全部关卡数据，不可恢复。确定继续？',
+      confirmText: '确定清空',
+      confirmColor: '#D32F2F',
+      success(res) {
+        if (!res.confirm) return;
+        const fs = wx.getFileSystemManager();
+        const dir = `${wx.env.USER_DATA_PATH}/levels`;
+
+        // 递归删除目录下所有文件和子目录
+        function rmdirRecursive(path) {
+          try {
+            const entries = fs.readdirSync(path);
+            for (const entry of entries) {
+              const full = `${path}/${entry}`;
+              try {
+                // 判断是否为目录：尝试 readdir，失败则为文件
+                fs.readdirSync(full);
+                rmdirRecursive(full);           // 子目录
+                fs.rmdirSync(full);
+              } catch (e) {
+                fs.unlinkSync(full);            // 文件
+              }
+            }
+          } catch (e) {
+            // 目录不存在，忽略
+          }
+        }
+
+        try {
+          rmdirRecursive(dir);
+          try { fs.rmdirSync(dir); } catch (e) {}
+
+          // 重置编辑器状态
+          self.levelList = [];
+          self.currentLevelIdx = -1;
+          self._cloudSynced = false;
+          self.dirty = false;
+          self.gp.pigs = [];
+          self.gp.selectedPigId = null;
+          self.gp.dragState = null;
+          self.showLevelSheet = false;
+
+          // 创建新空白关卡
+          self.newLevel();
+          self.showToast('缓存已清空');
+        } catch (e) {
+          self.showToast('清空失败: ' + e.message);
+        }
+      },
+    });
   }
 
   deleteSelectedPig() {
@@ -1963,6 +1969,7 @@ class EditorEngine {
       case 'saveLevel': this.saveLevel(); break;
       case 'deleteLevel': this.deleteLevel(); break;
       case 'clearLevel': this.clearLevel(); break;
+      case 'clearAllCache': this.clearAllCache(); break;
       case 'resetLevel': {
         if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
           this.showToast('未选中关卡');
@@ -2208,8 +2215,10 @@ class EditorEngine {
       { label: '\u5220\u9664', color: '#f44336', action: 'deleteLevel' },
       { label: '\u6e05\u7a7a', color: '#FF9800', action: 'clearLevel' },
       { label: '\u91cd\u8f7d', color: '#9C27B0', action: 'resetLevel' },
+      { label: '\u6e05\u7a7a\u7f13\u5b58', color: '#D32F2F', action: 'clearAllCache' },
     ];
-    const abW = 72, abH = 36;
+    const abW = Math.min(72, Math.floor((SCREEN_WIDTH - 24 - (actionBtns.length - 1) * 10) / actionBtns.length));
+    const abH = 36;
     const totalW = actionBtns.length * abW + (actionBtns.length - 1) * 10;
     let abX = (SCREEN_WIDTH - totalW) / 2;
     const abY = actionBarY + (barH - abH) / 2;
