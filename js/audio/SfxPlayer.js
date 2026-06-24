@@ -65,6 +65,15 @@ function _onCtxEnded(ctx) {
 function _findSameEvent(eventName) {
   for (var i = 0; i < _pool.length; i++) {
     if (_pool[i].busy && _pool[i].key === eventName && !_pool[i].looped) {
+      // onEnded 回调不可靠（WeChat 平台常见），检查 ctx 是否真的还在播
+      // paused=true 说明已播完但回调未触发，应主动释放
+      if (_pool[i].ctx.paused) {
+        console.log('[SfxPlayer] ■ cleanup:', eventName, '[h#' + _pool[i].handle + '] (onEnded missed)');
+        _pool[i].busy = false;
+        _pool[i].key = '';
+        _pool[i].handle = 0;
+        return null;
+      }
       return _pool[i];
     }
   }
@@ -144,11 +153,13 @@ function play(eventName, opts) {
 
   // 检查同事件是否已在播放 — 同一 src 不能在多个 ctx 同时播放（WeChat 平台限制）
   // 快速连点时间中，复用已有槽位 stop → seek(0) → play，避免静默丢失
+  // 重触发时也重新随机选变体，确保多文件配置生效
   var sameSlot = _findSameEvent(eventName);
   if (sameSlot) {
-    console.log('[SfxPlayer] ↻ retrig:', eventName, '[h#' + sameSlot.handle + ']');
+    console.log('[SfxPlayer] ↻ retrig:', eventName, '→', file, '[h#' + sameSlot.handle + ']');
     try {
       sameSlot.ctx.stop();
+      sameSlot.ctx.src = path;
       sameSlot.ctx.seek(0);
       sameSlot.ctx.playbackRate = rate;
       sameSlot.ctx.play();

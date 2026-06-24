@@ -1087,7 +1087,7 @@ _tryClaimMaster() {
     var startX = this._crownFlyFromX;
     var startY = this._crownFlyFromY;
     var targetX = this._boardCardX + this._boardCardW - 36;
-    var targetY = this._boardCardY - 14;
+    var targetY = this._boardCardY - 25;
     // 弧线控制点：中点上方偏移，形成向上抛出的弧线
     var cpX = (startX + targetX) / 2;
     var cpY = Math.min(startY, targetY) - 80;

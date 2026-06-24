@@ -70,7 +70,7 @@ var PRIORITY = {
 var SFX_EVENTS = {
   // ── P0 核心 ──
   'collide': {
-    files: ['collide_1.mp3'],
+    files: ['collide_2.mp3'],
     priority: PRIORITY.SFX,
   },
   'escape': {
