@@ -133,13 +133,6 @@ class PlayingEngine {
     this.loadLevel(lv ? lv.data : null);
     // 关卡开始音效
     audio.play('level_start');
-    // 记住当前关卡索引，供主界面"开始游戏"使用（只升不降）
-    if (databus.currentLevelIndex >= 0) {
-      var old = wx.getStorageSync('lastLevelIndex') || -1;
-      if (databus.currentLevelIndex > old) {
-        wx.setStorageSync('lastLevelIndex', databus.currentLevelIndex);
-      }
-    }
     this.input.on('playing', (e) => this.handleEvent(e));
     // 加载缓存的用户信息（避免每次都弹授权按钮）
     var cachedUserInfo = wx.getStorageSync('userinfo_cache');
@@ -149,9 +142,8 @@ class PlayingEngine {
     } else {
       this._userInfo = null;
     }
-    // 异步拉取关主（fire-and-forget，不阻塞玩家操作）
+    // 异步获取 openid（fire-and-forget）
     this._fetchMyOpenId();
-    this._fetchLevelMaster();
   }
 
   deactivate() {
@@ -186,6 +178,8 @@ class PlayingEngine {
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.gp.snapAllPigsAngles();
+    // 异步拉取关主信息
+    this._fetchLevelMaster();
   }
 
   // ========== 输入 ==========
@@ -594,15 +588,8 @@ class PlayingEngine {
       const data = JSON.parse(raw);
       databus.currentLevel = { name: next.name, data };
       databus.currentLevelIndex = idx;
-      // 只升不降：防止重玩低关卡后点"下一关"回退进度
-      var savedRaw = wx.getStorageSync('lastLevelIndex');
-      var savedIdx = (savedRaw !== '' && savedRaw !== undefined && savedRaw !== null) ? parseInt(savedRaw, 10) : -1;
-      if (idx > savedIdx) {
-        wx.setStorageSync('lastLevelIndex', idx);
-      }
       this.levelName = next.name;
       this.loadLevel(data);
-      this._fetchLevelMaster();
     } catch (err) {
       console.warn(`[Playing] 加载下一关 ${next.file} 失败:`, err);
     }
