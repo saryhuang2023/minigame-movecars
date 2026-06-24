@@ -401,16 +401,6 @@ class PlayingEngine {
         var snapHeadIdx = this.gp.findHeadHole(snapResult.tailIndex, snapResult.length, snapResult.angle);
         var moved = (snapHeadIdx !== startHeadIdx);
 
-        // 头尾孔都没变 + 角度也没变 → 猪完全回到了原位
-        // 此时 _shouldPushAfterSnap 是 handleRotateDrag 的残留标记（猪恰好处于边缘孔），不应触发逃脱
-        if (!moved) {
-          var angleDelta = Math.abs(snapResult.angle - st.angle);
-          if (angleDelta > 180) angleDelta = 360 - angleDelta;
-          if (angleDelta < 3.0) {
-            this._shouldPushAfterSnap = false;
-          }
-        }
-
         console.log(
           '[步数] startState={ t:' + st.tailIndex + ' l:' + st.length + ' a:' + st.angle.toFixed(1) + ' } headIdx=' + startHeadIdx +
           ' | snapResult={ t:' + snapResult.tailIndex + ' l:' + snapResult.length + ' a:' + snapResult.angle.toFixed(1) + ' } headIdx=' + snapHeadIdx +
