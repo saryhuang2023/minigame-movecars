@@ -27,7 +27,8 @@ const CARD_GAP = 8;         // 卡片之间的间距
 const CARD_PADDING = 12;    // 棋盘卡片内边距
 const CARD_RADIUS = 32;     // 棋盘卡片圆角
 
-const ESCAPE_TIME = 18000;  // 逃脱速度
+const ESCAPE_SPEED = 150;  // 正常逃脱速度（逻辑像素/秒）
+const GHOST_SPEED  = 100;   // 幽灵提示速度（正常速度的一半）
 
 const DRAG_THRESHOLD = 20;
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;
@@ -479,7 +480,7 @@ class PlayingEngine {
         pigId,
         dirX: result.dirX, dirY: result.dirY,
         totalDist: result.totalDist, currentDx: 0, currentDy: 0,
-        startTime: Date.now(), duration: ESCAPE_TIME
+        startTime: Date.now(), duration: result.totalDist / ESCAPE_SPEED * 1000
       });
       // 逻辑层立即移除（结算/计分不受动画影响）
       const idx = this.gp.pigs.findIndex(p => p.id === pigId);
@@ -1530,20 +1531,15 @@ _tryClaimMaster() {
 
     var rad = ha * Math.PI / 180;
     var dirX = Math.cos(rad), dirY = -Math.sin(rad);
-    // 距离和正常逃脱相同（100 × collisionStep），时长翻倍 = 半速
+    // 距离和正常逃脱相同（100 × collisionStep），幽灵速度 = GHOST_SPEED
     var totalDist = 100 * this.gp.collisionStep;
     this.gp.ghostAnimations.push({
       pigId: pig.id,
       hintAngle: ha,
       dirX: dirX, dirY: dirY,
       totalDist: totalDist, currentDx: 0, currentDy: 0,
-      startTime: Date.now(), duration: ESCAPE_TIME
+      startTime: Date.now(), duration: totalDist / GHOST_SPEED * 1000
     });
-    setTimeout(function() {
-      if (this._hintTarget) {
-        this.gp.ghostAnimations = [];
-      }
-    }.bind(this), 12900);
   }
 
   _removeHintedPig() {

@@ -917,10 +917,15 @@ class GameplayEngine {
       a.currentDy = a.dirY * a.totalDist * eased;
     }
     for (const g of this.ghostAnimations) {
-      const elapsed = now - g.startTime;
-      const progress = Math.min(1, elapsed / g.duration);
+      var elapsed = now - g.startTime;
+      var progress = elapsed / g.duration;
+      if (progress >= 1) {
+        // 循环：动画播完后立即从头开始
+        g.startTime = now;
+        progress = 0;
+      }
       g.progress = progress;  // 存储进度供渲染淡入淡出
-      const eased = Easing.easeOutCubic(progress);
+      const eased = Easing.easeOutCubic(Math.min(1, progress));
       g.currentDx = g.dirX * g.totalDist * eased;
       g.currentDy = g.dirY * g.totalDist * eased;
     }
@@ -1036,17 +1041,16 @@ class GameplayEngine {
       }
     }
 
-    // 幽灵动画（面向 hintAngle 飞行，首尾淡入淡出）
+    // 幽灵动画（面向 hintAngle 飞行，前 10% 淡入，循环播放）
     for (const g of this.ghostAnimations) {
       const pig = this.pigs.find(p => p.id === g.pigId);
       if (pig) {
         const savedAngle = pig.angle;
         pig.angle = g.hintAngle != null ? g.hintAngle : pig.angle;
-        // 前 15% 淡入，后 15% 淡出，中间保持 70%
-        var gAlpha = 0.70;
+        // 前 10% 淡入，后 90% 保持 70% 透明度（不淡出，循环时自然从头淡入）
+        var gAlpha = 0.80;
         var gp = g.progress || 0;
-        if (gp < 0.15) gAlpha = 0.70 * Easing.smoothstep(gp / 0.15);
-        else if (gp > 0.85) gAlpha = 0.70 * (1 - Easing.smoothstep((gp - 0.85) / 0.15));
+        if (gp < 0.05) gAlpha = 0.80 * Easing.smoothstep(gp / 0.05);
         ctx.globalAlpha = gAlpha;
         pr.draw(ctx, pig, g.currentDx, g.currentDy, AnimType.ESCAPE);
         ctx.globalAlpha = 1;
