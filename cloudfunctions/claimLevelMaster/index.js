@@ -51,14 +51,13 @@ exports.main = async (event, context) => {
     if (nickname) updateData.masterNickname = nickname;
 
     if (current) {
-      // 更新（保留 crownSteps 等已有字段）
+      // 更新已有记录
       await db.collection('level_info')
         .doc(current._id)
         .update({ data: updateData });
     } else {
-      // 插入新记录（crownSteps 后续由首次部署时初始化）
       await db.collection('level_info').add({
-        data: { levelId, crownSteps: 999, ...updateData }
+        data: { levelId, ...updateData }
       });
     }
 

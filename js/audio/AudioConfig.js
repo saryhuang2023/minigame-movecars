@@ -81,6 +81,10 @@ var SFX_EVENTS = {
     files: ['victory.mp3'],
     priority: PRIORITY.VICTORY,
   },
+  'rewards': {
+    files: ['rewards.mp3'],
+    priority: PRIORITY.SFX,
+  },
   'button_click': {
     files: ['button_click.mp3'],
     priority: PRIORITY.UI,

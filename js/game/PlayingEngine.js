@@ -59,7 +59,7 @@ class PlayingEngine {
     this._comboStartTime = 0;       // 当前连击窗口起始时间
     this._comboWidget = { visible: false, scale: 1, count: 0, createdAt: 0 };
     // 关主系统
-    this._levelMaster = null;       // { masterUserId, masterSteps, masterAvatarUrl, masterNickname, crownSteps } | null
+    this._levelMaster = null;       // { masterUserId, masterSteps, masterAvatarUrl, masterNickname } | null
     this._myRecord = null;          // 个人最好成绩（步数）| null
     this._masterLoading = false;
     this._myOpenId = null;          // 当前用户 openid（首次 activate 时异步获取）
@@ -76,6 +76,15 @@ class PlayingEngine {
     this._crownAnimStart = 0;
     this._crownFlyFromX = 0;
     this._crownFlyFromY = 0;
+    // 关主获得动画（头像飞向左下角关主徽章）
+    this._masterAnimPhase = null;   // null | 'flying' | 'flashing' | 'done' | 'waitingAvatar'
+    this._masterAnimStart = 0;
+    this._masterFlyFromX = 0;
+    this._masterFlyFromY = 0;
+    this._masterClaimPending = false; // _tryClaimMaster 异步请求是否还在进行
+    // 关主授权对话框
+    this._showAuthDialog = false;  // 是否显示授权对话框
+    this._skipAuthBtnRect = null;  // 跳过按钮碰撞区
     // 提示系统
     this._hintTarget = null;        // 当前被提示的猪
     this._hintTimer = null;         // 幽灵动画定时器 ID
@@ -83,24 +92,44 @@ class PlayingEngine {
     this._removeBtn = null;         // 移除按钮碰撞区
   }
 
-  activate() {
-    const lv = databus.currentLevel;
-    this.levelName = lv ? lv.name : '';
+  /**
+   * 进入关卡时统一重置所有运行时状态（仅依赖 this.levelName）。
+   * 无论是 activate / restartLevel / _goNextLevel，都通过此方法保证状态干净。
+   */
+  _resetPlayState() {
     this.steps = 0;
     databus.currentStep = 0;
     this._victory = false;
     this._showVictoryPanel = false;
     this._resetCombo();
-    // 提示系统重置
     this._clearHint();
     this._hasUsedRemove = false;
-    // 读小金猪状态（已获得则进入即显示金色）
+    // 小金猪状态
     this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
     this._gotCrown = this._hadCrownBefore;
     this._earnedCrown = false;
-    // 重置通关动画状态
+    // 通关动画状态
     this._crownAnimPhase = null;
     this._crownAnimStart = 0;
+    this._masterAnimPhase = null;
+    this._masterAnimStart = 0;
+    this._masterClaimPending = false;
+    // 授权/对话框状态
+    this._showAuthDialog = false;
+    this._skipAuthBtnRect = null;
+    this._authShown = false;
+    this._destroyAuthBtn();
+    // 关主
+    this._isNewMaster = false;
+    this._levelMaster = null;
+    this._masterLoading = false;
+    // 个人最好成绩
+    this._myRecord = wx.getStorageSync('record_' + this.levelName) || null;
+  }
+
+  activate() {
+    const lv = databus.currentLevel;
+    this.levelName = lv ? lv.name : '';
     this.loadLevel(lv ? lv.data : null);
     // 关卡开始音效
     audio.play('level_start');
@@ -112,11 +141,6 @@ class PlayingEngine {
       }
     }
     this.input.on('playing', (e) => this.handleEvent(e));
-    // 加载个人历史记录（同步，瞬间完成）
-    var recKey = 'record_' + this.levelName;
-    var rawRec = wx.getStorageSync(recKey);
-    this._myRecord = (rawRec != null && rawRec !== '') ? rawRec : null;
-    console.log('[关主] activate levelName=' + JSON.stringify(this.levelName) + ' recKey=' + recKey + ' rawRec=' + JSON.stringify(rawRec) + ' _myRecord=' + JSON.stringify(this._myRecord));
     // 加载缓存的用户信息（避免每次都弹授权按钮）
     var cachedUserInfo = wx.getStorageSync('userinfo_cache');
     if (cachedUserInfo && cachedUserInfo.avatarUrl) {
@@ -126,7 +150,6 @@ class PlayingEngine {
       this._userInfo = null;
     }
     // 异步拉取关主（fire-and-forget，不阻塞玩家操作）
-    this._masterLoading = false;  // 重置，防止上次请求未完成导致跳过
     this._fetchMyOpenId();
     this._fetchLevelMaster();
   }
@@ -139,6 +162,8 @@ class PlayingEngine {
   }
 
   loadLevel(data) {
+    // 加载新关卡时统一重置所有运行时状态（所有入口无需单独调用）
+    this._resetPlayState();
     if (data && data.board) {
       this.gp.rows = data.board.rows || data.board.cols || 5;
       this.gp.oddCols = data.board.oddCols || data.board.oddRows || 3;
@@ -161,8 +186,6 @@ class PlayingEngine {
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.gp.snapAllPigsAngles();
-    this.steps = 0;
-    this._resetCombo();
   }
 
   // ========== 输入 ==========
@@ -174,6 +197,18 @@ class PlayingEngine {
       // 设置面板打开时，所有触控由面板处理
       if (settingsPanel.isOpen()) {
         settingsPanel.handleTouch(t.x, t.y);
+        return;
+      }
+
+      // 关主授权对话框：只允许点跳过按钮，屏蔽其他触控
+      if (this._showAuthDialog) {
+        if (this._skipAuthBtnRect && t.x >= this._skipAuthBtnRect.x && t.x <= this._skipAuthBtnRect.x + this._skipAuthBtnRect.w &&
+            t.y >= this._skipAuthBtnRect.y && t.y <= this._skipAuthBtnRect.y + this._skipAuthBtnRect.h) {
+          audio.play('button_click');
+          this._destroyAuthBtn();
+          this._showAuthDialog = false;
+          this._skipAuthBtnRect = null;
+        }
         return;
       }
 
@@ -199,10 +234,12 @@ class PlayingEngine {
       this.onTouchStart(t.x, t.y);
     } else if (e.type === 'touchmove') {
       if (settingsPanel.isOpen()) return;
+      if (this._showAuthDialog) return;
       if (this._victory && !this._showVictoryPanel) return;
       this.onTouchMove(t.x, t.y);
     } else if (e.type === 'touchend') {
       if (settingsPanel.isOpen()) return;
+      if (this._showAuthDialog) return;
       if (this._victory && !this._showVictoryPanel) return;
       this.onTouchEnd(t.x, t.y);
     }
@@ -447,8 +484,7 @@ class PlayingEngine {
           if (this._earnedCrown) {
             this._startCrownAnimation();
           } else {
-            this._showVictoryPanel = true;
-            audio.play('victory');
+            this._afterCrownDone();
           }
         }, 1000);
       }
@@ -467,17 +503,7 @@ class PlayingEngine {
 
   restartLevel() {
     audio.play('reset');
-    this._clearHint();
-    this._hasUsedRemove = false;
     this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
-    this._victory = false;
-    this._showVictoryPanel = false;
-    this._isNewMaster = false;
-    this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
-    this._gotCrown = this._hadCrownBefore;
-    this._earnedCrown = false;
-    this._crownAnimPhase = null;
-    this._crownAnimStart = 0;
   }
 
   _markCleared() {
@@ -510,6 +536,7 @@ class PlayingEngine {
     }
     // 尝试夺关主（试玩模式/用过移除则跳过）
     if (!this._hasUsedRemove && databus.returnState !== 'editor') {
+      this._masterClaimPending = true;
       this._tryClaimMaster();
     } else {
       console.log('[关主] 使用了移除按钮，跳过关主判定');
@@ -573,26 +600,8 @@ class PlayingEngine {
       if (idx > savedIdx) {
         wx.setStorageSync('lastLevelIndex', idx);
       }
-      // 直接加载到当前引擎（gameState 不变，checkStateTransition 不会重新 activate）
       this.levelName = next.name;
       this.loadLevel(data);
-      this._victory = false;
-      this._authShown = false;
-      this._destroyAuthBtn();
-      this._isNewMaster = false;
-      // 提示系统重置
-      this._clearHint();
-      this._hasUsedRemove = false;
-      // 关主信息切换
-      this._levelMaster = null;
-      this._masterLoading = false;
-      this._myRecord = wx.getStorageSync('record_' + this.levelName) || null;
-      // 小金猪状态重置（对应 activate() 的逻辑，_goNextLevel 跳过了 activate 需手动重置）
-      this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
-      this._gotCrown = this._hadCrownBefore;
-      this._earnedCrown = false;
-      this._crownAnimPhase = null;
-      this._crownAnimStart = 0;
       this._fetchLevelMaster();
     } catch (err) {
       console.warn(`[Playing] 加载下一关 ${next.file} 失败:`, err);
@@ -643,11 +652,6 @@ class PlayingEngine {
         console.log('[关主] _fetchLevelMaster success master=' + JSON.stringify(master));
         this._levelMaster = master;
         this._masterLoading = false;
-        // 云端 level_info 可能包含 crownSteps，同步到实例（JSON 文件中可能不存在）
-        if (master && master.crownSteps > 0 && !this._crownSteps) {
-          this._crownSteps = master.crownSteps;
-          console.log('[小金猪] 从云端同步阈值 ' + this._crownSteps + '步');
-        }
         if (master) {
           if (!master.masterNickname) console.log('[关主] 云端记录缺少 masterNickname');
           if (!master.masterAvatarUrl) console.log('[关主] 云端记录缺少 masterAvatarUrl');
@@ -676,26 +680,32 @@ class PlayingEngine {
  */
 _tryClaimMaster() {
     // 仅真机上报，模拟器/开发工具跳过
-    if (wx.getDeviceInfo().platform === 'devtools') {
-      console.log('[关主] 开发环境跳过夺位上报');
-      return;
-    }
+    // if (wx.getDeviceInfo().platform === 'devtools') {
+    //   console.log('[关主] 开发环境跳过夺位上报');
+    //   this._masterClaimPending = false;
+    //   return;
+    // }
     const currentMin = this._levelMaster ? this._levelMaster.masterSteps : 9999;
     this._updateMyRecord();
-    if (this.steps >= currentMin) return; // 持平不夺
-
-    // ✅ 乐观 UI：已有真实头像则跳过授权按钮，否则立即弹出
-    if (!this._userInfo || !this._userInfo.avatarUrl) {
-      this._showMasterAuthButton();
+    if (this.steps >= currentMin) {
+      this._masterClaimPending = false;
+      return; // 持平不夺
     }
 
-    // 后台异步夺位上报（静默，不阻塞玩家）
+    // 先异步获取用户信息，拿到结果后再决定是否弹出授权对话框（避免两路并行）
     this._getUserInfo().then(userInfo => {
-      var hasRealAvatar = !!userInfo.avatarUrl;
+      const hasAvatar = !!userInfo.avatarUrl;
+
+      // 只有 wx.getUserInfo 返回匿名信息时才弹出授权对话框
+      if (!hasAvatar) {
+        this._showMasterAuthButton();
+      }
+
       const cloud = require('../cloud.js');
       console.log('[关主] _tryClaimMaster 后台上报 avatarUrl=' + (userInfo.avatarUrl ? '有' : '空') + ' nickName=' + userInfo.nickName);
       cloud.claimLevelMaster(this.levelName, this.steps, userInfo.avatarUrl || '', userInfo.nickName || '')
         .then(res => {
+          this._masterClaimPending = false;
           if (res.code === 0) {
             this._levelMaster = res.master;
             if (res.master && res.master.masterAvatarUrl) {
@@ -708,9 +718,9 @@ _tryClaimMaster() {
             if (res.claimed) {
               // 标记为新关主，结算界面显示恭喜文案
               this._isNewMaster = true;
-              // 服务器已返回真实头像 → 无需授权按钮，销毁
-              if (hasRealAvatar) {
-                this._destroyAuthBtn();
+              // 仅在小金猪动画已完成时，才标记等待头像加载（小金猪未开始时由 _afterCrownDone 统一调度）
+              if (this._victory && this._crownAnimPhase === 'done' && !this._masterAnimPhase) {
+                this._masterAnimPhase = 'waitingAvatar';
               }
             } else {
               // 服务器说没夺到（别人步数更少或持平不同人）→ 撤回授权按钮
@@ -720,6 +730,7 @@ _tryClaimMaster() {
           }
         })
         .catch(err => {
+          this._masterClaimPending = false;
           console.warn('[关主] claimLevelMaster 失败，撤回授权按钮:', err);
           this._destroyAuthBtn();
         });
@@ -762,38 +773,48 @@ _tryClaimMaster() {
       try { this._authBtn.destroy(); } catch (e) {}
       this._authBtn = null;
     }
+    this._showAuthDialog = false;
+    this._skipAuthBtnRect = null;
   }
 
-  // 乐观 UI：通关后立即弹出授权按钮，不等服务器确认
-  // 玩家点击后获取真实头像昵称并重传关主信息
+  // 乐观 UI：通关后弹出授权对话框（Canvas 绘制），
+  // 内嵌原生授权按钮获取真实头像昵称并重传关主信息
   _showMasterAuthButton() {
     if (this._authShown) return;
     this._authShown = true;
 
-    // 与 renderVictoryOverlay 保持一致的弹窗位置计算
-    var hasCombo = this._maxCombo >= 2;
-    var ph = hasCombo ? 220 : 200;
+    // 计算对话框面板与按钮坐标（与 _renderAuthDialog 保持一致）
+    var ph = 200;
     var py = (SCREEN_HEIGHT - ph) / 2 - 20;
-    var authW = 220, authH = 44;
-    var authX = (SCREEN_WIDTH - authW) / 2;
-    // 放在"共 X 步"和按钮之间
-    var authY = py + 88;
 
+    // 两个按钮并排居中
+    var btnW = 100, btnH = 44, gap = 20;
+    var totalBtnW = btnW * 2 + gap;
+    var btnStartX = (SCREEN_WIDTH - totalBtnW) / 2;
+    var btnY = py + 130;
+
+    // 跳过按钮碰撞区（Canvas 点击处理）
+    this._skipAuthBtnRect = { x: btnStartX + btnW + gap, y: btnY, w: btnW, h: btnH };
+
+    // 显示 Canvas 对话框
+    this._showAuthDialog = true;
+
+    // 原生授权按钮：覆盖在 Canvas 绘制的"授权"按钮上方（透明背景）
     var that = this;
-    console.log('[关主] _showMasterAuthButton 弹出授权按钮 level=' + this.levelName + ' steps=' + this.steps);
+    console.log('[关主] _showMasterAuthButton 弹出授权对话框 level=' + this.levelName + ' steps=' + this.steps);
     this._authBtn = wx.createUserInfoButton({
       type: 'text',
-      text: '\uD83D\uDC51 恭喜你成为关主！点击授权显示头像',
+      text: '',
       style: {
-        left: authX,
-        top: authY,
-        width: authW,
-        height: authH,
-        lineHeight: authH,
-        backgroundColor: '#FFD700',
-        color: '#1a1a2e',
+        left: btnStartX,
+        top: btnY,
+        width: btnW,
+        height: btnH,
+        lineHeight: btnH,
+        backgroundColor: 'rgba(0,0,0,0.01)',
+        color: 'rgba(0,0,0,0.01)',
         textAlign: 'center',
-        fontSize: 15,
+        fontSize: 1,
         borderRadius: 10,
       }
     });
@@ -805,10 +826,8 @@ _tryClaimMaster() {
       if (info.nickName || info.avatarUrl) {
         console.log('[关主] onTap 获取到真实头像昵称，开始重传关主');
         that._userInfo = { nickName: info.nickName || '', avatarUrl: info.avatarUrl || '' };
-        // 持久化，杀进程后再进游戏不会重复弹授权
         wx.setStorageSync('userinfo_cache', that._userInfo);
         console.log('[关主] 已缓存用户信息 avatarUrl=' + (that._userInfo.avatarUrl ? '有' : '空') + ' nickName=' + that._userInfo.nickName);
-        // 重新上传关主信息（这次带真实头像昵称）
         var cloud = require('../cloud.js');
         cloud.claimLevelMaster(that.levelName, that.steps, info.avatarUrl || '', info.nickName || '')
           .then(function(result) {
@@ -830,6 +849,9 @@ _tryClaimMaster() {
       }
       that._authBtn.destroy();
       that._authBtn = null;
+      // 关闭对话框
+      that._showAuthDialog = false;
+      that._skipAuthBtnRect = null;
     });
   }
 
@@ -886,18 +908,39 @@ _tryClaimMaster() {
     if (this._levelMaster) {
       // 头像（圆形裁剪）
       var badgeHeadY = badgeMasterY + 12;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(leftCx, badgeHeadY + 18, 18, 0, Math.PI * 2);
-      ctx.clip();
-      if (this._levelMaster.avatarImg) {
-        ctx.drawImage(this._levelMaster.avatarImg, leftCx - 18, badgeHeadY, 36, 36);
+      // 关主动画期间控制头像渲染
+      if (this._masterAnimPhase === 'flying') {
+        // 飞行动画中：头像不在此处显示（由 _renderFlyingMaster 绘制）
+      } else if (this._masterAnimPhase === 'flashing') {
+        // 闪烁阶段：交替 alpha
+        var flashElapsed = Date.now() - this._masterAnimStart;
+        var flashAlpha = Math.floor(flashElapsed / 166) % 2 === 0 ? 1 : 0.2;
+        ctx.save();
+        ctx.globalAlpha = flashAlpha;
+        ctx.beginPath();
+        ctx.arc(leftCx, badgeHeadY + 18, 18, 0, Math.PI * 2);
+        ctx.clip();
+        if (this._levelMaster.avatarImg) {
+          ctx.drawImage(this._levelMaster.avatarImg, leftCx - 18, badgeHeadY, 36, 36);
+        } else {
+          ctx.fillStyle = '#FCE9F2';
+          ctx.fillRect(leftCx - 18, badgeHeadY, 36, 36);
+        }
+        ctx.restore();
       } else {
-        // 头像未加载完成 → 粉色占位
-        ctx.fillStyle = '#FCE9F2';
-        ctx.fillRect(leftCx - 18, badgeHeadY, 36, 36);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(leftCx, badgeHeadY + 18, 18, 0, Math.PI * 2);
+        ctx.clip();
+        if (this._levelMaster.avatarImg) {
+          ctx.drawImage(this._levelMaster.avatarImg, leftCx - 18, badgeHeadY, 36, 36);
+        } else {
+          // 头像未加载完成 → 粉色占位
+          ctx.fillStyle = '#FCE9F2';
+          ctx.fillRect(leftCx - 18, badgeHeadY, 36, 36);
+        }
+        ctx.restore();
       }
-      ctx.restore();
       
       // 关主步数
       var badgStepY = badgeHeadY + 35;
@@ -1047,6 +1090,7 @@ _tryClaimMaster() {
   _startCrownAnimation() {
     this._crownAnimPhase = 'flying';
     this._crownAnimStart = Date.now();
+    audio.play('rewards');
     // 飞行动画起点：棋盘中心
     this._crownFlyFromX = this._boardCardX + this._boardCardW / 2;
     this._crownFlyFromY = this._boardCardY + this._boardCardH / 2;
@@ -1059,7 +1103,7 @@ _tryClaimMaster() {
 
     if (this._crownAnimPhase === 'flying') {
       this._renderFlyingPig(elapsed);
-      if (elapsed >= 1000) {
+      if (elapsed >= 1500) {
         // 飞行结束 → 进入闪烁阶段
         this._crownAnimPhase = 'flashing';
         this._crownAnimStart = Date.now();
@@ -1068,20 +1112,19 @@ _tryClaimMaster() {
     }
 
     if (this._crownAnimPhase === 'flashing') {
-      if (elapsed >= 500) {
-        // 闪烁结束 → 小金猪变金 + 显示结算面板
+      if (elapsed >= 800) {
+        // 闪烁结束 → 小金猪变金，然后检查是否还有关主动画
         this._crownAnimPhase = 'done';
         this._gotCrown = true;
-        this._showVictoryPanel = true;
-        audio.play('victory');
         this._crownAnimStart = 0;
+        this._afterCrownDone();
       }
       return;
     }
   }
 
   _renderFlyingPig(elapsed) {
-    var t = Math.min(elapsed / 1000, 1);
+    var t = Math.min(elapsed / 1500, 1);
     // ease-out cubic：快到慢
     t = 1 - Math.pow(1 - t, 3);
     var startX = this._crownFlyFromX;
@@ -1098,6 +1141,111 @@ _tryClaimMaster() {
     // 飞行中略大一点，更有冲击力
     var scale = 30 + (21 - 30) * t; // 从 30 → 21 渐缩
     drawPigIcon(ctx, fx, fy, scale, true, 1);
+  }
+
+  // ========== 关主获得动画（头像飞向左下角关主徽章）==========
+
+  /**
+   * 小金猪动画完成后调用。检查是否需要播放关主动画，
+   * 若不需要则直接进入结算序列。
+   */
+  _afterCrownDone() {
+    if (this._isNewMaster && this._levelMaster && this._levelMaster.avatarImg) {
+      this._startMasterAnimation();
+    } else if (this._isNewMaster) {
+      // 关主已确认但头像未加载，等待
+      this._masterAnimPhase = 'waitingAvatar';
+    } else if (this._masterClaimPending) {
+      // 关主判定请求还在进行中，等一下
+      this._masterAnimPhase = 'waitingAvatar';
+    } else {
+      this._finishVictorySequence();
+    }
+  }
+
+  _startMasterAnimation() {
+    this._masterAnimPhase = 'flying';
+    this._masterAnimStart = Date.now();
+    audio.play('rewards');
+    // 飞行动画起点：屏幕中心
+    this._masterFlyFromX = SCREEN_WIDTH / 2;
+    this._masterFlyFromY = SCREEN_HEIGHT / 2;
+  }
+
+  _renderMasterAnimation() {
+    if (!this._masterAnimPhase || this._masterAnimPhase === 'done') return;
+
+    // 等待头像加载完成（或等待关主判定结果）
+    if (this._masterAnimPhase === 'waitingAvatar') {
+      // 关主判定已完成且未夺到 → 跳过动画，直接结算
+      if (!this._masterClaimPending && !this._isNewMaster) {
+        this._masterAnimPhase = 'done';
+        this._finishVictorySequence();
+        return;
+      }
+      // 关主已确认且头像已加载 → 开始动画
+      if (this._isNewMaster && this._levelMaster && this._levelMaster.avatarImg) {
+        this._startMasterAnimation();
+      }
+      return;
+    }
+
+    var elapsed = Date.now() - this._masterAnimStart;
+
+    if (this._masterAnimPhase === 'flying') {
+      this._renderFlyingMaster(elapsed);
+      if (elapsed >= 1500) {
+        this._masterAnimPhase = 'flashing';
+        this._masterAnimStart = Date.now();
+      }
+      return;
+    }
+
+    if (this._masterAnimPhase === 'flashing') {
+      if (elapsed >= 800) {
+        this._masterAnimPhase = 'done';
+        this._masterAnimStart = 0;
+        this._finishVictorySequence();
+      }
+      return;
+    }
+  }
+
+  _renderFlyingMaster(elapsed) {
+    var t = Math.min(elapsed / 1500, 1);
+    // ease-out cubic：快到慢
+    t = 1 - Math.pow(1 - t, 3);
+    var startX = this._masterFlyFromX;
+    var startY = this._masterFlyFromY;
+    // 目标：关主徽章中头像圆心 (badgeX+30, SCREEN_HEIGHT-34)
+    var targetX = 35;
+    var targetY = SCREEN_HEIGHT - 34;
+    // 弧线控制点：中点上方偏移，形成向上抛出的弧线
+    var cpX = (startX + targetX) / 2;
+    var cpY = Math.min(startY, targetY) - 80;
+    // 二次贝塞尔曲线
+    var t1 = 1 - t;
+    var fx = t1 * t1 * startX + 2 * t1 * t * cpX + t * t * targetX;
+    var fy = t1 * t1 * startY + 2 * t1 * t * cpY + t * t * targetY;
+    // 飞行中略大，渐缩到目标尺寸 36
+    var scale = 60 + (36 - 60) * t;
+
+    if (this._levelMaster && this._levelMaster.avatarImg) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(fx, fy, scale / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(this._levelMaster.avatarImg, fx - scale / 2, fy - scale / 2, scale, scale);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * 所有通关动画（小金猪+关主）播放完毕，显示结算面板。
+   */
+  _finishVictorySequence() {
+    this._showVictoryPanel = true;
+    audio.play('victory');
   }
 
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
@@ -1133,6 +1281,9 @@ _tryClaimMaster() {
     // 3.9 小金猪通关动画（飞行/闪烁阶段）
     this._renderCrownAnimation();
 
+    // 3.10 关主获得动画（头像飞行/闪烁阶段）
+    this._renderMasterAnimation();
+
     // 4. 顶栏
     this._drawTopBar(safeTop);
 
@@ -1144,7 +1295,12 @@ _tryClaimMaster() {
       this.renderVictoryOverlay();
     }
 
-    // 7. 设置面板（最顶层）
+    // 7. 关主授权对话框（顶层的 Canvas 弹窗）
+    if (this._showAuthDialog) {
+      this._renderAuthDialog();
+    }
+
+    // 8. 设置面板（最顶层）
     settingsPanel.render(ctx);
   }
 
@@ -1344,8 +1500,7 @@ _tryClaimMaster() {
         if (this._earnedCrown) {
           this._startCrownAnimation();
         } else {
-          this._showVictoryPanel = true;
-          audio.play('victory');
+          this._afterCrownDone();
         }
       }.bind(this), 1000);
     }
@@ -1476,6 +1631,63 @@ _tryClaimMaster() {
     } else {
       this._nextBtn = null;  // 试玩模式无下一关按钮
     }
+  }
+
+  // ========== 关主授权对话框（Canvas 弹窗，匹配通关面板风格）==========
+  _renderAuthDialog() {
+    // 半透明遮罩
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    var pw = 260;
+    var ph = 200;
+    var px = (SCREEN_WIDTH - pw) / 2;
+    var py = (SCREEN_HEIGHT - ph) / 2 - 20;
+
+    // 面板背景 + 金色边框
+    ctx.fillStyle = 'rgba(26, 26, 46, 0.95)';
+    this._roundRect(ctx, px, py, pw, ph, 16);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineWidth = 2;
+    this._roundRect(ctx, px, py, pw, ph, 16);
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // 标题
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('👑 恭喜你成为关主！', SCREEN_WIDTH / 2, py + 44);
+
+    // 说明文字
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('授权后可显示你的头像和昵称', SCREEN_WIDTH / 2, py + 85);
+
+    // 两个按钮并排
+    var btnW = 100, btnH = 44, gap = 20;
+    var totalBtnW = btnW * 2 + gap;
+    var btnStartX = (SCREEN_WIDTH - totalBtnW) / 2;
+    var btnY = py + 130;
+
+    // 授权按钮（金色 — 原生 wx.createUserInfoButton 覆盖在上方）
+    ctx.fillStyle = '#FFD700';
+    this._roundRect(ctx, btnStartX, btnY, btnW, btnH, 10);
+    ctx.fill();
+    ctx.fillStyle = '#1a1a2e';
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillText('授权', btnStartX + btnW / 2, btnY + btnH / 2);
+
+    // 跳过按钮（灰色）
+    var skipX = btnStartX + btnW + gap;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+    this._roundRect(ctx, skipX, btnY, btnW, btnH, 10);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('跳过', skipX + btnW / 2, btnY + btnH / 2);
   }
 
   // ========== 连击系统 ==========

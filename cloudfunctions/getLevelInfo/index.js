@@ -1,4 +1,4 @@
-// 查询关卡信息（关主 + 皇冠阈值）
+// 查询关卡信息（关主）
 const cloud = require('wx-server-sdk');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();

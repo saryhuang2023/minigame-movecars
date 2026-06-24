@@ -137,9 +137,9 @@ async function reportBug(snapshot) {
 }
 
 /**
- * 获取关卡信息（关主 + 小金猪阈值）
+ * 获取关卡信息（关主）
  * @param {string} levelId 关卡名（如 "0001"）
- * @returns {Promise<{masterUserId, masterSteps, masterAvatarUrl, masterNickname, crownSteps}|null>}
+ * @returns {Promise<{masterUserId, masterSteps, masterAvatarUrl, masterNickname}|null>}
  */
 async function getLevelInfo(levelId) {
   const res = await callFunction('getLevelInfo', { levelId });
