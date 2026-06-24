@@ -6,7 +6,7 @@ const db = cloud.database();
 exports.main = async (event, context) => {
   try {
     const res = await db.collection('levels')
-      .field({ _id: true, name: true })
+      .field({ _id: true, name: true, version: true })
       .orderBy('name', 'asc')
       .limit(500)
       .get();

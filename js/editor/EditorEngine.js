@@ -82,16 +82,11 @@ class EditorEngine {
     this.dirty = false;
     this.input.on('editor', (e) => this.handleEvent(e));
 
-    // 云端同步只在第一次 activate 时执行，之后跳过（_cloudSynced 在 deactivate 中不清除）
-    if (!this._cloudSynced) {
-      this._cloudSynced = true;
-      this._cloudLoading = true;
-      this._pullCloudLevels().finally(() => {
-        this._cloudLoading = false;
-      });
-    } else {
+    // 每次进入编辑器都从云端拉取最新配置
+    this._cloudLoading = true;
+    this._pullCloudLevels().finally(() => {
       this._cloudLoading = false;
-    }
+    });
   }
 
   deactivate() {

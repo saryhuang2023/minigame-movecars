@@ -747,7 +747,8 @@ function renderDetail(bug) {
   html += field('处理人', bug.resolvedBy || '-');
   html += '</div>';
 
-  document.getElementById('modal-title').textContent = 'Bug 详情 — ' + (e.message || '').slice(0, 40);
+  document.getElementById('modal-title').innerHTML = 'Bug 详情 — ' + escapeHtml((e.message || '').slice(0, 40)) +
+    ' <button class="btn-danger-sm" onclick="deleteBugFromDetail(\'' + bug._id + '\')" style="margin-left:.75rem;font-size:.78rem;padding:.3rem .7rem;">删除此条</button>';
   document.getElementById('modal-body').innerHTML = html;
 }
 
@@ -798,6 +799,24 @@ async function deleteBug(id) {
     var res = await fetchAPI('delete', { id: id });
     hideLoading();
     if (res.code === 0) {
+      showToast('已删除', 'success');
+      refresh();
+    }
+  } catch (err) {
+    hideLoading();
+    showToast('删除失败: ' + err.message, 'error');
+  }
+}
+
+async function deleteBugFromDetail(id) {
+  if (!confirm('确定删除这条 Bug 记录？此操作不可撤销。')) return;
+
+  showLoading();
+  try {
+    var res = await fetchAPI('delete', { id: id });
+    hideLoading();
+    if (res.code === 0) {
+      closeModal();
       showToast('已删除', 'success');
       refresh();
     }
