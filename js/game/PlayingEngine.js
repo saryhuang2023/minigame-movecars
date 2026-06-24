@@ -870,23 +870,38 @@ _tryClaimMaster() {
     if (!this._badgeLogFrame) this._badgeLogFrame = 0;
     this._badgeLogFrame++;
 
-    var badgeW = 165;
-    var badgeH = 70;
+    var badgeW = 150;
+    var badgeH = 74;
     var badgeX = 5;
-    var badgeY = SCREEN_HEIGHT - badgeH-5;
+    var badgeY = SCREEN_HEIGHT - badgeH - 5;
+    var badgeR = 20;
 
-    // 半透明白底 + 浅粉边框 + 微弱阴影
+    // 面板容器：渐变底色 + 精致边框 + 层次阴影
     ctx.save();
-    ctx.shadowColor = 'rgba(161, 150, 181, 0.08)';
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 2;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    this._roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 14);
+    // 外阴影 - 加深层次感
+    ctx.shadowColor = 'rgba(94, 63, 153, 0.1)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 4;
+    // 径向渐变填充：从左上角微光到纯白
+    var grad = ctx.createLinearGradient(badgeX, badgeY, badgeX, badgeY + badgeH);
+    grad.addColorStop(0, '#FFF5FA');
+    grad.addColorStop(0.6, '#FFFFFF');
+    grad.addColorStop(1, '#FFFAFD');
+    ctx.fillStyle = grad;
+    this._roundRect(ctx, badgeX, badgeY, badgeW, badgeH, badgeR);
     ctx.fill();
     ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = 'rgba(252, 233, 242, 1)';
+    // 边框
+    ctx.strokeStyle = 'rgba(249, 168, 212, 0.5)';
+    ctx.lineWidth = 1.5;
+    this._roundRect(ctx, badgeX, badgeY, badgeW, badgeH, badgeR);
+    ctx.stroke();
+    // 顶部高光线（模拟玻璃质感）
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.lineWidth = 1;
-    this._roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 14);
+    ctx.beginPath();
+    ctx.moveTo(badgeX + badgeR, badgeY + 1.5);
+    ctx.lineTo(badgeX + badgeW - badgeR, badgeY + 1.5);
     ctx.stroke();
     ctx.restore();
 
@@ -1001,12 +1016,12 @@ _tryClaimMaster() {
     ctx.fillStyle = '#334155';
     ctx.font = '12px sans-serif';
     var recText = this._myRecord != null ? ('我的:' + this._myRecord + '步') : '我的:无';
-    ctx.fillText(recText, rightX, badgeY + 11);
+    ctx.fillText(recText, rightX, badgeY + 18);
 
     // 当前步数（金色强调）
     ctx.fillStyle = '#F59E0B';
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('当前步数:' + this.steps + '步', rightX, badgeY + 36);
+    ctx.fillText('当前:' + this.steps + '步', rightX, badgeY + 42);
 
     ctx.textAlign = 'center'; // 复位
   }
@@ -1399,7 +1414,7 @@ _tryClaimMaster() {
     const barW = this._boardCardW;
     const btnW = 90, btnH = 68;
     const gap = 14;
-    const btnY = barY + (BOTTOM_BAR_H - btnH);
+    const btnY = SCREEN_HEIGHT - 5 - btnH;  // 底部与关主面板对齐
 
     // === 提示按钮 ===
     const hintX = PADDING + barW - btnW;
