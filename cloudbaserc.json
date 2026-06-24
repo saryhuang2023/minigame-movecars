@@ -88,6 +88,13 @@
       "ignore": ["node_modules"]
     },
     {
+      "name": "batchDownloadLevels",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 30,
+      "ignore": ["node_modules"]
+    },
+    {
       "name": "cleanupBugs",
       "runtime": "Nodejs18.15",
       "handler": "index.main",

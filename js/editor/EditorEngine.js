@@ -1013,8 +1013,42 @@ class EditorEngine {
     fs.writeFileSync(`${metaDir}/${name}.json`, JSON.stringify({ cloudId, version: version || 0 }), 'utf8');
   }
 
-  // 从云端下载所有关卡，全量覆盖本地文件（不依赖 this.levelList）
+  // 从云端下载所有关卡，全量覆盖本地文件（批量 gzip 打包，不依赖 this.levelList）
   async _pullCloudLevels() {
+    try {
+      // ① 调用批量下载云函数（gzip 压缩 + base64 返回）
+      const res = await wx.cloud.callFunction({ name: 'batchDownloadLevels' });
+      const result = res.result;
+      if (!result || !result.ok || !result.count) return;
+
+      // ② base64 → ArrayBuffer → Uint8Array → pako.inflate → JSON
+      const arrayBuffer = wx.base64ToArrayBuffer(result.base64);
+      const compressed = new Uint8Array(arrayBuffer);
+      const pako = require('../libs/pako_inflate.min');
+      const decompressed = pako.inflate(compressed, { to: 'string' });
+      const payload = JSON.parse(decompressed);
+
+      console.log(`[Cloud] 批量下载完成: ${result.count} 个关卡, ${result.compressedSize}B → ${result.originalSize}B (${Math.round(result.compressedSize / result.originalSize * 100)}%)`);
+
+      // ③ 逐关卡写入本地文件 + .meta
+      const fs = wx.getFileSystemManager();
+      const dir = `${wx.env.USER_DATA_PATH}/levels`;
+      try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
+
+      for (const [name, info] of Object.entries(payload)) {
+        const fileName = name + '.json';
+        info.data.version = info.version;
+        fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(info.data, null, 2), 'utf8');
+        this._saveCloudMeta(name, info._id, info.version);
+      }
+    } catch (e) {
+      console.warn('[Cloud] 批量下载失败，回退到逐个下载:', e);
+      await this._pullCloudLevelsFallback();
+    }
+  }
+
+  // 逐个下载（兜底方案，当 batchDownloadLevels 不可用时）
+  async _pullCloudLevelsFallback() {
     const cloudList = await cloud.listLevels();
     if (!cloudList || cloudList.length === 0) return;
 
