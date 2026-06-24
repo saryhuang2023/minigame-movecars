@@ -1021,9 +1021,12 @@ class EditorEngine {
       const result = res.result;
       if (!result || !result.ok || !result.count) return;
 
-      // ② base64 → ArrayBuffer → Uint8Array → pako.inflate → JSON
-      const arrayBuffer = wx.base64ToArrayBuffer(result.base64);
-      const compressed = new Uint8Array(arrayBuffer);
+      // ② base64 → Uint8Array → pako.inflate → JSON（小游戏无 wx.base64ToArrayBuffer，用 atob 手动转换）
+      const binaryStr = atob(result.base64);
+      const compressed = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        compressed[i] = binaryStr.charCodeAt(i);
+      }
       const pako = require('../libs/pako_inflate.min');
       const decompressed = pako.inflate(compressed, { to: 'string' });
       const payload = JSON.parse(decompressed);

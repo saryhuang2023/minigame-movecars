@@ -30,7 +30,6 @@ const CARD_RADIUS = 32;     // 棋盘卡片圆角
 const ESCAPE_SPEED = 150;  // 正常逃脱速度（逻辑像素/秒）
 const GHOST_SPEED  = 100;   // 幽灵提示速度（正常速度的一半）
 
-const DRAG_THRESHOLD = 20;
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;
 const COMBO_WINDOW = 3000;             // 连击窗口（毫秒）
 const COMBO_WIDGET_W = 120;            // 连击组件宽度
@@ -319,39 +318,20 @@ class PlayingEngine {
       }
     }
 
-    // 棋盘区域：找小猪，记录触控起点（不立即创建 dragState，等移动超阈值再激活拖拽）
+    // 棋盘区域：找小猪，按下即激活拖拽
     const hit = this.gp.getPigAtPoint(x, y);
     if (hit) {
       const pig = this.gp.pigs.find(p => p.id === hit.id);
       if (pig) {
-        this._touchState = {
-          startX: x,
-          startY: y,
-          pigId: pig.id,
-          tailIndex: pig.tailIndex,
-          length: pig.length,
-          angle: pig.angle
-        };
-      }
-    }
-  }
-
-  onTouchMove(x, y) {
-    // 尚未激活拖拽：检查是否超过阈值
-    if (this._touchState && !this.gp.dragState) {
-      const dx = x - this._touchState.startX;
-      const dy = y - this._touchState.startY;
-      if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
-        // 超过阈值 → 激活旋转拖拽
         audio.play('drag_start');
         this.gp.dragState = {
           type: 'rotate',
-          pigId: this._touchState.pigId,
-          tailIndex: this._touchState.tailIndex,
-          displayAngle: this._touchState.angle,
-          targetAngle: this._touchState.angle,
-          lastValid: { tailIndex: this._touchState.tailIndex, length: this._touchState.length, angle: this._touchState.angle },
-          startState: { tailIndex: this._touchState.tailIndex, length: this._touchState.length, angle: this._touchState.angle },
+          pigId: pig.id,
+          tailIndex: pig.tailIndex,
+          displayAngle: pig.angle,
+          targetAngle: pig.angle,
+          lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+          startState: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
           headHoleIdx: -1,
           lastCollidedId: null,
           lastCollideTime: 0,
@@ -359,7 +339,9 @@ class PlayingEngine {
         };
       }
     }
+  }
 
+  onTouchMove(x, y) {
     if (this.gp.dragState && this.gp.dragState.type === 'rotate') {
       // 旋转持续音效（首次播放）
       if (!this._rotateHandle) {
@@ -370,15 +352,6 @@ class PlayingEngine {
   }
 
   onTouchEnd(x, y) {
-    // 轻点（未超过拖拽阈值）→ 直接推出
-    if (this._touchState && !this.gp.dragState) {
-      const pigId = this._touchState.pigId;
-      this._touchState = null;
-      this.tryPushPig(pigId);
-      return;
-    }
-    this._touchState = null;
-
     if (!this.gp.dragState) return;
 
     // 停止旋转循环音效
@@ -450,7 +423,7 @@ class PlayingEngine {
       }
       // 自动推出时 tryPushPig 内 skipStep 防重复计步
       if (pig && this._shouldPushAfterSnap) {
-        this.tryPushPig(pigId, { silentBlock: true, skipStep: true });
+        this.tryPushPig(pigId, { skipStep: true });
       }
       this._shouldPushAfterSnap = false;
     }
