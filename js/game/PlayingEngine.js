@@ -296,6 +296,7 @@ class PlayingEngine {
     const lv = databus.currentLevel;
     this.levelName = lv ? lv.name : '';
     const localData = lv ? lv.data : null;
+    console.log('[Playing] activate levelName=' + this.levelName + ' index=' + databus.currentLevelIndex + ' localHasBoard=' + !!(localData && localData.board));
 
     // 先打开 UI（棋盘空白，玩家可见框架）
     this._setupUI();
@@ -332,9 +333,15 @@ class PlayingEngine {
             result.data.crownSteps = result.crownSteps;
           }
           console.log('[Cloud] 已发布关卡 ' + self.levelName + ' 拉取成功，使用云端配置');
+          console.log('[Cloud] 云端数据 name=' + (result.data.name || '?') + ' pigs=' + (result.data && result.data.pigs && result.data.pigs.length)
+            + ' board.cols=' + (result.data && result.data.board ? result.data.board.cols : '?')
+            + ' board.rows=' + (result.data && result.data.board ? result.data.board.rows : '?'));
           self.loadLevel(result.data);
         } else {
           console.log('[Cloud] 关卡 ' + self.levelName + ' 未发布，使用本地关卡');
+          console.log('[Cloud] 本地数据 name=' + self.levelName + ' pigs=' + (localData && localData.pigs && localData.pigs.length)
+            + ' board.cols=' + (localData && localData.board ? localData.board.cols : '?')
+            + ' board.rows=' + (localData && localData.board ? localData.board.rows : '?'));
           self.loadLevel(localData);
         }
       })
@@ -354,6 +361,7 @@ class PlayingEngine {
   }
 
   loadLevel(data) {
+    console.log('[Playing] loadLevel pigCount=' + (data && data.pigs ? data.pigs.length : 0) + ' pigIds=' + (data && data.pigs ? data.pigs.map(function(p){return p.id}).join(',') : 'none'));
     // 加载新关卡时统一重置所有运行时状态（所有入口无需单独调用）
     this._resetPlayState();
     if (data && data.board) {

@@ -34,8 +34,12 @@ async function callFunction(name, data = {}) {
     const v = data[k];
     if (k === 'data') {
       argsSummary[k] = `[obj, ${JSON.stringify(v).length}c]`;
+    } else if (v === null) {
+      argsSummary[k] = 'null';
+    } else if (v === undefined) {
+      argsSummary[k] = 'undefined';
     } else {
-      argsSummary[k] = typeof v === 'string' && v.length < 80 ? v : (v === undefined ? 'undefined' : JSON.stringify(v).substring(0, 80));
+      argsSummary[k] = typeof v === 'string' && v.length < 80 ? v : JSON.stringify(v).substring(0, 80);
     }
   }
   console.log(`[Cloud] → ${name}`, argsSummary);
@@ -98,6 +102,13 @@ async function savePlayerData(data) {
  * @param {number} version 客户端持有的版本号（首次上传传 0）
  */
 async function uploadLevel(name, data, version, published) {
+  console.log('[Cloud] uploadLevel 参数: name=' + name
+    + ' pigs=' + (data && data.pigs ? data.pigs.length : 0)
+    + ' board.cols=' + (data && data.board ? data.board.cols : '?')
+    + ' board.rows=' + (data && data.board ? data.board.rows : '?')
+    + ' crownSteps=' + (data && data.crownSteps)
+    + ' published=' + published
+    + ' version=' + version);
   return callFunction('uploadLevel', { name, data, version, published });
 }
 
@@ -118,6 +129,16 @@ async function listLevels() {
  */
 async function downloadLevel(id, name, publishedOnly) {
   const res = await callFunction('downloadLevel', { id, name, publishedOnly });
+  if (res && res.data) {
+    var d = res.data;
+    console.log('[Cloud] downloadLevel 返回: name=' + (d.name || '?')
+      + ' pigs=' + (d.pigs ? d.pigs.length : 0)
+      + ' board.cols=' + (d.board ? d.board.cols : '?')
+      + ' board.rows=' + (d.board ? d.board.rows : '?')
+      + ' crownSteps=' + (d.crownSteps || 0));
+  } else {
+    console.log('[Cloud] downloadLevel 返回: null (code=' + (res && res.code) + ' msg=' + (res && res.msg) + ')');
+  }
   return res.data || null;
 }
 

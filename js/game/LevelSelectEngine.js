@@ -182,11 +182,15 @@ LevelSelectEngine.prototype._buildChapterSections = function () {
     this._sections.push(section);
   }
 
-  // 第三步：更新滚动范围
-  var visibleH = SCREEN_HEIGHT - 60;
-  this._maxScrollTop = Math.max(0, y - SECTION_MARGIN - visibleH);
-  if (this._maxScrollTop < 0) this._maxScrollTop = 0;
-  this._scrollTop = 0;
+    // 第三步：更新滚动范围
+    var visibleH = SCREEN_HEIGHT - 60;
+    this._maxScrollTop = Math.max(0, y - SECTION_MARGIN - visibleH);
+    if (this._maxScrollTop < 0) this._maxScrollTop = 0;
+    this._scrollTop = 0;
+    console.log('[LevelSelect] _buildChapterSections 完成: ' + this._sections.length + '章节, ' +
+      this._sections.reduce(function(a,s){return a+s.cards.length},0) + '卡片, ' +
+      'cards[0]=' + (this._sections[0] && this._sections[0].cards[0] ? this._sections[0].cards[0].level.name : '?') +
+      ' cards[last]=' + (this._sections[this._sections.length-1] && this._sections[this._sections.length-1].cards.slice(-1)[0] ? this._sections[this._sections.length-1].cards.slice(-1)[0].level.name : '?'));
 };
 
 LevelSelectEngine.prototype._getGridTop = function () {
@@ -366,6 +370,7 @@ LevelSelectEngine.prototype._hitTestCards = function (t) {
         this._btnPress.press('card_' + card.globalIndex);
         var lv = card.level;
         try {
+          console.log('[LevelSelect] 点击卡片 globalIdx=' + card.globalIndex + ' name=' + lv.name + ' file=' + lv.file);
           var raw = fs.readFileSync('assets/levels/' + lv.file, 'utf8');
           databus.currentLevel = { name: lv.name, data: JSON.parse(raw) };
           databus.currentLevelIndex = card.globalIndex;

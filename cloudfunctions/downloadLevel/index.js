@@ -8,17 +8,13 @@ exports.main = async (event, context) => {
 
   try {
     if (id) {
-      var query = db.collection('levels').doc(id);
-      if (publishedOnly) query = query.where({ published: true });
-      const res = await query
-        .field({ _id: true, name: true, data: true, version: true, published: true, crownSteps: true })
-        .get();
+      const res = await db.collection('levels').doc(id).get();
       return { code: 0, data: res.data };
     }
     if (name) {
-      var query = db.collection('levels').where({ name });
-      if (publishedOnly) query = query.where({ published: true });
-      const res = await query
+      var condition = { name: name };
+      if (publishedOnly) condition.published = true;
+      const res = await db.collection('levels').where(condition)
         .field({ _id: true, name: true, data: true, version: true, published: true, crownSteps: true })
         .get();
       if (res.data.length === 0) {
