@@ -6,28 +6,13 @@ var audio = require('../audio/AudioManager.js');
 var renderModule = require('../render.js');
 var ctx = renderModule.ctx;
 var SCREEN_WIDTH = renderModule.SCREEN_WIDTH;
-var drawPigIcon = require('../render/PigIconRenderer.js').drawPigIcon;
 var SCREEN_HEIGHT = renderModule.SCREEN_HEIGHT;
 var ButtonPress = require('../anim/ButtonPress.js');
 
-// ========== 配色（v3 设计） ==========
-var C = {
-  primary: '#EC4899',        // 蜜桃粉
-  primaryDark: '#DB2777',    // 深粉
-  secondary: '#FFFFFF',      // 卡片白
-  accent: '#F59E0B',         // 金色 — 通关/强调
-  textDark: '#0F172A',       // 深色文字
-  textMuted: '#94A3B8',      // 灰色文字
-  textLocked: '#ADB5C4',     // 锁定数字灰
-  cyan: '#0EC9C5',            // 返回按钮青
-  cyanShadow: 'rgba(14, 201, 197, 0.3)',
-  cardDoneShadow: 'rgba(236, 72, 153, 0.10)',
-  cardCurrentShadow: 'rgba(236, 72, 153, 0.25)',
-  cardLockedBg: '#EFE8EE',
-  cardLockedShadow: 'rgba(0, 0, 0, 0.04)',
-  innerHighlight: 'rgba(255, 255, 255, 0.35)',
-  innerHighlightCurrent: 'rgba(255, 255, 255, 0.4)',
-};
+// UI 组件
+var LevelCard = require('../ui/widgets/LevelCard.js');
+var ChapterHeader = require('../ui/widgets/ChapterHeader.js');
+var LevelSelectTopBar = require('../ui/widgets/LevelSelectTopBar.js');
 
 // ========== 布局常量 ==========
 var TOP_BAR_H = 52;
@@ -45,11 +30,13 @@ var SECTION_MARGIN = 20;
 function LevelSelectEngine(input) {
   this.input = input;
   this.projectLevels = [];
-  this.backBtn = null;
-  this.titleCenterX = 0;
-  this.titleCenterY = 0;
   this._sections = [];       // [{ chapter, headerY, cards: [{x,y,w,h,level,globalIndex}] }]
   this._btnPress = new ButtonPress();
+
+  // UI 组件
+  this._topBar = null;
+  this._chapterHeaders = [];  // ChapterHeader[]
+  this._levelCards = [];      // LevelCard[][] — [sectionIndex][cardIndex]
 
   // 滚动
   this._scrollTop = 0;
@@ -64,9 +51,17 @@ function LevelSelectEngine(input) {
 // 生命周期
 // ============================================================
 LevelSelectEngine.prototype.activate = function () {
-  this.loadProjectLevels();
-  this._buildChapterSections();
-  this.input.on('levelSelect', this._handleEvent.bind(this));
+  try {
+    this.loadProjectLevels();
+    this._buildChapterSections();
+    this._setupUI();
+    this.input.on('levelSelect', this._handleEvent.bind(this));
+  } catch (e) {
+    console.error('[LevelSelectEngine] activate() 失败:', e);
+    this._topBar = null;
+    this._chapterHeaders = [];
+    this._levelCards = [];
+  }
 };
 
 LevelSelectEngine.prototype.deactivate = function () {
@@ -185,6 +180,96 @@ LevelSelectEngine.prototype._getGridTop = function () {
 };
 
 // ============================================================
+// UI 组件初始化 & 数据同步
+// ============================================================
+LevelSelectEngine.prototype._setupUI = function () {
+  // 顶栏
+  this._topBar = new LevelSelectTopBar();
+
+  // 按 sections 结构创建组件
+  this._chapterHeaders = [];
+  this._levelCards = [];
+
+  for (var s = 0; s < this._sections.length; s++) {
+    var section = this._sections[s];
+    var chHeader = new ChapterHeader();
+    this._chapterHeaders.push(chHeader);
+
+    var cardRow = [];
+    for (var i = 0; i < section.cards.length; i++) {
+      var lc = new LevelCard();
+      cardRow.push(lc);
+    }
+    this._levelCards.push(cardRow);
+  }
+};
+
+/** 每帧同步引擎状态 → UI 组件（在 render 之前调用） */
+LevelSelectEngine.prototype._syncUIData = function () {
+  if (!this._topBar) return;
+  // 顶栏
+  this._topBar.setData({
+    safeTop: databus.safeTop,
+    topBarH: TOP_BAR_H,
+    title: '选择关卡',
+    pressScale: this._btnPress.getScale('back'),
+    screenW: SCREEN_WIDTH,
+  });
+
+  var completed = this._getCompletedCount();
+  var PADDING_X = 20;
+  var SECTION_HEADER_H = 28;
+
+  for (var s = 0; s < this._sections.length; s++) {
+    var section = this._sections[s];
+    var ch = section.chapter;
+
+    // 计算章节内已通关数
+    var cleared = 0;
+    for (var c = 0; c < section.cards.length; c++) {
+      if (section.cards[c].globalIndex < completed) cleared++;
+    }
+
+    // 章节标题
+    this._chapterHeaders[s].setData({
+      x: PADDING_X,
+      y: section.headerY + SECTION_HEADER_H / 2,
+      w: SCREEN_WIDTH - PADDING_X,
+      icon: ch.icon || '',
+      name: ch.name,
+      themeColor: ch.themeColor || '#EC4899',
+      cleared: cleared,
+      total: section.cards.length,
+    });
+
+    // 卡片
+    for (var i = 0; i < section.cards.length; i++) {
+      var card = section.cards[i];
+      var status = this._getCardStatus(card.globalIndex);
+
+      // 皇冠状态
+      var hasCrown = false;
+      var levelName = card.level ? card.level.name : null;
+      if (levelName) {
+        try { hasCrown = !!wx.getStorageSync('crown_' + levelName); } catch (e) {}
+      }
+
+      this._levelCards[s][i].setCardData({
+        x: card.x,
+        y: card.y,
+        w: card.w,
+        h: card.h,
+        radius: CARD_RADIUS,
+        globalIndex: card.globalIndex,
+        status: status,
+        hasCrown: hasCrown,
+        pressScale: this._btnPress.getScale('card_' + card.globalIndex),
+      });
+    }
+  }
+};
+
+// ============================================================
 // 关卡状态判断
 // ============================================================
 LevelSelectEngine.prototype._getCompletedCount = function () {
@@ -241,8 +326,9 @@ LevelSelectEngine.prototype._handleEvent = function (e) {
 
   // 返回按钮（不受滚动影响）
   if (e.type === 'touchstart') {
-    if (this.backBtn && t.x >= this.backBtn.x && t.x <= this.backBtn.x + this.backBtn.w &&
-        t.y >= this.backBtn.y && t.y <= this.backBtn.y + this.backBtn.h) {
+    var bb = this._topBar ? this._topBar.backBtnRect : null;
+    if (bb && t.x >= bb.x && t.x <= bb.x + bb.w &&
+        t.y >= bb.y && t.y <= bb.y + bb.h) {
       audio.play('button_click');
       this._btnPress.press('back');
       databus.gameState = 'menu';
@@ -285,245 +371,23 @@ LevelSelectEngine.prototype._hitTestCards = function (t) {
 // 渲染
 // ============================================================
 LevelSelectEngine.prototype.render = function () {
-  this._renderTopBar();
+  if (!this._topBar) return;
+  this._syncUIData();
 
+  // 顶栏（固定，不随滚动）
+  this._topBar.render(ctx);
+
+  // 章节内容（随滚动偏移）
   ctx.save();
   ctx.translate(0, -this._scrollTop);
   for (var s = 0; s < this._sections.length; s++) {
-    this._renderChapterSection(this._sections[s]);
+    var section = this._sections[s];
+    this._chapterHeaders[s].render(ctx);
+    for (var i = 0; i < section.cards.length; i++) {
+      this._levelCards[s][i].render(ctx);
+    }
   }
   ctx.restore();
-};
-
-// ========== 顶栏 ==========
-LevelSelectEngine.prototype._renderTopBar = function () {
-  var barY = databus.safeTop;
-  var barCY = barY + TOP_BAR_H / 2;
-
-  var btnSize = 48;
-  var btnX = PADDING_X;
-  var btnY = barY + (TOP_BAR_H - btnSize) / 2;
-  var btnCX = btnX + btnSize / 2;
-  var btnCY_box = btnY + btnSize / 2;
-  this.backBtn = { x: btnX, y: btnY, w: btnSize, h: btnSize };
-
-  // 按压微交互缩放
-  var backScale = this._btnPress.getScale('back');
-
-  ctx.save();
-  ctx.translate(btnCX, btnCY_box);
-  ctx.scale(backScale, backScale);
-  ctx.translate(-btnCX, -btnCY_box);
-
-  // 阴影
-  ctx.save();
-  ctx.shadowColor = C.cyanShadow;
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 4;
-  ctx.beginPath();
-  ctx.arc(btnCX, btnCY_box, btnSize / 2, 0, Math.PI * 2);
-  ctx.fillStyle = C.cyan;
-  ctx.fill();
-  ctx.restore();
-
-  // 主体
-  ctx.beginPath();
-  ctx.arc(btnCX, btnCY_box, btnSize / 2, 0, Math.PI * 2);
-  ctx.fillStyle = C.cyan;
-  ctx.fill();
-
-  // 白色箭头 <
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 2.5;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(btnCX + 5, btnCY_box - 7);
-  ctx.lineTo(btnCX - 4, btnCY_box);
-  ctx.lineTo(btnCX + 5, btnCY_box + 7);
-  ctx.stroke();
-  ctx.restore(); // 按压缩放
-
-  // 居中标题 "选择关卡"
-  ctx.fillStyle = C.textDark;
-  ctx.font = 'bold 24px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('选择关卡', SCREEN_WIDTH / 2, barCY);
-
-  this.titleCenterX = SCREEN_WIDTH / 2;
-  this.titleCenterY = barCY;
-};
-
-// ========== 章节标题 ==========
-LevelSelectEngine.prototype._renderChapterHeader = function (section, y) {
-  var ch = section.chapter;
-  var completed = this._getCompletedCount();
-  var chStart = section.cards.length > 0 ? section.cards[0].globalIndex : 0;
-  var chEnd = section.cards.length > 0 ? section.cards[section.cards.length - 1].globalIndex : 0;
-
-  // 计算章节内已通关数量
-  var cleared = 0;
-  for (var c = 0; c < section.cards.length; c++) {
-    if (section.cards[c].globalIndex < completed) cleared++;
-  }
-
-  var iconX = PADDING_X;
-  var iconCY = y + SECTION_HEADER_H / 2;
-
-  // 图标
-  ctx.font = '16px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(ch.icon || '', iconX, iconCY);
-
-  // 章节名
-  var nameX = iconX + 26;
-  ctx.fillStyle = ch.themeColor || C.primary;
-  ctx.font = 'bold 14px sans-serif';
-  ctx.fillText(ch.name, nameX, iconCY);
-
-  // 进度文字（右侧）
-  var total = section.cards.length;
-  ctx.fillStyle = C.textMuted;
-  ctx.font = '12px sans-serif';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(cleared + '/' + total, SCREEN_WIDTH - PADDING_X, iconCY);
-};
-
-// ========== 单章渲染 ==========
-LevelSelectEngine.prototype._renderChapterSection = function (section) {
-  // 章节标题
-  this._renderChapterHeader(section, section.headerY);
-
-  // 关卡卡片
-  for (var i = 0; i < section.cards.length; i++) {
-    var card = section.cards[i];
-    var status = this._getCardStatus(card.globalIndex);
-    this._renderCard(card, status);
-  }
-};
-
-// ========== 单个关卡卡片 ==========
-LevelSelectEngine.prototype._renderCard = function (card, status) {
-  var x = card.x;
-  var y = card.y;
-  var w = card.w;
-  var h = card.h;
-  var cx = x + w / 2;
-  var cy = y + h / 2;
-  var r = CARD_RADIUS;
-
-  // 编号文字：全局索引 + 1
-  var labelNumber = String(card.globalIndex + 1);
-
-  // 按压微交互缩放
-  var cardScale = this._btnPress.getScale('card_' + card.globalIndex);
-  ctx.save();
-  if (cardScale !== 1) {
-    ctx.translate(cx, cy);
-    ctx.scale(cardScale, cardScale);
-    ctx.translate(-cx, -cy);
-  }
-
-  // === locked（无锁图标，灰色即代表未解锁） ===
-  if (status === 'locked') {
-    ctx.save();
-    ctx.shadowColor = C.cardLockedShadow;
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 2;
-    this._roundRect(ctx, x, y, w, h, r);
-    ctx.fillStyle = C.cardLockedBg;
-    ctx.fill();
-    ctx.restore();
-
-    this._roundRect(ctx, x, y, w, h, r);
-    ctx.fillStyle = C.cardLockedBg;
-    ctx.fill();
-
-    ctx.fillStyle = C.textLocked;
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(labelNumber, cx, cy);
-    ctx.restore(); // 按压缩放
-    return;
-  }
-
-  // === completed / current ===
-  var isCurrent = (status === 'current');
-
-  // 外阴影
-  ctx.save();
-  ctx.shadowColor = isCurrent ? C.cardCurrentShadow : C.cardDoneShadow;
-  ctx.shadowBlur = isCurrent ? 14 : 8;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = isCurrent ? 4 : 3;
-  this._roundRect(ctx, x, y, w, h, r);
-  ctx.fillStyle = C.secondary;
-  ctx.fill();
-  ctx.restore();
-
-  // 主体白色卡片
-  this._roundRect(ctx, x, y, w, h, r);
-  ctx.fillStyle = C.secondary;
-  ctx.fill();
-
-  // 当前关卡：粉色描边
-  if (isCurrent) {
-    ctx.strokeStyle = C.primary;
-    ctx.lineWidth = 2.5;
-    ctx.globalAlpha = 0.85;
-    this._roundRect(ctx, x, y, w, h, r);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  // 内高光描边
-  ctx.strokeStyle = isCurrent ? C.innerHighlightCurrent : C.innerHighlight;
-  ctx.lineWidth = 1;
-  this._roundRect(ctx, x + 1, y + 1, w - 2, h - 2, r - 1);
-  ctx.stroke();
-
-  // 编号文字（变大变粗，居中）
-  ctx.fillStyle = isCurrent ? C.primary : C.textDark;
-  ctx.font = isCurrent ? 'bold 20px sans-serif' : 'bold 20px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(labelNumber, cx, cy);
-
-  // 右上角小金猪（金色=已获得皇冠，灰色=未获得）
-  // 不依赖 status（completed/current 都可能已获得皇冠），直接读存储
-  var hasCrown = false;
-  var levelName = card.level ? card.level.name : null;
-  if (levelName) {
-    try {
-      hasCrown = !!wx.getStorageSync('crown_' + levelName);
-    } catch (e) {}
-  }
-  if (hasCrown) {
-    drawPigIcon(ctx, x + w - 4, y + 4, 14, true);
-  }
-
-  ctx.restore(); // 按压缩放
-};
-
-// ========== Canvas 工具 ==========
-LevelSelectEngine.prototype._roundRect = function (ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arcTo(x + w, y, x + w, y + r, r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-  ctx.lineTo(x + r, y + h);
-  ctx.arcTo(x, y + h, x, y + h - r, r);
-  ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
-  ctx.closePath();
 };
 
 // ========== 辅助函数 ==========

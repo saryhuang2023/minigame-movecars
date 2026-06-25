@@ -19,8 +19,8 @@ var Easing = require('../core/Easing.js');
 function createPopupAnimator() {
   var _phase = 'closed';          // 'opening' | 'open' | 'closing' | 'closed'
   var _startTime = 0;
-  var _openDuration = 750;        // 弹出总时长 ms（统一值）
-  var _closeExpandDur = 100;      // 关闭时"弹一下"阶段时长 ms
+  var _openDuration = 650;        // 弹出总时长 ms（统一值）
+  var _closeExpandDur = 80;      // 关闭时"弹一下"阶段时长 ms
   var _closeShrinkDur = 280;      // 关闭时缩回阶段时长 ms
   var _onClose = null;
   var _openStartTime = 0;          // 记录打开开始时间，供 stagger 计算

@@ -1,10 +1,11 @@
 [
-  { "file": "0001.json", "type": 1, "progress": 10 },
-  { "file": "0002.json", "type": 1, "progress": 10 },
-  { "file": "0003.json", "type": 1, "progress": 10 },
-  { "file": "0004.json", "type": 1, "progress": 10 },
-  { "file": "0005.json", "type": 1, "progress": 10 },
-  { "file": "0006.json", "type": 1, "progress": 10 },
-  { "file": "0007.json", "type": 1, "progress": 10 },
-  { "file": "0008.json", "type": 1, "progress": 10 }
+  { "file": "0001.json" },
+  { "file": "0002.json" },
+  { "file": "0003.json" },
+  { "file": "0004.json" },
+  { "file": "0005.json" },
+  { "file": "0006.json" },
+  { "file": "0007.json" },
+  { "file": "0008.json" },
+  { "file": "0009.json" }
 ]

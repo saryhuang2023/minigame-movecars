@@ -252,7 +252,6 @@ class EditorEngine {
       while (used.indexOf(nextId) >= 0) nextId++;
       pig.hintId = nextId;
       if (pig.hintAngle == null) pig.hintAngle = pig.angle;
-      this.showToast('提示编号 ' + nextId + ' | 点击空白调方向');
     }
     // 选中该猪
     this.gp.selectedPigId = pigId;
