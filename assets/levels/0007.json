@@ -132,14 +132,6 @@
       "tail": 62
     },
     {
-      "angle": 90,
-      "hintAngle": 136,
-      "hintId": 21,
-      "id": 174,
-      "length": 277,
-      "tail": 73
-    },
-    {
       "angle": 270,
       "hintAngle": 270,
       "hintId": 4,
@@ -228,8 +220,16 @@
       "id": 186,
       "length": 73,
       "tail": 42
+    },
+    {
+      "angle": 90,
+      "hintAngle": 136,
+      "hintId": 21,
+      "id": 174,
+      "length": 302,
+      "tail": 73
     }
   ],
   "ready": 1,
-  "version": 22
+  "version": 4
 }

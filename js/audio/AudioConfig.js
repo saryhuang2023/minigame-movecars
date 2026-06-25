@@ -95,16 +95,8 @@ var SFX_EVENTS = {
     files: ['drag_start.mp3'],
     priority: PRIORITY.ACTION,
   },
-  'hint_reveal': {
+  'hint_reveal': {  // 提示的声音
     files: ['hint_reveal.mp3'],
-    priority: PRIORITY.ACTION,
-  },
-  'hint_ghost': {
-    files: ['hint_ghost.mp3'],
-    priority: PRIORITY.AMBIENT,
-  },
-  'reset': {
-    files: ['reset.mp3'],
     priority: PRIORITY.ACTION,
   },
   'level_start': {

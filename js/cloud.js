@@ -42,12 +42,19 @@ async function callFunction(name, data = {}) {
       argsSummary[k] = typeof v === 'string' && v.length < 80 ? v : JSON.stringify(v).substring(0, 80);
     }
   }
-  console.log(`[Cloud] → ${name}`, argsSummary);
+  const reqSize = JSON.stringify(data).length;
+  const reqSizeStr = reqSize >= 1024 ? (reqSize / 1024).toFixed(1) + 'KB' : reqSize + 'B';
+  console.log(`[Cloud] → ${name}  ${reqSizeStr}`, argsSummary);
 
   try {
     const res = await wx.cloud.callFunction({ name, data });
     const duration = Date.now() - t0;
     const result = res.result;
+
+    // 响应包大小
+    const resSize = JSON.stringify(res).length;
+    const sizeStr = resSize >= 1024 ? (resSize / 1024).toFixed(1) + 'KB' : resSize + 'B';
+
     // 结果摘要
     let resultSummary;
     if (result && typeof result === 'object') {
@@ -62,7 +69,7 @@ async function callFunction(name, data = {}) {
     } else {
       resultSummary = String(result).substring(0, 80);
     }
-    console.log(`[Cloud] ← ${name}  ${duration}ms  ${resultSummary}`);
+    console.log(`[Cloud] ← ${name}  ${duration}ms  ${sizeStr}  ${resultSummary}`);
 
     // 额外诊断：如果 code 是 undefined，打印完整 result
     if (result && typeof result === 'object' && result.code === undefined) {
@@ -129,14 +136,7 @@ async function listLevels() {
  */
 async function downloadLevel(id, name, publishedOnly) {
   const res = await callFunction('downloadLevel', { id, name, publishedOnly });
-  if (res && res.data) {
-    var d = res.data;
-    console.log('[Cloud] downloadLevel 返回: name=' + (d.name || '?')
-      + ' pigs=' + (d.pigs ? d.pigs.length : 0)
-      + ' board.cols=' + (d.board ? d.board.cols : '?')
-      + ' board.rows=' + (d.board ? d.board.rows : '?')
-      + ' crownSteps=' + (d.crownSteps || 0));
-  } else {
+  if (!res || !res.data) {
     console.log('[Cloud] downloadLevel 返回: null (code=' + (res && res.code) + ' msg=' + (res && res.msg) + ')');
   }
   return res.data || null;

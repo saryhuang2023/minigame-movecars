@@ -19,17 +19,29 @@ class HintSystem {
   // 公共 API
   // ------------------------------------------------------------------
 
-  /** 选择提示目标并启动幽灵动画。返回被选中的猪，或 null */
-  show() {
+  /**
+   * 选择提示目标并启动幽灵动画。
+   * @param {number} [targetPigId] 可选：强制指定目标猪 ID（引导系统使用）
+   * @returns 被选中的猪，或 null
+   */
+  show(targetPigId) {
     if (this._target) return null; // 已有提示进行中
 
-    // 找出未逃脱 + 有 hintId 的猪中，hintId 最小的
     var best = null;
     var pigs = this._gp.pigs;
-    for (var i = 0; i < pigs.length; i++) {
-      var p = pigs[i];
-      if (p.hintId == null) continue;
-      if (!best || p.hintId < best.hintId) best = p;
+
+    if (targetPigId != null) {
+      // 强制指定目标（引导系统专用）
+      for (var i = 0; i < pigs.length; i++) {
+        if (pigs[i].id === targetPigId) { best = pigs[i]; break; }
+      }
+    } else {
+      // 自动选择：未逃脱 + 有 hintId 的猪中，hintId 最小的
+      for (var i = 0; i < pigs.length; i++) {
+        var p = pigs[i];
+        if (p.hintId == null) continue;
+        if (!best || p.hintId < best.hintId) best = p;
+      }
     }
     if (!best) return null;
 
@@ -87,7 +99,14 @@ class HintSystem {
     var dirX = Math.cos(rad), dirY = -Math.sin(rad);
     // 距离和正常逃脱相同（100 × collisionStep），幽灵速度 = GHOST_SPEED
     var totalDist = 100 * this._gp.collisionStep;
-    this._gp.ghostAnimations.push({
+
+    // 先清除同一只猪已有的幽灵条目，防止重复累积
+    var ghosts = this._gp.ghostAnimations;
+    for (var i = ghosts.length - 1; i >= 0; i--) {
+      if (ghosts[i].pigId === pig.id) ghosts.splice(i, 1);
+    }
+
+    ghosts.push({
       pigId: pig.id,
       hintAngle: ha,
       dirX: dirX, dirY: dirY,

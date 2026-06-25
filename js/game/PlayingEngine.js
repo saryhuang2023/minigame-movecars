@@ -24,6 +24,7 @@ const MasterSystem = require('./MasterSystem.js');
 const HintSystem = require('./HintSystem.js');
 const VictoryAnimation = require('./VictoryAnimation.js');
 const CrownPigWidget = require('../ui/widgets/CrownPigWidget.js');
+const GuideManager = require('../guide/GuideManager.js');
 
 // 矩形碰撞检测辅助
 function _hitRect(px, py, rect) {
@@ -61,6 +62,9 @@ class PlayingEngine {
     this._master = new MasterSystem(this._loadAvatarImage.bind(this));
     // 提示系统
     this._hint = new HintSystem(this.gp);
+    // 引导系统
+    this._guide = new GuideManager(this);
+    this._guide.register(new (require('../guide/Guide1.js'))());
     // 通关飞行特效动画
     this._victoryAnim = new VictoryAnimation({
       onCrownDone: function () {
@@ -88,6 +92,7 @@ class PlayingEngine {
     this._hasUsedRemove = false;    // 本局是否用过移除按钮
     this._removeBtn = null;         // 移除按钮碰撞区
     this._loading = false;          // 是否正在加载（云端拉取中，阻止所有操作）
+    this._lastFrameTime = 0;        // 上一帧时间戳（引导系统 dt 计算用）
   }
 
   /**
@@ -104,6 +109,8 @@ class PlayingEngine {
     this._victoryClosing = false;
     this._combo.reset();
     this._hint.clear();
+    this._guide.reset();
+    this._lastFrameTime = 0;       // 防止切关卡时 dt 突增
     this._hasUsedRemove = false;
     // 小金猪状态
     this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
@@ -357,6 +364,7 @@ class PlayingEngine {
   deactivate() {
     this.input.off('playing');
     this._combo.reset();
+    this._guide.reset();         // 退出关卡时强制结束引导
     this._destroyAuthBtn(true);  // 立即关闭，无动画
   }
 
@@ -517,6 +525,8 @@ class PlayingEngine {
   }
 
   onTouchStart(x, y) {
+    this._guide.onPlayerAction();  // 棋盘操作 → 重置空闲计时
+
     var self = this;
 
     // 顶栏按钮（试玩模式返回编辑器，其他打开设置面板）
@@ -600,6 +610,8 @@ class PlayingEngine {
   }
 
   onTouchMove(x, y) {
+    this._guide.onPlayerAction();  // 棋盘拖拽 → 重置空闲计时
+
     if (this.gp.dragState && this.gp.dragState.type === 'rotate') {
       // 旋转持续音效（首次播放）
       if (!this._rotateHandle) {
@@ -610,6 +622,8 @@ class PlayingEngine {
   }
 
   onTouchEnd(x, y) {
+    this._guide.onPlayerAction();  // 松手操作 → 重置空闲计时
+
     if (!this.gp.dragState) return;
 
     // 停止旋转循环音效
@@ -1005,6 +1019,12 @@ class PlayingEngine {
 
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
   render() {
+    // 引导系统帧更新（所有状态下的引擎均需轮询）
+    var now = Date.now();
+    var dt = this._lastFrameTime ? (now - this._lastFrameTime) / 1000 : 0;
+    this._lastFrameTime = now;
+    if (dt > 0 && dt < 1) this._guide.onFrame(dt); // dt > 1s 视为异常（如切后台），跳过
+
     // 兜底：若 UI 层尚未初始化（_setupUI 可能因异常未执行），静默跳过
     if (!this._uiBoardCard) return;
 
