@@ -18,6 +18,18 @@ const { drawComposedPig, getComposedPigSize } = require('../render/PigRenderer.j
 class GameEngine {
   constructor() {
     console.log('[GameEngine] constructor 开始');
+
+    // 抢先渲染背景渐变，消除模块加载期间的黑屏
+    // 在 new 子引擎之前就画，确保用户打开即见品牌色背景
+    beginFrame();
+    var bgGrad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+    bgGrad.addColorStop(0, '#F0EAFA');
+    bgGrad.addColorStop(0.4, '#FDE8EF');
+    bgGrad.addColorStop(1, '#FDF2F8');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    present();
+
     this.input = new InputManager();
     console.log('[GameEngine] InputManager 创建完成');
     this.editor = new EditorEngine(this.input);
