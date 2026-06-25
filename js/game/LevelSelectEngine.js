@@ -100,6 +100,19 @@ LevelSelectEngine.prototype.loadProjectLevels = function () {
 // ============================================================
 LevelSelectEngine.prototype._buildChapterSections = function () {
   var self = this;
+
+  // 懒加载章节配置：仅在进入关卡选择页时首次读取
+  if (!databus.chapters) {
+    try {
+      var raw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');
+      databus.chapters = JSON.parse(raw);
+      console.log('[LevelSelect] 章节配置加载成功: ' + databus.chapters.length + '章');
+    } catch (e) {
+      console.warn('[LevelSelect] 加载 chapter.json 失败:', e);
+      databus.chapters = [];
+    }
+  }
+
   var chapters = databus.chapters;
   if (!chapters || chapters.length === 0) {
     this._sections = [];

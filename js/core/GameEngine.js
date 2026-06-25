@@ -59,15 +59,8 @@ class GameEngine {
       console.log('[GameEngine] 安全区获取失败，使用默认值 56');
     }
 
-    // 加载章节配置
-    try {
-      var chapterRaw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');
-      databus.chapters = JSON.parse(chapterRaw);
-      console.log('[GameEngine] 章节配置加载成功: ' + databus.chapters.length + '章');
-    } catch (e) {
-      console.warn('[GameEngine] 加载 chapter.json 失败:', e);
-      databus.chapters = [];
-    }
+    // 章节配置改为按需懒加载（LevelSelectEngine 激活时才读）
+    // 避免在启动路径上同步 I/O 阻塞首帧渲染
 
     databus.gameState = 'menu';
     console.log('[GameEngine] 设置 gameState=menu');

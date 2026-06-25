@@ -33,7 +33,7 @@ async function callFunction(name, data = {}) {
   for (const k of Object.keys(data)) {
     const v = data[k];
     if (k === 'data') {
-      argsSummary[k] = `[${typeof v}, ${JSON.stringify(v).length} chars]`;
+      argsSummary[k] = `[obj, ${JSON.stringify(v).length}c]`;
     } else {
       argsSummary[k] = typeof v === 'string' && v.length < 80 ? v : (v === undefined ? 'undefined' : JSON.stringify(v).substring(0, 80));
     }
@@ -52,7 +52,8 @@ async function callFunction(name, data = {}) {
       } else if (result.data && Array.isArray(result.data)) {
         resultSummary = `data[${result.data.length}], code=${result.code}`;
       } else {
-        resultSummary = `keys:{${Object.keys(result).join(',')}}, code=${result.code}`;
+        var keys = Object.keys(result).join(',');
+        resultSummary = `keys:{${keys}}, code=${result.code}`;
       }
     } else {
       resultSummary = String(result).substring(0, 80);
@@ -96,8 +97,8 @@ async function savePlayerData(data) {
  * @param {object} data 关卡数据 { board, pigs }
  * @param {number} version 客户端持有的版本号（首次上传传 0）
  */
-async function uploadLevel(name, data, version) {
-  return callFunction('uploadLevel', { name, data, version });
+async function uploadLevel(name, data, version, published) {
+  return callFunction('uploadLevel', { name, data, version, published });
 }
 
 /**
@@ -113,9 +114,10 @@ async function listLevels() {
  * 下载完整关卡数据
  * @param {string} [id] 云端记录 _id（优先）
  * @param {string} [name] 关卡名
+ * @param {boolean} [publishedOnly] 仅拉取已发布关卡
  */
-async function downloadLevel(id, name) {
-  const res = await callFunction('downloadLevel', { id, name });
+async function downloadLevel(id, name, publishedOnly) {
+  const res = await callFunction('downloadLevel', { id, name, publishedOnly });
   return res.data || null;
 }
 

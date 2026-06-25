@@ -88,16 +88,20 @@ class EditorEngine {
     this.dirty = false;
     this.input.on('editor', (e) => this.handleEvent(e));
 
-    // 从主界面进入：先同步云端覆盖本地 → 再加载本地文件
+    // 从主界面进入：先同步云端覆盖本地 → 再加载本地文件（20秒超时）
     this._cloudLoading = true;
-    this._pullCloudLevels().then(() => {
-      this.loadLevelList();
-    }).catch(() => {
-      // 云端失败，回退到本地已缓存版本
-      this.loadLevelList();
-    }).finally(() => {
-      this._cloudLoading = false;
+    var self = this;
+    var cloudPromise = this._pullCloudLevels();
+    var timeoutPromise = new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error('cloud_timeout')); }, 20000);
     });
+    Promise.race([cloudPromise, timeoutPromise])
+      .then(function() { self.loadLevelList(); })
+      .catch(function(err) {
+        console.log('[Editor] 云端拉取超时/失败:', err && err.message);
+        self.loadLevelList();
+      })
+      .finally(function() { self._cloudLoading = false; });
   }
 
   deactivate() {
@@ -656,19 +660,20 @@ class EditorEngine {
   getLevelData() {
     const curData = this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length
       ? this.levelList[this.currentLevelIdx].data : null;
-    return {
-      board: { rows: this.gp.rows, oddCols: this.gp.oddCols, boardWidth: this.gp.boardWidth, boardRate: this.gp.boardRate },
-      pigs: this.gp.pigs.map(p => {
-        const obj = { id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle };
-        if (p.hintId != null) {
-          obj.hintId = p.hintId;
-          obj.hintAngle = (p.hintAngle != null) ? p.hintAngle : p.angle;
-        }
-        return obj;
-      }),
-      crownSteps: this._crownSteps || 0,
-      ready: (curData && curData.ready != null) ? curData.ready : 0
-    };
+    // 以原始数据为基，编辑器状态全覆盖 —— 避免丢掉原始数据中 editor 不感知的字段
+    const base = curData ? Object.assign({}, curData) : {};
+    base.board = { rows: this.gp.rows, oddCols: this.gp.oddCols, boardWidth: this.gp.boardWidth, boardRate: this.gp.boardRate };
+    base.pigs = this.gp.pigs.map(p => {
+      const obj = { id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle };
+      if (p.hintId != null) {
+        obj.hintId = p.hintId;
+        obj.hintAngle = (p.hintAngle != null) ? p.hintAngle : p.angle;
+      }
+      return obj;
+    });
+    base.crownSteps = this._crownSteps || 0;
+    base.ready = (curData && curData.ready != null) ? curData.ready : 0;
+    return base;
   }
 
   loadLevelData(data) {
@@ -758,6 +763,9 @@ class EditorEngine {
     const dir = `${wx.env.USER_DATA_PATH}/levels`;
     try { fs.accessSync(dir); } catch (e) { try { fs.mkdirSync(dir, true); } catch (e2) {} }
 
+    // 收集已缓存关卡名（用于后续三级合并去重）
+    var cachedNames = new Set();
+
     try {
       const files = fs.readdirSync(dir);
       this.levelList = files.filter(f => f.endsWith('.json')).map(f => {
@@ -765,6 +773,7 @@ class EditorEngine {
           const raw = fs.readFileSync(`${dir}/${f}`, 'utf8');
           const data = JSON.parse(raw);
           const name = f.replace('.json', '');
+          cachedNames.add(name);
           // 读取已保存的 _cloudId 和 _version
           // 优先从 data.version 读取版本号（上传时写入），.meta 作为兜底
           let cloudId = null, localVersion = data.version || 0;
@@ -778,18 +787,45 @@ class EditorEngine {
           return { name, fileName: f, data, isDirty: false, _cloudId: cloudId, _version: localVersion };
         } catch (e) { return null; }
       }).filter(Boolean);
-
-      if (this.levelList.length > 0) {
-        // 从试玩返回时保持原关卡不动，只在首次进入时自动选最后一关
-        if (this.currentLevelIdx == null || this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
-          this.currentLevelIdx = this.levelList.length - 1;
-        }
-        this.loadLevelData(this.levelList[this.currentLevelIdx].data);
-      } else {
-        this.newLevel();
-      }
     } catch (e) {
-      this.currentLevelIdx = -1;
+      this.levelList = [];
+    }
+
+    // === 三级合并：从 assets/levels/ 补充缓存中没有的关卡（云端 > 缓存 > 本地 assets）===
+    try {
+      const assetsIndexPath = 'assets/levels/index.json';
+      const indexRaw = fs.readFileSync(assetsIndexPath, 'utf8');
+      const index = JSON.parse(indexRaw);
+      for (var i = 0; i < index.length; i++) {
+        var entry = index[i];
+        var name = entry.file.replace('.json', '');
+        if (cachedNames.has(name)) continue;  // 云端/缓存优先
+        try {
+          var raw = fs.readFileSync('assets/levels/' + entry.file, 'utf8');
+          var data = JSON.parse(raw);
+          // 本地 assets 关卡无 cloudId/version/published
+          // ready: 0 表示「设计中」
+          if (data.ready === undefined) data.ready = 0;
+          this.levelList.push({ name: name, fileName: entry.file, data: data, isDirty: false, _cloudId: null, _version: 0 });
+        } catch (e2) { /* 跳过损坏的 assets 文件 */ }
+      }
+      console.log('[Editor] 三级合并完成: 缓存 ' + cachedNames.size + ' 个, 本地 assets 补充 ' + (this.levelList.length - cachedNames.size) + ' 个');
+    } catch (e3) {
+      console.log('[Editor] assets/levels/index.json 读取失败，跳过本地合并:', e3 && e3.message);
+    }
+
+    // 按关卡名称排序（自然排序，0001 < 0002 < ...）
+    this.levelList.sort(function(a, b) {
+      return a.name.localeCompare(b.name, undefined, { numeric: true });
+    });
+
+    if (this.levelList.length > 0) {
+      // 从试玩返回时保持原关卡不动，只在首次进入时自动选最后一关
+      if (this.currentLevelIdx == null || this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
+        this.currentLevelIdx = this.levelList.length - 1;
+      }
+      this.loadLevelData(this.levelList[this.currentLevelIdx].data);
+    } else {
       this.newLevel();
     }
   }
@@ -803,6 +839,11 @@ class EditorEngine {
     }
     const entry = this.levelList[this.currentLevelIdx];
     if (!entry) { this.showToast('无关卡可保存'); return; }
+    // 已发布关卡禁止修改
+    if (entry.data && entry.data.ready === 1) {
+      this.showToast('关卡已发布，禁止修改');
+      return;
+    }
     entry.data = this.getLevelData();
     entry.isDirty = false;
     this.dirty = false;
@@ -863,10 +904,23 @@ class EditorEngine {
     const entry = this.levelList[this.currentLevelIdx];
     const curReady = entry.data.ready || 0;
     const newReady = curReady === 1 ? 0 : 1;
+
+    // 发布前先保存当前编辑内容到 entry.data
+    entry.data = this.getLevelData();
     entry.data.ready = newReady;
-    entry.isDirty = true;
-    this.dirty = true;
-    this.showToast(newReady === 1 ? '已设为待发布' : '已设为设计中');
+
+    if (newReady === 1) {
+      // 切换为「已发布」：立即上传到云端，不再标记 dirty（已发布状态通过云端传递）
+      entry.isDirty = false;
+      this.dirty = false;
+      this.showToast('已发布，正在上传...');
+      this._uploadToCloud(entry);
+    } else {
+      // 切换为「设计中」：仅标记本地修改
+      entry.isDirty = true;
+      this.dirty = true;
+      this.showToast('已设为设计中');
+    }
   }
 
   // ---- 复制关卡：新建关卡并拷贝当前内容 ----
@@ -917,6 +971,11 @@ class EditorEngine {
     const idx = this.currentLevelIdx;
     if (idx < 0 || idx >= this.levelList.length) return;
     const entry = this.levelList[idx];
+    // 已发布关卡禁止删除
+    if (entry.data && entry.data.ready === 1) {
+      this.showToast('关卡已发布，禁止删除');
+      return;
+    }
     try {
       const fs = wx.getFileSystemManager();
       fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/${entry.fileName}`);
@@ -956,6 +1015,7 @@ class EditorEngine {
     return {
       board: { rows: 5, oddCols: 3, boardWidth: 375, boardRate: 2.9 },
       pigs: [],
+      crownSteps: 0,
       ready: 0
     };
   }
@@ -965,8 +1025,12 @@ class EditorEngine {
   // 异步上传关卡到云端（乐观并发控制）
   async _uploadToCloud(entry) {
     try {
+      // 每次上传前深拷贝一份纯净数据，避免后续对 entry.data 的修改（如 version 回写）
+      // 污染正在传输中的对象
+      const uploadData = JSON.parse(JSON.stringify(entry.data));
       const version = entry._version || 0;
-      const res = await cloud.uploadLevel(entry.name, entry.data, version);
+      const published = (entry.data && entry.data.ready === 1);
+      const res = await cloud.uploadLevel(entry.name, uploadData, version, published);
 
       if (res.code === 2) {
         // 版本冲突：其他设备已保存 → 自动刷新为云端最新版本
@@ -1047,6 +1111,16 @@ class EditorEngine {
       for (const [name, info] of Object.entries(payload)) {
         const fileName = name + '.json';
         info.data.version = info.version;
+        // crownSteps 双保险：优先用 info.data 内嵌值，否则用顶级字段
+        if (info.data.crownSteps == null && info.crownSteps != null) {
+          info.data.crownSteps = info.crownSteps;
+        }
+        // 云端 published 状态映射到 ready 字段
+        if (info.published === true) {
+          info.data.ready = 1;
+        } else if (info.data.ready === undefined) {
+          info.data.ready = 0;
+        }
         fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(info.data, null, 2), 'utf8');
         this._saveCloudMeta(name, info._id, info.version);
       }
@@ -1072,6 +1146,16 @@ class EditorEngine {
           const cloudVersion = (full.version != null) ? full.version : (cl.version || 1);
           const fileName = cl.name + '.json';
           full.data.version = cloudVersion;
+          // crownSteps 双保险：优先用 full.data 内嵌值，否则用顶级字段
+          if (full.data.crownSteps == null && full.crownSteps != null) {
+            full.data.crownSteps = full.crownSteps;
+          }
+          // 云端 published 状态映射到 ready 字段
+          if (full.published === true) {
+            full.data.ready = 1;
+          } else if (full.data.ready === undefined) {
+            full.data.ready = 0;
+          }
           fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(full.data, null, 2), 'utf8');
           this._saveCloudMeta(cl.name, cl._id, cloudVersion);
         }
@@ -1182,6 +1266,11 @@ class EditorEngine {
   deleteLevelByIndex(idx) {
     const entry = this.levelList[idx];
     if (!entry) return;
+    // 已发布关卡禁止删除
+    if (entry.data && entry.data.ready === 1) {
+      this.showToast('关卡已发布，禁止删除');
+      return;
+    }
     try {
       const fs = wx.getFileSystemManager();
       fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/${entry.fileName}`);
@@ -1893,7 +1982,7 @@ class EditorEngine {
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(ready === 1 ? '待发布' : '设计中', x + publishW / 2, midY2);
+      ctx.fillText(ready === 1 ? '已发布' : '设计中', x + publishW / 2, midY2);
     });
     this.levelBtns.push({ x, y: btnY2, w: publishW, h: btnH, id: 'lvl:publish', action: 'toggleReady' });
   }

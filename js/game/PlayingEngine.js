@@ -87,6 +87,7 @@ class PlayingEngine {
     this._skipAuthBtnRect = null;  // 跳过按钮碰撞区
     this._hasUsedRemove = false;    // 本局是否用过移除按钮
     this._removeBtn = null;         // 移除按钮碰撞区
+    this._loading = false;          // 是否正在加载（云端拉取中，阻止所有操作）
   }
 
   /**
@@ -294,15 +295,56 @@ class PlayingEngine {
   activate() {
     const lv = databus.currentLevel;
     this.levelName = lv ? lv.name : '';
-    this.loadLevel(lv ? lv.data : null);
-    // UI 层初始化
+    const localData = lv ? lv.data : null;
+
+    // 先打开 UI（棋盘空白，玩家可见框架）
     this._setupUI();
+
+    // 阻止所有用户操作，待云端拉取完成后再加载关卡
+    this._loading = true;
+    this._loadLevelFromCloud(localData);
+
     // 关卡开始音效
     audio.play('level_start');
     this.input.on('playing', (e) => this.handleEvent(e));
     // 关主系统：初始化用户信息 + 异步获取 openid（fire-and-forget）
     this._master.loadUserInfo();
     this._master.fetchMyOpenId();
+  }
+
+  /**
+   * 阻塞式拉取云端已发布关卡（5秒超时），成功则用云端数据，失败/超时则用本地。
+   * 拉取完成后才调用 loadLevel()，期间 _loading=true 阻止一切用户操作。
+   */
+  _loadLevelFromCloud(localData) {
+    var self = this;
+    var TIMEOUT_MS = 5000;
+    var pullPromise = cloud.downloadLevel(null, self.levelName, true);
+    var timeoutPromise = new Promise(function (_, reject) {
+      setTimeout(function () { reject(new Error('timeout')); }, TIMEOUT_MS);
+    });
+
+    Promise.race([pullPromise, timeoutPromise])
+      .then(function (result) {
+        if (result && result.data) {
+          // crownSteps 双保险：优先用 data 内嵌值，否则用顶级字段
+          if (result.data.crownSteps == null && result.crownSteps != null) {
+            result.data.crownSteps = result.crownSteps;
+          }
+          console.log('[Cloud] 已发布关卡 ' + self.levelName + ' 拉取成功，使用云端配置');
+          self.loadLevel(result.data);
+        } else {
+          console.log('[Cloud] 关卡 ' + self.levelName + ' 未发布，使用本地关卡');
+          self.loadLevel(localData);
+        }
+      })
+      .catch(function (err) {
+        console.log('[Cloud] 关卡拉取失败（' + (err && err.message) + '），使用本地关卡');
+        self.loadLevel(localData);
+      })
+      .finally(function () {
+        self._loading = false;
+      });
   }
 
   deactivate() {
@@ -342,6 +384,9 @@ class PlayingEngine {
 
   // ========== 输入 ==========
   handleEvent(e) {
+    // 加载中：阻止所有用户操作（云端关卡拉取中）
+    if (this._loading) return;
+
     var self = this;
     const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
     if (!t) return;
@@ -536,7 +581,7 @@ class PlayingEngine {
           displayAngle: pig.angle,
           targetAngle: pig.angle,
           lastValid: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
-          startState: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle },
+          startState: { tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle, headHole: this.gp.findHeadHole(pig.tailIndex, pig.length, pig.angle) },
           headHoleIdx: -1,
           lastCollidedId: null,
           lastCollideTime: 0,
@@ -595,23 +640,18 @@ class PlayingEngine {
       }
       this.gp.dragState = null;
 
-      // 步数判定（3 个触发点）：
-      //   1. 小猪换位后逃脱  2. 小猪未换位但逃脱  3. 小猪换位但未逃脱
-      // 简化为：moved || escaped → +1
-      // 判定 moved 用头孔索引（startState → snapResult）—— 比 length/angle 更可靠：
-      // snapAlignPig 可能因旋转中途长度调整，对同孔位返回不同 length 值，导致误判。
+      // 步数判定：仅看头孔是否变化 + 小猪是否推出（不重复计数）
       if (pig && snapResult) {
         var st = ds.startState;
-        var startHeadIdx = this.gp.findHeadHole(st.tailIndex, st.length, st.angle);
-        var snapHeadIdx = this.gp.findHeadHole(snapResult.tailIndex, snapResult.length, snapResult.angle);
-        var moved = (snapHeadIdx !== startHeadIdx);
-
-        console.log(
-          '[步数] startState={ t:' + st.tailIndex + ' l:' + st.length + ' a:' + st.angle.toFixed(1) + ' } headIdx=' + startHeadIdx +
-          ' | snapResult={ t:' + snapResult.tailIndex + ' l:' + snapResult.length + ' a:' + snapResult.angle.toFixed(1) + ' } headIdx=' + snapHeadIdx +
-          ' | moved=' + moved + ' push=' + this._shouldPushAfterSnap
-        );
-        if (moved || this._shouldPushAfterSnap) {
+        var endHeadHole = this.gp.findHeadHole(snapResult.tailIndex, snapResult.length, snapResult.angle);
+        var headHoleChanged = (endHeadHole !== st.headHole);
+        if (headHoleChanged) {
+          this.steps++;
+          databus.currentStep = this.steps;
+        }
+        // 无论头孔是否变化，只要小猪推出去了就 +1（不重复计数）
+        var willEscape = this._shouldPushAfterSnap && this.gp.canPushPig(pigId).canPush;
+        if (willEscape && !headHoleChanged) {
           this.steps++;
           databus.currentStep = this.steps;
         }
@@ -971,6 +1011,26 @@ class PlayingEngine {
 
     // 同步引擎数据 → UI 组件
     this._syncUIData();
+
+    // 加载中：仅渲染 UI 框架，棋盘保持空白
+    if (this._loading) {
+      this._uiBoardCard.render(ctx);
+      this._uiTopBar.setBounds(0, databus.safeTop, this._boardCardW, Theme.layout.topBarH);
+      this._uiTopBar.setLevelText('第 ' + (parseInt(this.levelName) || '1') + ' 关');
+      this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
+      this._uiTopBar.render(ctx);
+      this._uiBottomBar.render(ctx);
+
+      // 加载提示
+      ctx.save();
+      ctx.fillStyle = Theme.colors.textSecondary || '#999';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('加载关卡中...', SCREEN_WIDTH / 2, this._boardCardY + this._boardCardH / 2);
+      ctx.restore();
+      return;
+    }
 
     // 1. 棋盘卡片背景（UIManager）
     this._uiBoardCard.render(ctx);

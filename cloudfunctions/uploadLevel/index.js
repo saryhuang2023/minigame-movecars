@@ -5,13 +5,14 @@ const db = cloud.database();
 
 exports.main = async (event, context) => {
   const { OPENID } = cloud.getWXContext();
-  const { name, data, version } = event;
+  const { name, data, version, published } = event;
   if (!name || !data) {
     return { code: -1, msg: '缺少 name 或 data' };
   }
 
   const clientVersion = (typeof version === 'number') ? version : 0;
   const pigCount = (data.pigs && data.pigs.length) || 0;
+  const isPublished = published === true;
   const now = Date.now();
 
   try {
@@ -21,22 +22,26 @@ exports.main = async (event, context) => {
 
     if (exist.data.length === 0) {
       // 新增（首次上传）
+      const crownSteps = (typeof data.crownSteps === 'number') ? data.crownSteps : 0;
       data.version = 1;
       const res = await db.collection('levels').add({
         data: {
-          _openid: OPENID, name, data, pigCount,
-          version: 1,
+          _openid: OPENID, name, data, pigCount, crownSteps,
+          version: 1, published: isPublished,
           createdAt: now, updatedAt: now
         }
       });
-      return { code: 0, msg: 'created', id: res._id, version: 1 };
+      return { code: 0, msg: 'created', id: res._id, version: 1, crownSteps };
     }
 
     // 已存在 — 版本号检查（乐观并发）
     const doc = exist.data[0];
     const serverVersion = (typeof doc.version === 'number') ? doc.version : 0;
+    // 深度合并：以客户端 data 为准全覆盖，避免旧文档缺字段（如 crownSteps）
+    const mergedData = Object.assign({}, doc.data, data);
+    mergedData.version = serverVersion + 1;
 
-    if (clientVersion !== serverVersion) {
+    if (serverVersion > 0 && clientVersion !== serverVersion) {
       // 版本不匹配 = 冲突：其他设备已保存过，本次写入被拒绝
       return {
         code: 2, msg: 'conflict',
@@ -46,13 +51,17 @@ exports.main = async (event, context) => {
       };
     }
 
-    // 版本匹配 — 原子条件更新
+    // 版本匹配（或首次同步 serverVersion===0 无条件覆盖）— 原子条件更新
     const newVersion = serverVersion + 1;
-    data.version = newVersion;
+    const crownSteps = (typeof data.crownSteps === 'number') ? data.crownSteps : 0;
+    // serverVersion===0 表示旧文档无版本字段，不限制 version 条件
+    const whereCond = serverVersion > 0
+      ? { _id: doc._id, version: serverVersion }
+      : { _id: doc._id };
     const result = await db.collection('levels')
-      .where({ _id: doc._id, version: serverVersion })
+      .where(whereCond)
       .update({
-        data: { data, pigCount, version: newVersion, updatedAt: now }
+        data: { data: mergedData, pigCount, crownSteps, version: newVersion, published: isPublished, updatedAt: now }
       });
 
     if (result.stats.updated === 0) {
@@ -60,7 +69,7 @@ exports.main = async (event, context) => {
       return { code: 2, msg: 'conflict', serverVersion };
     }
 
-    return { code: 0, msg: 'updated', id: doc._id, version: newVersion };
+    return { code: 0, msg: 'updated', id: doc._id, version: newVersion, crownSteps };
   } catch (err) {
     return { code: -1, msg: err.message };
   }

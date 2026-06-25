@@ -4,19 +4,25 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
 exports.main = async (event, context) => {
-  const { id, name } = event;
+  const { id, name, publishedOnly } = event;
 
   try {
     if (id) {
-      const res = await db.collection('levels').doc(id).get();
+      var query = db.collection('levels').doc(id);
+      if (publishedOnly) query = query.where({ published: true });
+      const res = await query
+        .field({ _id: true, name: true, data: true, version: true, published: true, crownSteps: true })
+        .get();
       return { code: 0, data: res.data };
     }
     if (name) {
-      const res = await db.collection('levels')
-        .where({ name })
+      var query = db.collection('levels').where({ name });
+      if (publishedOnly) query = query.where({ published: true });
+      const res = await query
+        .field({ _id: true, name: true, data: true, version: true, published: true, crownSteps: true })
         .get();
       if (res.data.length === 0) {
-        return { code: -1, msg: '关卡不存在' };
+        return { code: -1, msg: publishedOnly ? '关卡未发布' : '关卡不存在' };
       }
       return { code: 0, data: res.data[0] };
     }

@@ -113,12 +113,12 @@ CrownPigWidget.prototype.render = function (ctx) {
   // 小金猪图标
   drawPigIcon(ctx, cx, cy, 21, false);
 
-  // 剩余步数
+  // 剩余步数（倒数）
   ctx.font = 'bold 12px ' + Theme.font.family;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = Theme.colors.muted;
-  ctx.fillText(this._steps + ' 步', cx, cy + 28);
+  ctx.fillStyle = remaining <= 0 ? '#EF4444' : remaining <= 3 ? '#F59E0B' : Theme.colors.muted;
+  ctx.fillText('剩' + remaining + '步', cx, cy + 28);
 
   // 阈值标签
   ctx.font = '9px ' + Theme.font.family;

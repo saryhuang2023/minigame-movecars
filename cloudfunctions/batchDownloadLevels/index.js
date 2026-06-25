@@ -8,7 +8,7 @@ const db = cloud.database();
 exports.main = async (event, context) => {
   try {
     const res = await db.collection('levels')
-      .field({ _id: true, name: true, data: true, version: true })
+      .field({ _id: true, name: true, data: true, version: true, published: true, crownSteps: true })
       .limit(500)
       .get();
 
@@ -21,7 +21,9 @@ exports.main = async (event, context) => {
       payload[level.name] = {
         data: level.data,
         _id: level._id,
-        version: level.version || 1
+        version: level.version || 1,
+        published: level.published === true,
+        crownSteps: level.crownSteps || 0
       };
     }
 
