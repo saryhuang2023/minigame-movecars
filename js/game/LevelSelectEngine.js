@@ -74,10 +74,21 @@ LevelSelectEngine.prototype.deactivate = function () {
 LevelSelectEngine.prototype.loadProjectLevels = function () {
   this.projectLevels = [];
   var fs = wx.getFileSystemManager();
-  try {
-    var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
-    var rawList = JSON.parse(indexRaw);
-    if (!Array.isArray(rawList)) return;
+
+  // 优先使用云端版本；未就绪则降级到本地
+  var rawList;
+  if (databus._cloudIndex && Array.isArray(databus._cloudIndex)) {
+    rawList = databus._cloudIndex;
+    console.log('[LevelSelect] 使用云端关卡列表: ' + rawList.length + ' 关');
+  } else {
+    try {
+      var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
+      rawList = JSON.parse(indexRaw);
+    } catch (e) {
+      console.warn('[LevelSelect] 读取 index.json 失败:', e);
+    }
+  }
+  if (!rawList || !Array.isArray(rawList)) return;
 
     for (var i = 0; i < rawList.length; i++) {
       var entry = rawList[i];
@@ -86,9 +97,6 @@ LevelSelectEngine.prototype.loadProjectLevels = function () {
       var name = f.replace('.json', '');
       this.projectLevels.push({ name: name, file: f });
     }
-  } catch (e) {
-    console.warn('[LevelSelect] 读取 index.json 失败:', e);
-  }
   // 同步到 databus，供 PlayingEngine "下一关" 使用
   databus.projectLevels = this.projectLevels;
 };
@@ -99,8 +107,10 @@ LevelSelectEngine.prototype.loadProjectLevels = function () {
 LevelSelectEngine.prototype._buildChapterSections = function () {
   var self = this;
 
-  // 懒加载章节配置：仅在进入关卡选择页时首次读取
-  if (!databus._chaptersLoaded) {
+  // 优先使用云端章节配置；未就绪则降级到本地
+  if (databus._cloudChapters && Array.isArray(databus._cloudChapters)) {
+    databus.chapters = databus._cloudChapters;
+  } else if (!databus._chaptersLoaded) {
     databus._chaptersLoaded = true;
     try {
       var raw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');

@@ -83,6 +83,9 @@ class GameEngine {
 
     // 异步从云端拉取玩家数据，合并到本地（换设备恢复进度）
     this._syncFromCloud();
+
+    // 异步拉取云端关卡列表和章节配置（不阻塞启动，没拿到就用本地）
+    this._syncCloudLevels();
   }
 
   _syncFromCloud() {
@@ -130,6 +133,32 @@ class GameEngine {
     }).catch(function(err) {
       console.warn('[Cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
       self._checkAutoStart();
+    });
+  }
+
+  // 异步从云端拉取关卡列表和章节配置（fire-and-forget，不阻塞启动）
+  _syncCloudLevels() {
+    var self = this;
+    // 并行下载两份配置文件
+    Promise.all([
+      cloud.downloadCloudFile('level/index.json'),
+      cloud.downloadCloudFile('level/chapter.json')
+    ]).then(function(results) {
+      var indexData = results[0];
+      var chapterData = results[1];
+      if (indexData && Array.isArray(indexData)) {
+        databus._cloudIndex = indexData;
+        console.log('[Cloud] 云端关卡列表就绪: ' + indexData.length + ' 关');
+      }
+      if (chapterData && Array.isArray(chapterData)) {
+        databus._cloudChapters = chapterData;
+        console.log('[Cloud] 云端章节配置就绪: ' + chapterData.length + ' 章');
+      }
+      if (!indexData && !chapterData) {
+        console.log('[Cloud] 云端关卡列表/章节配置均下载失败，全程使用本地');
+      }
+    }).catch(function(err) {
+      console.warn('[Cloud] _syncCloudLevels 异常（非阻塞）:', err && err.message);
     });
   }
 

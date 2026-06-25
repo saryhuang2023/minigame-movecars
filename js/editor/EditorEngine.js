@@ -88,10 +88,15 @@ class EditorEngine {
     this.dirty = false;
     this.input.on('editor', (e) => this.handleEvent(e));
 
-    // 从主界面进入：先同步云端覆盖本地 → 再加载本地文件（20秒超时）
+    // 从主界面进入：首次全量拉取云端覆盖本地，后续直接读本地缓存
+    if (this._cloudSynced === true) {
+      this.loadLevelList();
+      return;
+    }
     this._cloudLoading = true;
     var self = this;
-    var cloudPromise = this._pullCloudLevels();
+    var cloudPromise = this._pullCloudLevels()
+      .then(function() { self._cloudSynced = true; });  // 首次拉取成功后标记，后续不再拉
     var timeoutPromise = new Promise(function(_, reject) {
       setTimeout(function() { reject(new Error('cloud_timeout')); }, 20000);
     });

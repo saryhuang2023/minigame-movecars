@@ -1,6 +1,7 @@
 // 微信云开发工具模块
 
 const CLOUD_ENV = 'cloud1-4gmoyu9g16089510'; // TODO: 替换为你的云环境 ID
+const CLOUD_DATA_PREFIX = 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/';
 
 /**
  * 初始化云开发
@@ -190,6 +191,36 @@ async function getOpenId() {
   return res.openid || '';
 }
 
+/**
+ * 从云存储下载 JSON 文件
+ * @param {string} relativePath 相对于 CLOUD_DATA_PREFIX 的路径（如 'level/index.json'）
+ * @returns {Promise<object|null>} 解析后的 JSON 对象，失败返回 null
+ */
+async function downloadCloudFile(relativePath) {
+  const fileID = CLOUD_DATA_PREFIX + relativePath;
+  const t0 = Date.now();
+  try {
+    var downloadRes = await wx.cloud.downloadFile({ fileID });
+    if (downloadRes.statusCode !== 200) {
+      console.warn('[Cloud] downloadCloudFile ' + relativePath + ' HTTP ' + downloadRes.statusCode);
+      return null;
+    }
+    var fs = wx.getFileSystemManager();
+    var raw = fs.readFileSync(downloadRes.tempFilePath, 'utf8');
+    var fileSize = raw.length;
+    var obj = JSON.parse(raw);
+    var duration = Date.now() - t0;
+    var sizeStr = fileSize >= 1024 ? (fileSize / 1024).toFixed(1) + 'KB' : fileSize + 'B';
+    var itemCount = Array.isArray(obj) ? obj.length : (typeof obj === 'object' ? Object.keys(obj).length : 1);
+    console.log('[Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  ' + sizeStr + '  ' + itemCount + ' entries');
+    return obj;
+  } catch (e) {
+    var duration = Date.now() - t0;
+    console.warn('[Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
+    return null;
+  }
+}
+
 module.exports = {
   initCloud,
   callFunction,
@@ -202,5 +233,6 @@ module.exports = {
   reportBug,
   getLevelInfo,
   claimLevelMaster,
-  getOpenId
+  getOpenId,
+  downloadCloudFile
 };
