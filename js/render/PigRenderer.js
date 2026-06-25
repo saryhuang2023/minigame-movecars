@@ -47,14 +47,16 @@ function roundRect(ctx, x, y, w, h, r, topOnly) {
 // === PigRenderer ===
 // ============================================================
 // 动画类型枚举（未来可扩展 JUMP、DIE 等）
-const AnimType = Object.freeze({ IDLE: 'idle', RUN: 'run', ESCAPE: 'escape' });
+const AnimType = Object.freeze({ IDLE: 'idle', RUN: 'run', ESCAPE: 'escape', HINT: 'hint' });
 
 const IDLE_FRAME_COUNT = 11;
 const RUN_FRAME_COUNT = 8;
 const ESCAPE_FRAME_COUNT = 8;
+const HINT_FRAME_COUNT = 8;
 const IDLE_FRAME_INTERVAL = 600 / IDLE_FRAME_COUNT;
 const RUN_FRAME_INTERVAL = 300 / RUN_FRAME_COUNT;
 const ESCAPE_FRAME_INTERVAL = 200 / ESCAPE_FRAME_COUNT;
+const HINT_FRAME_INTERVAL = 200 / HINT_FRAME_COUNT;  // 受击快速播放
 const WOBBLE_FREQ = 10;           // 身体摆动：每秒次数
 const WOBBLE_AMPLITUDE = 0.005;  // 身体摆动：幅度（弧度）
 const WOBBLE_PIVOT = 0.75;       // 身体摆动轴心位置（0=尾部端点, 1=中心）
@@ -103,6 +105,10 @@ class PigRenderer {
       parts = _loadEscapeParts();
       frameCount = ESCAPE_FRAME_COUNT;
       frameInterval = ESCAPE_FRAME_INTERVAL;
+    } else if (animType === AnimType.HINT) {
+      parts = _loadHintParts();
+      frameCount = HINT_FRAME_COUNT;
+      frameInterval = HINT_FRAME_INTERVAL;
     } else {
       parts = _loadPigParts();
       frameCount = IDLE_FRAME_COUNT;
@@ -186,8 +192,7 @@ class PigRenderer {
     ctx.translate(c.cx, c.cy);
     ctx.rotate(-c.rad);
 
-    // 风筝抖动：idle 和 escape 时生效（拖拽/编辑器不晃）
-    // 方案二：轴心前移（身体整体摇晃 + 尾部独立微摆）
+    // 风筝抖动：idle 时生效（拖拽/编辑器/受击不晃）
     if ((animType === AnimType.IDLE) && databus.gameState !== 'editor') {
       const halfLen = c.totalLen / 2;
       const now = Date.now();
@@ -366,6 +371,42 @@ function _loadEscapeParts() {
   return parts;
 }
 
+// ---- hint（受击/被提示动画）----
+let _hintParts = null;
+
+function _loadHintParts() {
+  if (_hintParts) return _hintParts;
+
+  var base = 'assets/animals/roles/pig/hint/1/';
+  var parts = {
+    frameImg: wx.createImage(),
+    _loaded: false,
+    frameW: 0, height: 0,
+
+    idleFrameImgs: [],
+    _idleLoaded: 0,
+    get idleAllLoaded() { return this._idleLoaded >= HINT_FRAME_COUNT; }
+  };
+
+  Object.defineProperty(parts, 'allLoaded', {
+    get() { return this._loaded; }
+  });
+
+  parts.frameImg.src = base + '1.png';
+  parts.frameImg.onload = function() {
+    parts._loaded = true;
+    parts.frameW = parts.frameImg.width;
+    parts.height = parts.frameImg.height;
+    parts.idleFrameImgs[0] = parts.frameImg;
+    parts._idleLoaded++;
+  };
+
+  _preloadFrames(parts, base, HINT_FRAME_COUNT);
+
+  _hintParts = parts;
+  return parts;
+}
+
 // ---- seq frame lazy loader ----
 function _preloadFrames(parts, base, frameCount) {
   for (var i = 2; i <= frameCount; i++) {
@@ -445,6 +486,7 @@ function drawComposedPig(ctx, x, y, scale = 1) {
 _loadPigParts();
 _loadRunParts();
 _loadEscapeParts();
+_loadHintParts();
 
 module.exports.PigRenderer = PigRenderer;
 module.exports.AnimType = AnimType;

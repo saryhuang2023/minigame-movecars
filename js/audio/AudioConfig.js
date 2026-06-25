@@ -69,23 +69,23 @@ var PRIORITY = {
 // priority: 抢占优先级
 var SFX_EVENTS = {
   // ── P0 核心 ──
-  'collide': {
+  'collide': {  // 被撞声音
     files: ['collide_2.mp3'],
     priority: PRIORITY.SFX,
   },
-  'escape': {
+  'escape': {  // 小猪逃脱
     files: ['escape_2.mp3'],
     priority: PRIORITY.SFX,
   },
-  'victory': {
+  'victory': {  //通关
     files: ['victory.mp3'],
     priority: PRIORITY.VICTORY,
   },
-  'rewards': {
+  'rewards': {  // 获得奖励：小金猪、金主等
     files: ['rewards.mp3'],
     priority: PRIORITY.SFX,
   },
-  'button_click': {
+  'button_click': { // 常规按钮点击
     files: ['button_click.mp3'],
     priority: PRIORITY.UI,
   },

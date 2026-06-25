@@ -702,7 +702,7 @@ class GameplayEngine {
   // tint: { color, alpha }   例如 提示 = { color: '#FF80A8', alpha: 0.35 }
   // masterAlpha: 外层透明度（提示=1，被撞=恒定 0.7）
   // ============================================================
-  _renderTintedPigOverlay(targetCtx, pig, screenCx, screenCy, tint, masterAlpha) {
+  _renderTintedPigOverlay(targetCtx, pig, screenCx, screenCy, tint, masterAlpha, animType) {
     if (masterAlpha === undefined) masterAlpha = 1;
     if (masterAlpha <= 0) return;
     var pigR = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
@@ -745,7 +745,7 @@ class GameplayEngine {
       octx.translate(halfLen, 0);
     }
 
-    this.pigRenderer._drawPigImage(octx, totalLen, pig);
+    this.pigRenderer._drawPigImage(octx, totalLen, pig, animType);
 
     // source-atop 染色（只染猪像素，镂空跳过背景）
     octx.globalCompositeOperation = 'source-atop';
@@ -1012,8 +1012,13 @@ class GameplayEngine {
         this.dragState.pigId === pig.id || pig.id === this.dragState.pendingId
       );
 
+      // 被撞/被提示 → 播放受击动画；拖拽中保持 RUN
+      var isHinted = options.hintPigId != null && options.hintPigId === pig.id && !isDragPig;
+      var flashAlpha = this._getFlashOverlayAlpha(pig.id);
+      var drawAnim = (isHinted || flashAlpha > 0) ? AnimType.HINT : undefined;
+
       // 正常绘制（无透明度变化）
-      pr.draw(ctx, pig, off.dx, off.dy);
+      pr.draw(ctx, pig, off.dx, off.dy, drawAnim);
 
       // 猪的屏幕中心位置（给遮罩层用）
       var pigR2 = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
@@ -1021,16 +1026,15 @@ class GameplayEngine {
       var pigCy = pigR2 ? offY + pigR2.cy + off.dy : 0;
 
       // 被撞效果：全身染深红，恒定不闪（与提示共用 _renderTintedPigOverlay）
-      var flashAlpha = this._getFlashOverlayAlpha(pig.id);
       if (flashAlpha > 0) {
         this._renderTintedPigOverlay(ctx, pig, pigCx, pigCy,
-          { color: '#CC1111', alpha: 0.6 }, flashAlpha);
+          { color: '#CC1111', alpha: 0.6 }, flashAlpha, drawAnim);
       }
 
       // 提示目标染色：仅静止时染，拖拽/旋转中保持原色
       if (options.hintPigId != null && options.hintPigId === pig.id && !isDragPig) {
         this._renderTintedPigOverlay(ctx, pig, pigCx, pigCy,
-          { color: '#FF80A8', alpha: 0.35 }, 1);
+          { color: '#FF80A8', alpha: 0.35 }, 1, drawAnim);
       }
 
       // 拖拽中：头部绿点 + 碰撞区空心虚线轮廓（仅编辑模式）
