@@ -102,7 +102,8 @@ LevelSelectEngine.prototype._buildChapterSections = function () {
   var self = this;
 
   // 懒加载章节配置：仅在进入关卡选择页时首次读取
-  if (!databus.chapters) {
+  if (!databus._chaptersLoaded) {
+    databus._chaptersLoaded = true;
     try {
       var raw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');
       databus.chapters = JSON.parse(raw);
