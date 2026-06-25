@@ -65,6 +65,7 @@ class PlayingEngine {
     // 引导系统
     this._guide = new GuideManager(this);
     this._guide.register(new (require('../guide/Guide1.js'))());
+    this._guide.register(new (require('../guide/Guide2.js'))());
     // 通关飞行特效动画
     this._victoryAnim = new VictoryAnimation({
       onCrownDone: function () {

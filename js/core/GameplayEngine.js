@@ -924,7 +924,6 @@ class GameplayEngine {
         g.startTime = now;
         progress = 0;
       }
-      g.progress = progress;  // 存储进度供渲染淡入淡出
       const eased = Easing.easeOutCubic(Math.min(1, progress));
       g.currentDx = g.dirX * g.totalDist * eased;
       g.currentDy = g.dirY * g.totalDist * eased;
@@ -1048,10 +1047,7 @@ class GameplayEngine {
         const savedAngle = pig.angle;
         pig.angle = g.hintAngle != null ? g.hintAngle : pig.angle;
         // 前 10% 淡入，后 90% 保持 70% 透明度（不淡出，循环时自然从头淡入）
-        var gAlpha = 0.80;
-        var gp = g.progress || 0;
-        if (gp < 0.05) gAlpha = 0.80 * Easing.smoothstep(gp / 0.05);
-        ctx.globalAlpha = gAlpha;
+        ctx.globalAlpha = 0.70;
         pr.draw(ctx, pig, g.currentDx, g.currentDy, AnimType.ESCAPE);
         ctx.globalAlpha = 1;
         pig.angle = savedAngle;

@@ -84,9 +84,7 @@ LevelSelectEngine.prototype.loadProjectLevels = function () {
       var f = typeof entry === 'string' ? entry : entry.file;
       if (!f || f === 'index.json' || !f.endsWith('.json')) continue;
       var name = f.replace('.json', '');
-      var extra = typeof entry === 'object' ? cloneObj(entry) : {};
-      delete extra.file;
-      this.projectLevels.push({ name: name, file: f, type: extra.type, progress: extra.progress });
+      this.projectLevels.push({ name: name, file: f });
     }
   } catch (e) {
     console.warn('[LevelSelect] 读取 index.json 失败:', e);

@@ -1,21 +1,21 @@
-// 引导一：新手推动教学
-// 激活条件：0002 关卡 + 玩家 10 秒无操作 + 14号猪还在棋盘上
-// 表现：pig(11) 位置生成幽灵猪，向左旋转 60° 后快照复位循环；自动点击提示按钮
-// 结束条件：提示结束，或关卡退出（deactivate → _guide.reset()）
+// 引导二：旋转教学
+// 激活条件：0003 关卡 + 玩家 10 秒无操作 + 20号猪还在棋盘上
+// 表现：pig(20) 位置生成幽灵猪，向左旋转 180° 后快照复位循环（不自动呼出提示）
+// 结束条件：20号猪被推出，或关卡退出（deactivate → _guide.reset()）
 
 var BaseGuide = require('./BaseGuide.js');
 
 // --- 配置 ---
-var ROTATION_SPEED = 40;           // 峰值旋转速度（度/秒）
-var ROTATION_ANGLE = 60;           // 向左旋转的度数（逆时针）
+var ROTATION_SPEED = 60;           // 峰值旋转速度（度/秒，与 Guide1 一致）
+var ROTATION_ANGLE = 180;          // 向左旋转的度数（逆时针，比 Guide1 的 60° 更大幅度）
 var WOBBLE_AMPLITUDE = 2.5;        // 手抖幅度（度）
-var WOBBLE_FREQ = 4;               // 手抖频率（Hz）
+var WOBBLE_FREQ = 6;               // 手抖频率（Hz）
 var HOLD_DURATION = 1;             // 末端停顿（秒），推到终点后停留 1 秒再复位
 
 var Easing = require('../core/Easing.js');
 
-function Guide1() {
-  BaseGuide.call(this, 'guide1');
+function Guide2() {
+  BaseGuide.call(this, 'guide2');
 
   this._startAngle = 0;
   this._elapsed = 0;               // 累计总时间（用于连续 sin 波形）
@@ -24,44 +24,44 @@ function Guide1() {
   this._ghostEntry = null;         // gp.ghostAnimations 中的引用
 }
 
-Guide1.prototype = Object.create(BaseGuide.prototype);
-Guide1.prototype.constructor = Guide1;
+Guide2.prototype = Object.create(BaseGuide.prototype);
+Guide2.prototype.constructor = Guide2;
 
 // ----------------------------------------------------------------
 // 激活条件
 // ----------------------------------------------------------------
-Guide1.prototype.checkCondition = function (state, engine) {
-  if (state.levelName !== '0002' || state.idleTime <= 10) return false;
+Guide2.prototype.checkCondition = function (state, engine) {
+  if (state.levelName !== '0003' || state.idleTime <= 10) return false;
 
-  var pig14Exists = engine.gp.pigs.some(function (p) { return p.id === 14; });
-  if (pig14Exists) {
-    console.log('[Guide1] checkCondition ✓ level=' + state.levelName + ' idle=' + state.idleTime.toFixed(1) + 's pig14=true');
+  var pig20Exists = engine.gp.pigs.some(function (p) { return p.id === 20; });
+  if (pig20Exists) {
+    console.log('[Guide2] checkCondition ✓ level=' + state.levelName + ' idle=' + state.idleTime.toFixed(1) + 's pig20=true');
   } else {
-    console.log('[Guide1] checkCondition ✗ pig14 已被推出，跳过');
+    console.log('[Guide2] checkCondition ✗ pig20 已被推出，跳过');
   }
-  return pig14Exists;
+  return pig20Exists;
 };
 
 // ----------------------------------------------------------------
 // 激活
 // ----------------------------------------------------------------
-Guide1.prototype.onActivate = function (engine) {
-  var pig = engine.gp.pigs.find(function (p) { return p.id === 11; });
-  console.log('[Guide1] onActivate pig(11) found=' + !!pig + ' pigs.length=' + engine.gp.pigs.length);
+Guide2.prototype.onActivate = function (engine) {
+  var pig = engine.gp.pigs.find(function (p) { return p.id === 20; });
+  console.log('[Guide2] onActivate pig(20) found=' + !!pig + ' pigs.length=' + engine.gp.pigs.length);
   if (!pig) {
-    // 关卡中不存在 ID=11 的猪，直接标记完成跳过
-    console.log('[Guide1] ⚠ pig 11 不存在，跳过');
+    // 关卡中不存在 ID=20 的猪，直接标记完成跳过
+    console.log('[Guide2] ⚠ pig 20 不存在，跳过');
     this._completed = true;
     return;
   }
 
   this._startAngle = pig.angle;
   this._rotationT = 0;
-  console.log('[Guide1] 激活 — pig(11) angle=' + this._startAngle.toFixed(1) + '° 向左旋转' + ROTATION_ANGLE + '°');
+  console.log('[Guide2] 激活 — pig(20) angle=' + this._startAngle.toFixed(1) + '° 向左旋转' + ROTATION_ANGLE + '°');
 
   // 创建幽灵动画条目（控制 hintAngle 实现旋转）
   this._ghostEntry = {
-    pigId: 11,
+    pigId: 20,
     hintAngle: this._startAngle,
     dirX: 0, dirY: 0,
     totalDist: 0,
@@ -70,25 +70,23 @@ Guide1.prototype.onActivate = function (engine) {
     duration: 1e9           // 极长 duration，避免自动循环重置 startTime
   };
   engine.gp.ghostAnimations.push(this._ghostEntry);
-  console.log('[Guide1] 幽灵已推入 ghostAnimations.length=' + engine.gp.ghostAnimations.length);
+  console.log('[Guide2] 幽灵已推入 ghostAnimations.length=' + engine.gp.ghostAnimations.length);
 
-  // 自动点击提示按钮（让提示系统自己选目标）
-  var hintResult = engine._hint.show();
-  console.log('[Guide1] hint.show() result=' + (hintResult ? 'pig#' + hintResult.id : 'null'));
+  console.log('[Guide2] (无提示，仅旋转)');
 };
 
 // ----------------------------------------------------------------
-// 每帧更新：旋转幽灵猪的 hintAngle
+// 每帧更新：旋转幽灵猪的 hintAngle（与 Guide1 完全相同的动画节奏）
 // ----------------------------------------------------------------
-Guide1.prototype.onUpdate = function (dt, state, engine) {
+Guide2.prototype.onUpdate = function (dt, state, engine) {
   if (!this._ghostEntry) {
-    if (!this._loggedMissing) { console.log('[Guide1] onUpdate: _ghostEntry 为 null，跳过'); this._loggedMissing = true; }
+    if (!this._loggedMissing) { console.log('[Guide2] onUpdate: _ghostEntry 为 null，跳过'); this._loggedMissing = true; }
     return;
   }
 
   // 检查幽灵是否还在数组中（可能被 hint.clear() 清空）
   if (engine.gp.ghostAnimations.indexOf(this._ghostEntry) < 0) {
-    console.log('[Guide1] ⚠ 幽灵已被移出 ghostAnimations（可能被 hint.clear() 清空），重新推入');
+    console.log('[Guide2] ⚠ 幽灵已被移出 ghostAnimations（可能被 hint.clear() 清空），重新推入');
     engine.gp.ghostAnimations.push(this._ghostEntry);
   }
 
@@ -101,7 +99,7 @@ Guide1.prototype.onUpdate = function (dt, state, engine) {
     return;
   }
 
-  // 计算每段旋转时长
+  // 计算每段旋转时长（180°/60°/s = 3秒）
   var segmentDuration = ROTATION_ANGLE / ROTATION_SPEED;
 
   this._rotationT += dt / segmentDuration;
@@ -127,11 +125,12 @@ Guide1.prototype.onUpdate = function (dt, state, engine) {
 };
 
 // ----------------------------------------------------------------
-// 结束条件：14号猪已被推出（关卡退出由 deactivate → _guide.reset() 兜底）
+// 结束条件：20号猪已被推出（关卡退出由 deactivate → _guide.reset() 兜底）
 // ----------------------------------------------------------------
-Guide1.prototype.checkEndCondition = function (state, engine) {
-  if (!state.hintActive) {
-    console.log('[Guide1] checkEndCondition ✓ 提示结束');
+Guide2.prototype.checkEndCondition = function (state, engine) {
+  var pig20Exists = engine.gp.pigs.some(function (p) { return p.id === 20; });
+  if (!pig20Exists) {
+    console.log('[Guide2] checkEndCondition ✓ pig20 已被推出');
     return true;
   }
   return false;
@@ -140,8 +139,8 @@ Guide1.prototype.checkEndCondition = function (state, engine) {
 // ----------------------------------------------------------------
 // 清理
 // ----------------------------------------------------------------
-Guide1.prototype.onDeactivate = function (engine) {
-  console.log('[Guide1] onDeactivate — 清理幽灵');
+Guide2.prototype.onDeactivate = function (engine) {
+  console.log('[Guide2] onDeactivate — 清理幽灵');
   // 移除旋转幽灵（如果还在的话——hint.clear() 可能已经清空整个数组）
   if (this._ghostEntry) {
     var arr = engine.gp.ghostAnimations;
@@ -152,4 +151,4 @@ Guide1.prototype.onDeactivate = function (engine) {
   this._completed = true;
 };
 
-module.exports = Guide1;
+module.exports = Guide2;
