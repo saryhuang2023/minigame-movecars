@@ -1211,6 +1211,10 @@ class PlayingEngine {
       console.log('[LOG] 跳过保存: levelName 为空');
       return;
     }
+    if (this.steps === 0) {
+      console.log('[LOG] 跳过保存: 步数为0，无操作无需保存');
+      return;
+    }
     if (this._victory) {
       console.log('[LOG] 跳过保存: 已通关 (_victory=true)');
       return;
