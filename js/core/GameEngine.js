@@ -5,6 +5,7 @@ const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
 const checkpointDialog = require('../ui/CheckpointDialog.js');
+const GoldSystem = require('../game/GoldSystem.js');
 const Easing = require('./Easing.js');
 const TransitionManager = require('./TransitionManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -122,6 +123,10 @@ class GameEngine {
       if (crownMerged > 0) {
         console.log('[Cloud] 合并 crowns: ' + crownMerged + ' 条');
       }
+      // 合并金币：云端值 > 本地值则覆盖（换设备恢复）
+      if (typeof cloudData.gold === 'number') {
+        GoldSystem.mergeFromCloud(cloudData.gold);
+      }
       // 云端头像昵称 > 本地缓存
       if (cloudData.avatarUrl && cloudData.nickname) {
         var cached = wx.getStorageSync('userinfo_cache') || {};
@@ -157,6 +162,7 @@ class GameEngine {
       }
       if (chapterData && Array.isArray(chapterData)) {
         databus._cloudChapters = chapterData;
+        GoldSystem.setChapters(chapterData);
         console.log('[Cloud] 云端章节配置就绪: ' + chapterData.length + ' 章');
       }
       if (!indexData && !chapterData) {
@@ -802,6 +808,34 @@ class GameEngine {
     ctx.fillStyle = C.accent;
     ctx.font = 'bold 28px sans-serif';
     ctx.fillText(`${clearedCount} 关`, rightCX, cardY + 49);
+
+    // ===== 左上角金币徽章 =====
+    var goldAmount = GoldSystem.getGold();
+    var badgeX = 16;
+    var badgeY = safeTop + 6;
+    var badgeH = 26;
+    var badgeR = 13;
+
+    // 半透明背景胶囊
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(badgeX + badgeR, badgeY);
+    ctx.lineTo(badgeX + badgeR + 60, badgeY);
+    ctx.arcTo(badgeX + badgeR + 60, badgeY, badgeX + badgeR + 60, badgeY + badgeH, badgeR);
+    ctx.lineTo(badgeX + badgeR + 60, badgeY + badgeH);
+    ctx.arcTo(badgeX + badgeR + 60, badgeY + badgeH, badgeX + badgeR, badgeY + badgeH, badgeR);
+    ctx.lineTo(badgeX + badgeR, badgeY + badgeH);
+    ctx.arcTo(badgeX, badgeY + badgeH, badgeX, badgeY, badgeR);
+    ctx.arcTo(badgeX, badgeY, badgeX + badgeR, badgeY, badgeR);
+    ctx.closePath();
+    ctx.fill();
+
+    // 金币图标 + 数字
+    ctx.fillStyle = '#F59E0B';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💰 ' + goldAmount, badgeX + 8, badgeY + badgeH / 2);
 
     // ===== 底部图标行：分享 + 设置 + 编辑（隐藏入口） =====
     var iconSize = 48;

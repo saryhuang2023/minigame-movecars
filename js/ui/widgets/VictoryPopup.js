@@ -1,5 +1,5 @@
 // 通关结算弹窗 — PlayingEngine 通关后弹出
-// 弹簧入场动画，内容错开显示
+// 弹簧入场动画 + 内容错开显示 + 内嵌金币奖励/双倍按钮
 
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../Theme.js');
@@ -11,6 +11,7 @@ var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
  * @param {Function} opts.onContinue - 继续按钮回调
  * @param {Function} opts.onReplay - 重玩按钮回调
  * @param {Function} opts.onExit - 退出按钮回调
+ * @param {Function} opts.onDoubleGold - 双倍金币按钮回调
  */
 function VictoryPopup(opts) {
   UIComponent.call(this, {
@@ -26,6 +27,9 @@ function VictoryPopup(opts) {
   this._isNewMaster = false;
   this._hasCrown = false;
   this._returnState = 'menu';
+  this._goldAmount = 0;
+  this._showGold = false;
+  this._goldClaimed = false;  // 双倍金币是否已领取
 
   // 动画
   this._animStart = 0;
@@ -37,11 +41,13 @@ function VictoryPopup(opts) {
   this._exitBtn = null;
   this._restartBtn = null;
   this._nextBtn = null;
+  this._doubleGoldBtn = null;
 
   // 回调
   this.onContinue = opts.onContinue || function () {};
   this.onReplay = opts.onReplay || function () {};
   this.onExit = opts.onExit || function () {};
+  this.onDoubleGold = opts.onDoubleGold || function () {};
 }
 
 VictoryPopup.prototype = Object.create(UIComponent.prototype);
@@ -57,11 +63,14 @@ VictoryPopup.prototype.setData = function (data) {
   this._isNewMaster = !!data.isNewMaster;
   this._hasCrown = !!data.hasCrown;
   this._returnState = data.returnState || 'menu';
+  this._goldAmount = data.goldAmount || 0;
+  this._showGold = !!data.showGold;
 };
 
 VictoryPopup.prototype.open = function () {
   this.visible = true;
   this._closing = false;
+  this._goldClaimed = false;
   if (this._animator) {
     this._animator.open();
     this._animStart = Date.now();
@@ -84,6 +93,12 @@ VictoryPopup.prototype.close = function (cb) {
 
 VictoryPopup.prototype.isClosing = function () {
   return this._closing;
+};
+
+/** 标记双倍金币已领取 — 按钮灰化，金额翻倍显示 */
+VictoryPopup.prototype.markGoldClaimed = function () {
+  this._goldClaimed = true;
+  this._goldAmount *= 2;
 };
 
 VictoryPopup.prototype.render = function (ctx) {
@@ -110,12 +125,14 @@ VictoryPopup.prototype.render = function (ctx) {
   var hasCombo = this._maxCombo >= 2;
   var isNewMaster = this._isNewMaster;
   var hasCrown = this._hasCrown;
+  var showGold = this._showGold;
 
   var ph = 200;
   if (hasCombo) ph += 20;
   if (isNewMaster) ph += 22;
   if (hasCrown) ph += 22;
-  var pw = 260;
+  if (showGold) ph += 36;
+  var pw = 310;
   var px = (SCREEN_WIDTH - pw) / 2;
   var py = (SCREEN_HEIGHT - ph) / 2 - 20;
 
@@ -238,9 +255,31 @@ VictoryPopup.prototype.render = function (ctx) {
     nextY = nextY + 22;
   }
 
+  // 金币奖励（嵌在面板内，不单独弹窗）
+  if (showGold) {
+    staggerIdx++;
+    var goldAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
+    ctx.save();
+    ctx.globalAlpha = goldAnim.alpha;
+
+    var goldTextY = nextY + 26;
+    // 金币文字
+    var goldFontSize = this._goldClaimed ? 24 : 20;
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold ' + goldFontSize + 'px ' + Theme.font.family;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var goldLabel = this._goldClaimed
+      ? '💰 +' + this._goldAmount + ' ✓'
+      : '💰 +' + this._goldAmount;
+    ctx.fillText(goldLabel, SCREEN_WIDTH / 2, goldTextY);
+
+    ctx.restore();
+    nextY = goldTextY + 8;
+  }
+
   // === 按钮 ===
-  var btnY = nextY + 34;
-  var btnW = 100, btnH = 42;
+  var btnY = nextY + 30;
 
   var _renderBtn = function (x, y, w, h, anim, bgColor, label) {
     ctx.save();
@@ -264,7 +303,7 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 16px ' + Theme.font.family;
+    ctx.font = 'bold 14px ' + Theme.font.family;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, cx, cy);
@@ -272,19 +311,49 @@ VictoryPopup.prototype.render = function (ctx) {
   };
 
   var rState = this._returnState;
-  if (rState === 'menu') {
+  var btnH = 42;
+
+  if (showGold) {
+    // ── 有金币：继续(左) + 重玩(中) + 金币x2(右) ──
+    var contBtnW = 82, restBtnW = 74, goldBtnW = 82, gap = 8;
+    var goldBtnColor = self._goldClaimed ? 'rgba(255,255,255,0.1)' : '#F59E0B';
+    var goldBtnLabel = self._goldClaimed ? '已领取' : '金币x2';
+
+    var totalW3 = contBtnW + gap + restBtnW + gap + goldBtnW;
+    var startX3 = (SCREEN_WIDTH - totalW3) / 2;
+    staggerIdx++;
+    var contAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+    this._nextBtn = { x: startX3, y: btnY, w: contBtnW, h: btnH };
+    _renderBtn(startX3, btnY, contBtnW, btnH, contAnim, '#4CAF50', '继续');
+    staggerIdx++;
+    var restAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+    this._restartBtn = { x: startX3 + contBtnW + gap, y: btnY, w: restBtnW, h: btnH };
+    _renderBtn(startX3 + contBtnW + gap, btnY, restBtnW, btnH, restAnim, 'rgba(255,255,255,0.12)', '重玩');
+    staggerIdx++;
+    var goldBtnAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+    this._doubleGoldBtn = { x: startX3 + contBtnW + gap + restBtnW + gap, y: btnY, w: goldBtnW, h: btnH };
+    _renderBtn(startX3 + contBtnW + gap + restBtnW + gap, btnY, goldBtnW, btnH, goldBtnAnim, goldBtnColor, goldBtnLabel);
+    this._exitBtn = null;
+
+  } else if (rState === 'menu') {
+    // ── 无金币 menu：单个继续按钮 ──
+    var btnW = 100;
     this._exitBtn = null;
     this._restartBtn = null;
+    this._doubleGoldBtn = null;
     staggerIdx++;
     var contAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     var contX = (SCREEN_WIDTH - btnW) / 2;
     this._nextBtn = { x: contX, y: btnY, w: btnW, h: btnH };
     _renderBtn(contX, btnY, btnW, btnH, contAnim, '#4CAF50', '继续');
   } else if (rState === 'levelSelect') {
-    this._exitBtn = null;
+    // ── 无金币 levelSelect：重玩 + 继续 ──
+    var btnW = 100;
     var gap = 20;
     var totalW = btnW * 2 + gap;
     var startX = (SCREEN_WIDTH - totalW) / 2;
+    this._exitBtn = null;
+    this._doubleGoldBtn = null;
     staggerIdx++;
     var restAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     var restX = startX;
@@ -296,8 +365,11 @@ VictoryPopup.prototype.render = function (ctx) {
     this._nextBtn = { x: contX2, y: btnY, w: btnW, h: btnH };
     _renderBtn(contX2, btnY, btnW, btnH, contAnim2, '#4CAF50', '继续');
   } else {
+    // ── 编辑器返回 ──
+    var btnW = 100;
     this._nextBtn = null;
     this._restartBtn = null;
+    this._doubleGoldBtn = null;
     staggerIdx++;
     var exitAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     var exitX = (SCREEN_WIDTH - btnW) / 2;

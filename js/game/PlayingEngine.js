@@ -25,6 +25,7 @@ const HintSystem = require('./HintSystem.js');
 const VictoryAnimation = require('./VictoryAnimation.js');
 const CrownPigWidget = require('../ui/widgets/CrownPigWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
+const GoldSystem = require('./GoldSystem.js');
 
 // 矩形碰撞检测辅助
 function _hitRect(px, py, rect) {
@@ -101,6 +102,9 @@ class PlayingEngine {
     this._pendingResume = false;    // 是否待恢复存档
     this._lastSavedSteps = -1;      // 上次存档时的步数（用于脏检测）
     this._lastSavedPigCount = -1;   // 上次存档时的猪数量（用于脏检测）
+    // 金币奖励
+    this._pendingGoldReward = false; // 是否有待领取的金币奖励
+    this._goldAmount = 0;           // 本次通关奖励金币数
   }
 
   /**
@@ -133,6 +137,9 @@ class PlayingEngine {
     this._skipAuthBtnRect = null;
     this._authShown = false;
     this._destroyAuthBtn();
+    // 金币奖励状态
+    this._pendingGoldReward = false;
+    this._goldAmount = 0;
     // 关主状态重置 + 读取个人记录
     this._master.reset();
     this._master.init(this.levelName);
@@ -222,9 +229,10 @@ class PlayingEngine {
       // Layer 4 — VictoryPopup
       this._uiVictoryPopup = new VictoryPopup({
         zIndex: UIManager.LAYER.MODAL,
-        onContinue: function () { self._goNextLevel(); },
+        onContinue: function () { self._onContinueClick(); },
         onReplay: function () { self.restartLevel(); },
         onExit: function () { databus.gameState = databus.returnState || 'menu'; },
+        onDoubleGold: function () { self._onDoubleGoldClick(); },
       });
       this._uiVictoryPopup.setAnimator(this._victoryAnimator);
       this.ui.add(this._uiVictoryPopup, UIManager.LAYER.MODAL);
@@ -236,6 +244,7 @@ class PlayingEngine {
       this._uiAuthDialog.setAnimator(this._authAnimator);
       this.ui.add(this._uiAuthDialog, UIManager.LAYER.MODAL);
 
+      // Layer 4 — GoldRewardPopup（通关后金币奖励，VictoryPopup 之上）
     } catch (e) {
       // 初始化失败：清空所有引用，确保 render() 的 guard 能兜底
       console.error('[PlayingEngine] _setupUI 失败:', e);
@@ -300,6 +309,8 @@ class PlayingEngine {
       isNewMaster: this._master.isNewMaster(),
       hasCrown: this._earnedCrown,
       returnState: databus.returnState || 'menu',
+      goldAmount: this._goldAmount,
+      showGold: this._pendingGoldReward,
     });
     this._uiVictoryPopup.visible = this._victory && this._showVictoryPanel;
 
@@ -524,13 +535,18 @@ class PlayingEngine {
           this.restartLevel();
           return;
         }
+        if (this._uiVictoryPopup._doubleGoldBtn && !this._uiVictoryPopup._goldClaimed && _hitRect(t.x, t.y, this._uiVictoryPopup._doubleGoldBtn)) {
+          audio.play('button_click');
+          this._onDoubleGoldClick();
+          return;
+        }
         if (this._uiVictoryPopup._nextBtn && _hitRect(t.x, t.y, this._uiVictoryPopup._nextBtn)) {
           audio.play('button_click');
           var that2 = this;
           this._victoryClosing = true;
           this._victoryAnimator.close(function() {
             that2._victoryClosing = false;
-            that2._goNextLevel();
+            that2._uiVictoryPopup.onContinue();
           });
           return;
         }
@@ -843,6 +859,8 @@ class PlayingEngine {
         console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
       }
     }
+    // 清理存档：通关后杀进程恢复会出现"关卡已完成但仍有存档"的矛盾，这里清除掉
+    try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
     // 小金猪：已获得过则跳过，不再重复检查/写存储/播动画
     if (this._hadCrownBefore) {
       // 仍设 _gotCrown=true 确保渲染显示金色（重玩场景）
@@ -857,6 +875,18 @@ class PlayingEngine {
       this._earnedCrown = false;
       this._gotCrown = false;
       console.log('[小金猪] 未获得 ' + this.levelName + ' ' + this.steps + '/' + (this._crownSteps || '?') + '步');
+    }
+    // 金币奖励：首次通关本关 → 计算奖励金额（独立于小金猪系统）
+    this._pendingGoldReward = false;
+    this._goldAmount = 0;
+    if (GoldSystem.isFirstGoldClear(this.levelName)) {
+      var idx = databus.currentLevelIndex;
+      var reward = GoldSystem.calculateReward(idx);
+      if (reward > 0) {
+        this._goldAmount = reward;
+        this._pendingGoldReward = true;
+        console.log('[LOG] 首次通关金币奖励: level=' + this.levelName + ' amount=' + reward);
+      }
     }
     // 尝试夺关主（试玩模式/用过移除则跳过）
     if (!this._hasUsedRemove && databus.returnState !== 'editor') {
@@ -902,6 +932,7 @@ class PlayingEngine {
       cloud.savePlayerData({
         lastLevelIndex: lastLevelIndex,
         crowns: crowns,
+        gold: GoldSystem.getGold(),
         avatarUrl: info.avatarUrl || '',
         nickname: info.nickName || ''
       }).then(function() {
@@ -911,6 +942,33 @@ class PlayingEngine {
       });
     } catch (e2) {
       console.warn('[Cloud] _syncToCloud 异常:', e2);
+    }
+  }
+
+  /** 继续按钮 — 有金币且未被双倍领取过 → 发放单倍金币；然后进入下一关 */
+  _onContinueClick() {
+    if (this._pendingGoldReward && !this._uiVictoryPopup._goldClaimed) {
+      console.log('[LOG] 领取金币: +' + this._goldAmount);
+      GoldSystem.addGold(this._goldAmount);
+      GoldSystem.markGoldClaimed(this.levelName);
+      this._pendingGoldReward = false;
+    }
+    this._goNextLevel();
+  }
+
+  /** 双倍金币 — 加金币→标记已领→按钮灰化，不关闭弹窗 */
+  _onDoubleGoldClick() {
+    var amount = this._goldAmount;
+    console.log('[LOG] 双倍金币: +' + amount * 2);
+    GoldSystem.addGold(amount * 2);
+    GoldSystem.markGoldClaimed(this.levelName);
+    audio.play('rewards');
+    // 引擎侧也翻倍，否则 _syncUIData 每帧会用旧值覆盖 VictoryPopup 的翻倍值
+    this._goldAmount = amount * 2;
+    // 不清除 _pendingGoldReward（会触发 _syncUIData 设 showGold=false 导致面板金币消失）
+    // 通知 UI 按钮灰化 + 金额翻倍显示
+    if (this._uiVictoryPopup) {
+      this._uiVictoryPopup.markGoldClaimed();
     }
   }
 

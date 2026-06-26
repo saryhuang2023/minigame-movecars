@@ -6,6 +6,7 @@
     "icon": "🌱",
     "themeColor": "#EC4899",
     "bgColor": "#FDF2F8",
+    "goldBase": 20,
     "endIndex": 2
   },
   {
@@ -15,6 +16,7 @@
     "icon": "🌧️",
     "themeColor": "#8B5CF6",
     "bgColor": "#F5F3FF",
+    "goldBase": 25,
     "endIndex": 7
   },
   {
@@ -24,6 +26,7 @@
     "icon": "⚔️",
     "themeColor": "#F59E0B",
     "bgColor": "#FFFBEB",
+    "goldBase": 30,
     "endIndex": 6
   },
   {
@@ -33,6 +36,7 @@
     "icon": "🚀",
     "themeColor": "#10B981",
     "bgColor": "#ECFDF5",
+    "goldBase": 35,
     "endIndex": 9999
   }
 ]

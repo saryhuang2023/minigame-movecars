@@ -8,6 +8,7 @@ var ctx = renderModule.ctx;
 var SCREEN_WIDTH = renderModule.SCREEN_WIDTH;
 var SCREEN_HEIGHT = renderModule.SCREEN_HEIGHT;
 var ButtonPress = require('../anim/ButtonPress.js');
+var GoldSystem = require('./GoldSystem.js');
 
 // UI 组件
 var LevelCard = require('../ui/widgets/LevelCard.js');
@@ -52,6 +53,7 @@ function LevelSelectEngine(input) {
 // ============================================================
 LevelSelectEngine.prototype.activate = function () {
   try {
+    this._justActivated = true;  // 防止残留 touchend 误触卡片
     this.loadProjectLevels();
     this._buildChapterSections();
     this._setupUI();
@@ -110,11 +112,13 @@ LevelSelectEngine.prototype._buildChapterSections = function () {
   // 优先使用云端章节配置；未就绪则降级到本地
   if (databus._cloudChapters && Array.isArray(databus._cloudChapters)) {
     databus.chapters = databus._cloudChapters;
+    GoldSystem.setChapters(databus.chapters);
   } else if (!databus._chaptersLoaded) {
     databus._chaptersLoaded = true;
     try {
       var raw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');
       databus.chapters = JSON.parse(raw);
+      GoldSystem.setChapters(databus.chapters);
       console.log('[LevelSelect] 章节配置加载成功: ' + databus.chapters.length + '章');
     } catch (e) {
       console.warn('[LevelSelect] 加载 chapter.json 失败:', e);
@@ -326,11 +330,15 @@ LevelSelectEngine.prototype._handleEvent = function (e) {
   if (!t) return;
 
   if (e.type === 'touchstart') {
+    this._justActivated = false;  // 新触摸序列开始，解除刚激活保护
     this._isDragging = true;
     this._dragMoved = false;
     this._touchStartY = t.y;
     this._scrollStartTop = this._scrollTop;
   }
+
+  // 刚激活且没收到过 touchstart → 忽略残留事件（防止从菜单按钮误触卡片）
+  if (this._justActivated) return;
 
   if (e.type === 'touchmove' && this._isDragging) {
     var dy = t.y - this._touchStartY;
