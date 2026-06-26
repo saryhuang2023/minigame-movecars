@@ -4,6 +4,7 @@ const databus = require('../databus.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
+const checkpointDialog = require('../ui/CheckpointDialog.js');
 const Easing = require('./Easing.js');
 const TransitionManager = require('./TransitionManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -89,8 +90,10 @@ class GameEngine {
   }
 
   _syncFromCloud() {
+    console.log('[LOG] === _syncFromCloud 开始，准备拉取玩家数据 ===');
     var self = this;
     cloud.getPlayerData().then(function(res) {
+      console.log('[LOG] cloud.getPlayerData 成功回调，res.code=' + (res && res.code) + '，有data=' + !!(res && res.data));
       if (!res || res.code !== 0 || !res.data) {
         console.log('[Cloud] 无云端存档或拉取失败，沿用本地数据');
         self._checkAutoStart();
@@ -129,9 +132,11 @@ class GameEngine {
           });
         }
       }
+      console.log('[LOG] 云端数据同步完成 → 调用 _checkAutoStart');
       self._checkAutoStart();
     }).catch(function(err) {
       console.warn('[Cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
+      console.log('[LOG] cloud.getPlayerData 失败，走 catch → 调用 _checkAutoStart');
       self._checkAutoStart();
     });
   }
@@ -162,16 +167,61 @@ class GameEngine {
     });
   }
 
-  // 新玩家自动开始游戏：进度未到第5关时，进入主菜单后立刻自动进入关卡
+  // 纯新玩家自动开始游戏：进度第1关 + 从未自动进入过 → 进入关卡；否则留主菜单
+  // 杀进程恢复：存在有效存档 → 自动进入关卡
   _checkAutoStart() {
-    if (this._didAutoStart) return;
-    this._didAutoStart = true;
-    var li = wx.getStorageSync('lastLevelIndex');
-    var liNum = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : -1;
-    if (liNum < 5) {
-      console.log('[AutoStart] 新玩家进度=' + liNum + '，自动开始游戏');
-      this.startLastLevel();
+    // 入口日志：标记每次调用
+    console.log('[LOG] ===== _checkAutoStart 被调用 =====');
+    console.log('[LOG] _didAutoStart=' + this._didAutoStart);
+    if (this._didAutoStart) {
+      console.log('[LOG] 已执行过，直接返回');
+      return;
     }
+    this._didAutoStart = true;
+
+    var li = wx.getStorageSync('lastLevelIndex');
+    console.log('[LOG] wx.getStorageSync("lastLevelIndex") 原始值:', JSON.stringify(li), '类型:', typeof li);
+    var liNum = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : -1;
+    console.log('[LOG] 解析后 liNum=' + liNum + ' (<=0?' + (liNum <= 0) + ')');
+
+    if (liNum <= 0) {
+      // 纯新玩家：检查是否已经自动进入过
+      var entered = wx.getStorageSync('has_auto_entered');
+      console.log('[LOG] has_auto_entered 原始值:', JSON.stringify(entered), '类型:', typeof entered, '布尔:', !!entered);
+      if (!entered) {
+        wx.setStorageSync('has_auto_entered', true);
+        console.log('[LOG] ✓ 首次登录+第1关，自动进入关卡！');
+        this.startLastLevel();
+        console.log('[LOG] ===== _checkAutoStart 结束（新玩家自动进入） =====');
+        return;
+      }
+      console.log('[LOG] ✗ has_auto_entered=true，已自动进入过');
+    }
+
+    // 杀进程恢复：检查是否有待恢复的存档
+    var cp;
+    try { cp = wx.getStorageSync('game_checkpoint'); } catch (e) { cp = null; }
+    if (cp && cp.levelName) {
+      console.log('[LOG] ✓ 发现存档 level=' + cp.levelName + ' step=' + cp.steps + ' pigs=' + (cp.pigs ? cp.pigs.length : 0) + '，弹确认框');
+      var self = this;
+      checkpointDialog.open({
+        steps: cp.steps,
+        levelName: cp.levelName,
+        onConfirm: function() {
+          console.log('[LOG] 用户确认恢复存档');
+          self.startLastLevel();
+        },
+        onCancel: function() {
+          console.log('[LOG] 用户放弃恢复，清理存档');
+          try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
+        }
+      });
+      console.log('[LOG] ===== _checkAutoStart 结束（弹确认框） =====');
+      return;
+    }
+
+    console.log('[LOG] ✗ 进度=' + liNum + '，无存档，停在主菜单');
+    console.log('[LOG] ===== _checkAutoStart 结束 =====');
   }
 
   // ========== 设计常量 ==========
@@ -536,6 +586,12 @@ class GameEngine {
       if (e.type === 'touchstart' && e.touches[0]) {
         var t = e.touches[0];
 
+        // 存档恢复弹窗打开时，所有触控由弹窗处理
+        if (checkpointDialog.isOpen()) {
+          checkpointDialog.handleTouch(t.x, t.y, e.type);
+          return;
+        }
+
         // 设置面板打开时，所有触控由面板处理
         if (settingsPanel.isOpen()) {
           settingsPanel.handleTouch(t.x, t.y, e.type);
@@ -808,6 +864,9 @@ class GameEngine {
 
     // 设置面板（最顶层）
     settingsPanel.render(ctx);
+
+    // 存档恢复确认弹窗（比设置面板更高一层）
+    checkpointDialog.render(ctx);
   }
 
   // ========== 主循环 ==========

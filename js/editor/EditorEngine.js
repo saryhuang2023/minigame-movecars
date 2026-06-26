@@ -850,6 +850,9 @@ class EditorEngine {
       return;
     }
     entry.data = this.getLevelData();
+    // 每次保存时 version+1
+    entry.data.version = (entry.data.version || 0) + 1;
+    entry._version = entry.data.version;
     entry.isDirty = false;
     this.dirty = false;
 
@@ -1021,7 +1024,8 @@ class EditorEngine {
       board: { rows: 5, oddCols: 3, boardWidth: 375, boardRate: 2.9 },
       pigs: [],
       crownSteps: 0,
-      ready: 0
+      ready: 0,
+      version: 0
     };
   }
 
