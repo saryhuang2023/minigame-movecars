@@ -40,7 +40,7 @@ const PADDING = 16;         // 内容区外边距
 const CARD_GAP = 8;         // 卡片之间的间距
 const CARD_PADDING = 12;    // 棋盘卡片内边距
 
-const ESCAPE_SPEED = 150;  // 正常逃脱速度（逻辑像素/秒）
+const ESCAPE_SPEED = 120;  // 正常逃脱速度（逻辑像素/秒）
 
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;
 const COMBO_WINDOW = 3000;             // 连击窗口（毫秒）

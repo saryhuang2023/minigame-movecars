@@ -32,6 +32,7 @@ function LevelSelectEngine(input) {
   this.input = input;
   this.projectLevels = [];
   this._sections = [];       // [{ chapter, headerY, cards: [{x,y,w,h,level,globalIndex}] }]
+  this._needsRebuild = false; // 云端范围增大后置脏，触发下次 activate 重建
   this._btnPress = new ButtonPress();
 
   // UI 组件
@@ -54,9 +55,18 @@ function LevelSelectEngine(input) {
 LevelSelectEngine.prototype.activate = function () {
   try {
     this._justActivated = true;  // 防止残留 touchend 误触卡片
-    this.loadProjectLevels();
-    this._buildChapterSections();
-    this._setupUI();
+
+    // 首次进入 或 云端范围增大标记脏 → 全量重建 projectLevels / sections / UI
+    if (this._sections.length === 0 || this._needsRebuild) {
+      this.loadProjectLevels();
+      this._buildChapterSections();
+      this._setupUI();
+      this._needsRebuild = false;
+    } else {
+      // 复用已有 sections，仅重建 UI 组件（input 监听在 deactivate 时已解绑）
+      this._setupUI();
+    }
+
     this.input.on('levelSelect', this._handleEvent.bind(this));
   } catch (e) {
     console.error('[LevelSelectEngine] activate() 失败:', e);
@@ -71,36 +81,53 @@ LevelSelectEngine.prototype.deactivate = function () {
 };
 
 // ============================================================
-// 加载正式关卡列表
+// 加载正式关卡列表（从本地+云端范围计算，不再依赖显式枚举数组）
 // ============================================================
 LevelSelectEngine.prototype.loadProjectLevels = function () {
+  var callId = Date.now() % 100000; // 短 ID 用于区分多次调用
+  console.log('[LOG] loadProjectLevels #' + callId + ' 开始, _cloudMaxLevel=' + databus._cloudMaxLevel
+    + ', gameState=' + databus.gameState);
+
   this.projectLevels = [];
   var fs = wx.getFileSystemManager();
 
-  // 优先使用云端版本；未就绪则降级到本地
-  var rawList;
-  if (databus._cloudIndex && Array.isArray(databus._cloudIndex)) {
-    rawList = databus._cloudIndex;
-    console.log('[LevelSelect] 使用云端关卡列表: ' + rawList.length + ' 关');
-  } else {
-    try {
-      var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
-      rawList = JSON.parse(indexRaw);
-    } catch (e) {
-      console.warn('[LevelSelect] 读取 index.json 失败:', e);
+  // 读取本地关卡范围
+  var localMax = 0;
+  var indexFormat = 'unknown';
+  try {
+    var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
+    var indexData = JSON.parse(indexRaw);
+    console.log('[LOG] loadProjectLevels #' + callId + ' index.json 原始内容: ' + indexRaw.trim());
+    if (typeof indexData.maxLevel === 'number') {
+      localMax = indexData.maxLevel;
+      indexFormat = 'range';
+    } else if (Array.isArray(indexData)) {
+      localMax = indexData.length;
+      indexFormat = 'array';
     }
+    console.log('[LOG] loadProjectLevels #' + callId + ' 本地: format=' + indexFormat + ' localMax=' + localMax);
+  } catch (e) {
+    console.warn('[LevelSelect] 读取 index.json 失败:', e);
   }
-  if (!rawList || !Array.isArray(rawList)) return;
 
-    for (var i = 0; i < rawList.length; i++) {
-      var entry = rawList[i];
-      var f = typeof entry === 'string' ? entry : entry.file;
-      if (!f || f === 'index.json' || !f.endsWith('.json')) continue;
-      var name = f.replace('.json', '');
-      this.projectLevels.push({ name: name, file: f });
-    }
+  // 合并云端范围
+  var cloudMax = databus._cloudMaxLevel || 0;
+  var maxLevel = Math.max(localMax, cloudMax);
+  console.log('[LOG] loadProjectLevels #' + callId + ' 合并: localMax=' + localMax
+    + ' cloudMax=' + cloudMax + ' → maxLevel=' + maxLevel);
+  if (maxLevel <= 0) {
+    console.log('[LOG] loadProjectLevels #' + callId + ' maxLevel<=0，直接返回');
+    return;
+  }
+
+  for (var i = 0; i < maxLevel; i++) {
+    var name = String(i + 1).padStart(4, '0');
+    this.projectLevels.push({ name: name, file: name + '.json' });
+  }
   // 同步到 databus，供 PlayingEngine "下一关" 使用
   databus.projectLevels = this.projectLevels;
+  console.log('[LOG] loadProjectLevels #' + callId + ' 完成: projectLevels.length=' + this.projectLevels.length
+    + ', 已同步 databus.projectLevels');
 };
 
 // ============================================================

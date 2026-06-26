@@ -121,12 +121,12 @@ async function uploadLevel(name, data, version, published) {
 }
 
 /**
- * 获取云端关卡列表（仅元数据）
- * @returns {Promise<Array<{_id, name, pigCount, updatedAt}>>}
+ * 获取云端已发布关卡范围
+ * @returns {Promise<{minLevel: number, maxLevel: number}>}
  */
 async function listLevels() {
   const res = await callFunction('listLevels');
-  return res.data || [];
+  return res.data || { minLevel: 0, maxLevel: 0 };
 }
 
 /**

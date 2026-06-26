@@ -146,30 +146,48 @@ class GameEngine {
     });
   }
 
-  // 异步从云端拉取关卡列表和章节配置（fire-and-forget，不阻塞启动）
+  // 异步从云端拉取关卡范围和章节配置（fire-and-forget，不阻塞启动）
   _syncCloudLevels() {
     var self = this;
-    // 并行下载两份配置文件
-    Promise.all([
-      cloud.downloadCloudFile('level/index.json'),
-      cloud.downloadCloudFile('level/chapter.json')
-    ]).then(function(results) {
-      var indexData = results[0];
-      var chapterData = results[1];
-      if (indexData && Array.isArray(indexData)) {
-        databus._cloudIndex = indexData;
-        console.log('[Cloud] 云端关卡列表就绪: ' + indexData.length + ' 关');
+    console.log('[LOG] _syncCloudLevels 开始拉取云端关卡范围...');
+    // 拉取云端已发布关卡范围
+    cloud.listLevels().then(function(range) {
+      console.log('[LOG] _syncCloudLevels cloud.listLevels() 返回: range=' + JSON.stringify(range)
+        + ', typeof range.maxLevel=' + (range ? typeof range.maxLevel : 'N/A'));
+      if (range && range.maxLevel > 0) {
+        var prevMax = databus._cloudMaxLevel;
+        databus._cloudMaxLevel = range.maxLevel;
+        console.log('[LOG] _syncCloudLevels 云端关卡范围就绪: ' + range.minLevel + '~' + range.maxLevel
+          + ' (之前 _cloudMaxLevel=' + prevMax + ')');
+        // 云端范围比已构建的大 → 需要重建
+        if (prevMax === undefined || range.maxLevel > prevMax) {
+          console.log('[LOG] _syncCloudLevels 云端范围增大 (prevMax=' + prevMax + '→' + range.maxLevel + '), 当前 gameState=' + databus.gameState);
+          if (databus.gameState === 'levelSelect') {
+            console.log('[LOG] _syncCloudLevels 立即重建关卡选择列表');
+            self.levelSelect.loadProjectLevels();
+            self.levelSelect._buildChapterSections();
+            self.levelSelect._setupUI();
+            self.levelSelect._needsRebuild = false;
+          } else {
+            console.log('[LOG] _syncCloudLevels 标记脏，下次进入关卡选择时重建');
+            self.levelSelect._needsRebuild = true;
+          }
+        }
+      } else {
+        console.log('[LOG] _syncCloudLevels 云端无已发布关卡或无数据 (range=' + JSON.stringify(range) + ')');
       }
+    }).catch(function(err) {
+      console.warn('[Cloud] listLevels 异常（非阻塞）:', err && err.message);
+    });
+    // 拉取云端章节配置
+    cloud.downloadCloudFile('level/chapter.json').then(function(chapterData) {
       if (chapterData && Array.isArray(chapterData)) {
         databus._cloudChapters = chapterData;
         GoldSystem.setChapters(chapterData);
         console.log('[Cloud] 云端章节配置就绪: ' + chapterData.length + ' 章');
       }
-      if (!indexData && !chapterData) {
-        console.log('[Cloud] 云端关卡列表/章节配置均下载失败，全程使用本地');
-      }
     }).catch(function(err) {
-      console.warn('[Cloud] _syncCloudLevels 异常（非阻塞）:', err && err.message);
+      console.warn('[Cloud] chapter.json 异常（非阻塞）:', err && err.message);
     });
   }
 
@@ -528,55 +546,64 @@ class GameEngine {
    * "开始游戏"：直接读取上次游玩的关卡并开始
    */
   startLastLevel() {
-    var fs = wx.getFileSystemManager();
-    var levelIndex = 0;
-    var projectLevels = [];
-
-    // 读取关卡索引文件
-    try {
-      var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
-      var indexData = JSON.parse(indexRaw);
-      // 兼容两种格式：纯数组 或 { files: [...] }
-      var files = Array.isArray(indexData) ? indexData : (indexData.files || []);
-      projectLevels = [];
-      for (var i = 0; i < files.length; i++) {
-        var f = files[i];
-        var file = typeof f === 'string' ? f : f.file;
-        if (!file || file === 'index.json' || !file.endsWith('.json')) continue;
-        var name = file.replace('.json', '');
-        var extra = typeof f === 'object' ? Object.assign({}, f) : {};
-        delete extra.file;
-        projectLevels.push(Object.assign({ name: name, file: file }, extra));
-      }
-    } catch (e) {
-      console.warn('[GameEngine] 读取 index.json 失败:', e);
-      // 降级：跳转关卡选择
-      databus.gameState = 'levelSelect';
-      return;
-    }
-
-    if (projectLevels.length === 0) {
+    var totalLevels = this._getTotalLevelCount();
+    if (totalLevels === 0) {
       wx.showToast({ title: '没有关卡', icon: 'none', duration: 1500 });
       return;
     }
+    if (databus.gameState === 'levelSelect') return;
 
     // 读取上次关卡索引
+    var levelIndex = 0;
     try {
       var saved = wx.getStorageSync('lastLevelIndex');
       if (saved !== '' && saved !== undefined && saved !== null) {
-        levelIndex = Math.min(parseInt(saved, 10), projectLevels.length - 1);
+        levelIndex = Math.min(parseInt(saved, 10), totalLevels - 1);
         levelIndex = Math.max(levelIndex, 0);
       }
     } catch (e) {
       levelIndex = 0;
     }
 
-    var lv = projectLevels[levelIndex];
+    var lv = this._getLevelEntry(levelIndex);
     databus.currentLevel = { name: lv.name, data: null };
     databus.currentLevelIndex = levelIndex;
-    databus.projectLevels = projectLevels;
     databus.returnState = 'menu';
     databus.gameState = 'playing';
+
+    // 同步 databus.projectLevels（PlayingEngine 下一关/重玩依赖）
+    this._buildProjectLevels(totalLevels);
+  }
+
+  /** 读取本地+云端合并后的总关卡数 */
+  _getTotalLevelCount() {
+    var localMax = 0;
+    try {
+      var fs = wx.getFileSystemManager();
+      var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
+      var indexData = JSON.parse(indexRaw);
+      if (typeof indexData.maxLevel === 'number') localMax = indexData.maxLevel;
+      else if (Array.isArray(indexData)) localMax = indexData.length;
+    } catch (e) {
+      console.warn('[GameEngine] 读取 index.json 失败:', e);
+    }
+    var cloudMax = databus._cloudMaxLevel || 0;
+    return Math.max(localMax, cloudMax);
+  }
+
+  /** 根据总关卡数构建 projectLevels 数组 */
+  _buildProjectLevels(totalLevels) {
+    databus.projectLevels = [];
+    for (var i = 0; i < totalLevels; i++) {
+      var name = String(i + 1).padStart(4, '0');
+      databus.projectLevels.push({ name: name, file: name + '.json' });
+    }
+  }
+
+  /** 根据 0-based 索引生成关卡入口 */
+  _getLevelEntry(levelIndex) {
+    var name = String(levelIndex + 1).padStart(4, '0');
+    return { name: name, file: name + '.json' };
   }
 
   setupMenuInput() {
@@ -933,6 +960,7 @@ class GameEngine {
     if (curr === this._prevState) return;
 
     const prev = this._prevState;
+    console.log('[LOG] checkStateTransition: ' + prev + ' → ' + curr + ' (当前 _cloudMaxLevel=' + databus._cloudMaxLevel + ')');
 
     // 启动场景过渡动画（在引擎切换之前）
     if (prev && curr && curr !== prev) {
