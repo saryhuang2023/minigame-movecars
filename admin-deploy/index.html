@@ -157,7 +157,7 @@ function renderTable(data) {
       <td style="color:rgba(255,255,255,0.4);font-family:monospace;font-size:11px">${esc(l.author)}</td>
       <td><span class="pig-badge">${l.pigCount} 只猪</span></td>
       <td><span class="version-badge">v${l.version}</span></td>
-      <td>${(l.ready === 1) ? '<span class="ready-publish">待发布</span>' : '<span class="ready-draft">设计中</span>'}</td>
+      <td>${(l.ready === 1) ? '<span class="ready-publish">已发布</span>' : '<span class="ready-draft">设计中</span>'}</td>
       <td style="color:rgba(255,255,255,0.35);font-size:11px">${esc(l.updatedAt)}</td>
       <td>
         <button class="download-btn" onclick="downloadOne('${esc(l.name)}', '${esc(l.id)}')">下载 JSON</button>
