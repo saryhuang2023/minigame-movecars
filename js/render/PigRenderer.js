@@ -229,8 +229,12 @@ class PigRenderer {
     const totalLen = c.totalLen;
     const bodyH = Math.ceil(this.pigBodyWidth * 1.3);
     const pad = 8;
-    const ocW = totalLen + pad * 2;
-    const ocH = bodyH * 2 + pad * 2;
+    // 离屏画布需要容纳旋转后的猪：任意角度最大边界 = max(totalLen, bodyH) × √2
+    // 对于长猪旋转 45° 时，猪体对角线远大于 bodyH，旧公式 ocH=bodyH*2+pad*2 会裁掉两端
+    const maxDim = Math.max(totalLen, bodyH);
+    const diag = Math.ceil(maxDim * 1.42) + pad * 2;  // 1.42 > √2，留余量覆盖 wobble
+    const ocW = diag;
+    const ocH = diag;
 
     if (!this._overlayOC) this._overlayOC = wx.createCanvas();
     const oc = this._overlayOC;

@@ -723,6 +723,10 @@ class GameplayEngine {
     if (diff < -180) diff += 360;
     if (Math.abs(diff) < 0.5) return;
 
+    // 碰撞锁：被挡住后，同方向继续推就跳过追逐，防止 12° 步长跳过挡路猪撞到后面的猪
+    var chaseDir = Math.sign(diff);
+    if (ds._blockedDir === chaseDir) return;
+
     const step = Math.max(-CHASE_SPEED, Math.min(CHASE_SPEED, diff));
     let newAngle = ds.displayAngle + step;
     newAngle = ((newAngle % 360) + 360) % 360;
@@ -732,7 +736,13 @@ class GameplayEngine {
 
     if (check.valid) {
       ds.displayAngle = newAngle;
-      const headHoleIdx = this.findHeadHole(ds.tailIndex, len, newAngle);
+      var headHoleIdx = this.findHeadHole(ds.tailIndex, len, newAngle);
+      // 头孔必须未被占用（或是自己已占的孔），防止猪头"落袋"到别猪已占的孔
+      if (headHoleIdx >= 0) {
+        if (this.holeOccupied[headHoleIdx] !== -1 && this.holeOccupied[headHoleIdx] !== targetId) {
+          headHoleIdx = -1;
+        }
+      }
       if (headHoleIdx >= 0) {
         if (pendingId) {
           // 原地更新，避免 filter+push 重建数组
@@ -747,6 +757,7 @@ class GameplayEngine {
         ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: newAngle };
         ds.headHoleIdx = headHoleIdx;
         ds.lastCollidedId = null;
+        ds._blockedDir = 0;
         ds.isValidNow = true;
       } else {
         ds.headHoleIdx = -1;
@@ -771,7 +782,11 @@ class GameplayEngine {
         pig.angle = boundary;
       }
       this.updatePigOccupancy(targetId, ds.tailIndex, len, boundary);
-      ds.headHoleIdx = this.findHeadHole(ds.tailIndex, len, boundary);
+      var bdyHeadHole = this.findHeadHole(ds.tailIndex, len, boundary);
+      if (bdyHeadHole >= 0 && this.holeOccupied[bdyHeadHole] !== -1 && this.holeOccupied[bdyHeadHole] !== targetId) {
+        bdyHeadHole = -1;
+      }
+      ds.headHoleIdx = bdyHeadHole;
       if (ds.headHoleIdx >= 0) {
         ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: boundary };
       }
@@ -783,6 +798,7 @@ class GameplayEngine {
           ds.lastCollideTime = now;
         }
         ds.lastCollidedId = check.collidedId;
+        ds._blockedDir = chaseDir;
       }
       ds.isValidNow = false;
     } else {
