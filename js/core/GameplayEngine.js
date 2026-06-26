@@ -58,7 +58,6 @@ class GameplayEngine {
     this.ghostAnimations = [];
     this.flyingPigs = [];
     this.flashingPigs = {};
-    this._overlayOC = null;  // 染色离屏画布（提示/被撞共用）
 
     // ===== 渲染 =====
     this.pigRenderer = new PigRenderer(this);
@@ -698,69 +697,6 @@ class GameplayEngine {
   }
 
   // ============================================================
-  // 通用染色遮罩：离屏画布画猪 → source-atop 染单色 → 叠回目标画布
-  // tint: { color, alpha }   例如 提示 = { color: '#FF80A8', alpha: 0.35 }
-  // masterAlpha: 外层透明度（提示=1，被撞=恒定 0.7）
-  // ============================================================
-  _renderTintedPigOverlay(targetCtx, pig, screenCx, screenCy, tint, masterAlpha, animType) {
-    if (masterAlpha === undefined) masterAlpha = 1;
-    if (masterAlpha <= 0) return;
-    var pigR = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    if (!pigR) return;
-
-    var totalLen = Math.ceil(pigR.hw * 2 + this.scaledDiameter);
-    var bodyH = Math.ceil(this.scaledDiameter * 1.3);  // 留足容纳耳朵/尾巴
-    var pad = 8;
-    var ocW = totalLen + pad * 2;
-    var ocH = bodyH * 2 + pad * 2;
-    var halfW = ocW / 2, halfH = ocH / 2;
-
-    if (!this._overlayOC) this._overlayOC = wx.createCanvas();
-    var oc = this._overlayOC;
-    if (oc.width !== ocW || oc.height !== ocH) {
-      oc.width = ocW; oc.height = ocH;
-    }
-    var octx = oc.getContext('2d');
-    octx.clearRect(0, 0, ocW, ocH);
-
-    // 离屏画布：画猪（旋转后居中）
-    octx.save();
-    octx.translate(halfW, halfH);
-    octx.rotate(-pigR.rad);
-
-    // 风筝抖动（与 PigRenderer.draw() 保持一致，非编辑模式生效）
-    if (databus.gameState !== 'editor') {
-      const halfLen = totalLen / 2;
-      const now = Date.now();
-      // 身体摆动：轴心在尾部往前 25% 处
-      const bodyPivotOff = halfLen * 0.75;
-      const bodyWobble = Math.sin(now * 0.01 + pig.id * 1.7) * 0.005;
-      octx.translate(-bodyPivotOff, 0);
-      octx.rotate(bodyWobble);
-      octx.translate(bodyPivotOff, 0);
-      // 尾部甩动
-      const tailWobble = Math.sin(now * 0.005 + pig.id * 2.3) * 0.015;
-      octx.translate(-halfLen, 0);
-      octx.rotate(tailWobble);
-      octx.translate(halfLen, 0);
-    }
-
-    this.pigRenderer._drawPigImage(octx, totalLen, pig, animType);
-
-    // source-atop 染色（只染猪像素，镂空跳过背景）
-    octx.globalCompositeOperation = 'source-atop';
-    octx.globalAlpha = tint.alpha;
-    octx.fillStyle = tint.color;
-    octx.fillRect(-halfW, -halfH, ocW, ocH);
-    octx.restore();
-
-    // 叠到目标画布
-    if (masterAlpha < 1) targetCtx.globalAlpha = masterAlpha;
-    targetCtx.drawImage(oc, screenCx - halfW, screenCy - halfH);
-    if (masterAlpha < 1) targetCtx.globalAlpha = 1;
-  }
-
-  // ============================================================
   // 旋转追逐（核心玩法：三模式共享）
   // 小猪逐步向手指方向旋转，碰壁时一帧二分查找边界瞬间贴紧
   // ============================================================
@@ -1017,24 +953,20 @@ class GameplayEngine {
       var flashAlpha = this._getFlashOverlayAlpha(pig.id);
       var drawAnim = (isHinted || flashAlpha > 0) ? AnimType.HINT : undefined;
 
-      // 正常绘制（无透明度变化）
-      pr.draw(ctx, pig, off.dx, off.dy, drawAnim);
-
-      // 猪的屏幕中心位置（给遮罩层用）
-      var pigR2 = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
-      var pigCx = pigR2 ? this.boardOffsetX + pigR2.cx + off.dx : 0;
-      var pigCy = pigR2 ? offY + pigR2.cy + off.dy : 0;
-
-      // 被撞效果：全身染深红，恒定不闪（与提示共用 _renderTintedPigOverlay）
+      // Tint：被撞优先于提示（两者都激活时闪红更醒目）
+      var tint = null;
       if (flashAlpha > 0) {
-        this._renderTintedPigOverlay(ctx, pig, pigCx, pigCy,
-          { color: '#CC1111', alpha: 0.6 }, flashAlpha, drawAnim);
+        tint = { color: '#CC1111', alpha: 0.75 * flashAlpha };
+      } else if (isHinted) {
+        tint = { color: '#FF80A8', alpha: 0.55 };
       }
 
-      // 提示目标染色：仅静止时染，拖拽/旋转中保持原色
-      if (options.hintPigId != null && options.hintPigId === pig.id && !isDragPig) {
-        this._renderTintedPigOverlay(ctx, pig, pigCx, pigCy,
-          { color: '#FF80A8', alpha: 0.35 }, 1, drawAnim);
+      // 正常绘制
+      pr.draw(ctx, pig, off.dx, off.dy, drawAnim);
+
+      // 染色（离屏隔离，通过 drawTinted 内部复用 _drawPigImage 保证抖动同步）
+      if (tint) {
+        pr.drawTinted(ctx, pig, off.dx, off.dy, drawAnim, tint);
       }
 
       // 拖拽中：头部绿点 + 碰撞区空心虚线轮廓（仅编辑模式）

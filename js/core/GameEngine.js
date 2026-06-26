@@ -516,18 +516,11 @@ class GameEngine {
     }
 
     var lv = projectLevels[levelIndex];
-    try {
-      var raw = fs.readFileSync('assets/levels/' + lv.file, 'utf8');
-      var data = JSON.parse(raw);
-      databus.currentLevel = { name: lv.name, data: data };
-      databus.currentLevelIndex = levelIndex;
-      databus.projectLevels = projectLevels;
-      databus.returnState = 'menu';
-      databus.gameState = 'playing';
-    } catch (err) {
-      console.warn('[GameEngine] 加载关卡 ' + lv.file + ' 失败:', err);
-      wx.showToast({ title: '加载关卡失败', icon: 'none', duration: 1500 });
-    }
+    databus.currentLevel = { name: lv.name, data: null };
+    databus.currentLevelIndex = levelIndex;
+    databus.projectLevels = projectLevels;
+    databus.returnState = 'menu';
+    databus.gameState = 'playing';
   }
 
   setupMenuInput() {

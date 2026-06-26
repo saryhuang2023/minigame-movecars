@@ -365,7 +365,6 @@ LevelSelectEngine.prototype._handleEvent = function (e) {
 
 LevelSelectEngine.prototype._hitTestCards = function (t) {
   var ly = t.y + this._scrollTop;
-  var fs = wx.getFileSystemManager();
 
   for (var s = 0; s < this._sections.length; s++) {
     var section = this._sections[s];
@@ -377,17 +376,11 @@ LevelSelectEngine.prototype._hitTestCards = function (t) {
         audio.play('button_click');
         this._btnPress.press('card_' + card.globalIndex);
         var lv = card.level;
-        try {
-          console.log('[LevelSelect] 点击卡片 globalIdx=' + card.globalIndex + ' name=' + lv.name + ' file=' + lv.file);
-          var raw = fs.readFileSync('assets/levels/' + lv.file, 'utf8');
-          databus.currentLevel = { name: lv.name, data: JSON.parse(raw) };
-          databus.currentLevelIndex = card.globalIndex;
-          databus.returnState = 'levelSelect';
-          databus.gameState = 'playing';
-        } catch (err) {
-          console.warn('[LevelSelect] 加载关卡 ' + lv.file + ' 失败:', err);
-          wx.showToast({ title: '加载关卡失败', icon: 'none', duration: 1500 });
-        }
+        console.log('[LevelSelect] 点击卡片 globalIdx=' + card.globalIndex + ' name=' + lv.name);
+        databus.currentLevel = { name: lv.name, data: null };
+        databus.currentLevelIndex = card.globalIndex;
+        databus.returnState = 'levelSelect';
+        databus.gameState = 'playing';
         return;
       }
     }

@@ -418,7 +418,7 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 15, Math.round(scaledDist)));
+    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
 
     // 长度和角度都没变 → 跳过（像素值允许 ±2px 误差）
     if (ds._lastLen !== undefined && Math.abs(ds._lastLen - len) < 3 && ds._lastAngle === angle) return;
@@ -495,7 +495,7 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 15, Math.round(scaledDist)));
+    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
 
     const pig = this.gp.dragState.pigId != null ? this.gp.pigs.find(p => p.id === this.gp.dragState.pigId) : null;
 

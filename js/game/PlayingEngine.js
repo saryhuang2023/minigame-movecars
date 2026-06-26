@@ -94,11 +94,12 @@ class PlayingEngine {
     this._removeBtn = null;         // 移除按钮碰撞区
     this._loading = false;          // 是否正在加载（云端拉取中，阻止所有操作）
     this._lastFrameTime = 0;        // 上一帧时间戳（引导系统 dt 计算用）
+    this._cloudFetchedData = new Map();  // 本次会话已拉取过的云端关卡数据 { name → data }
   }
 
   /**
    * 进入关卡时统一重置所有运行时状态（仅依赖 this.levelName）。
-   * 无论是 activate / restartLevel / _goNextLevel，都通过此方法保证状态干净。
+   * 由 loadLevel() 内部调用，所有入口通过 startLevel → _loadAndStart → loadLevel 保证状态干净。
    */
   _resetPlayState() {
     this.steps = 0;
@@ -300,66 +301,100 @@ class PlayingEngine {
     this._uiAuthDialog.visible = this._showAuthDialog;
   }
 
-  activate() {
-    const lv = databus.currentLevel;
-    this.levelName = lv ? lv.name : '';
-    const localData = lv ? lv.data : null;
-    console.log('[Playing] activate levelName=' + this.levelName + ' index=' + databus.currentLevelIndex + ' localHasBoard=' + !!(localData && localData.board));
+  /**
+   * 关卡统一入口——所有路径（关卡列表进入、重玩、下一关）都走这里。
+   * 模块内部负责：反初始化旧关卡 → 搭建UI → 解析关卡数据（缓存→云端→本地）→ 加载关卡。
+   */
+  startLevel(name) {
+    // 0. 如果当前有关卡在运行，先反初始化
+    if (this.levelName) {
+      this.input.off('playing');
+      this._combo.reset();
+      this._guide.reset();
+      this._destroyAuthBtn(true);
+    }
 
-    // 先打开 UI（棋盘空白，玩家可见框架）
+    // 1. 保存关卡标识
+    this.levelName = name;
+
+    // 2. 搭建 UI（棋盘空白，玩家可见框架）
     this._setupUI();
 
-    // 阻止所有用户操作，待云端拉取完成后再加载关卡
+    // 3. 解析关卡数据
     this._loading = true;
-    this._loadLevelFromCloud(localData);
+    var self = this;
 
-    // 关卡开始音效
+    if (self._cloudFetchedData.has(name)) {
+      // 本次会话已拉取过，直接走缓存
+      var cached = self._cloudFetchedData.get(name);
+      console.log('[Playing] ' + name + ' 已缓存，直接加载');
+      self._loadAndStart(cached);
+    } else {
+      // 首次加载：走云端 downloadLevel，失败则降级本地文件
+      console.log('[Playing] startLevel name=' + name + ' 从云端拉取...');
+      var TIMEOUT_MS = 5000;
+      var pullPromise = cloud.downloadLevel(null, name, true);
+      var timeoutPromise = new Promise(function(_, reject) {
+        setTimeout(function() { reject(new Error('timeout')); }, TIMEOUT_MS);
+      });
+
+      Promise.race([pullPromise, timeoutPromise])
+        .then(function(result) {
+          if (result && result.data) {
+            if (result.data.crownSteps == null && result.crownSteps != null) {
+              result.data.crownSteps = result.crownSteps;
+            }
+            self._cloudFetchedData.set(name, result.data);
+            console.log('[Cloud] 已发布关卡 ' + name + ' 拉取成功，使用云端配置');
+            self._loadAndStart(result.data);
+          } else {
+            console.log('[Cloud] 关卡 ' + name + ' 未发布，尝试本地文件');
+            self._loadAndStart(self._readLocalLevel(name));
+          }
+        })
+        .catch(function(err) {
+          console.log('[Cloud] 关卡拉取失败（' + (err && err.message) + '），尝试本地文件');
+          self._loadAndStart(self._readLocalLevel(name));
+        });
+    }
+
+    // 4. 音效、输入、关主系统（不依赖关卡数据）
     audio.play('level_start');
-    this.input.on('playing', (e) => this.handleEvent(e));
-    // 关主系统：初始化用户信息 + 异步获取 openid（fire-and-forget）
+    this.input.on('playing', function(e) { self.handleEvent(e); });
     this._master.loadUserInfo();
     this._master.fetchMyOpenId();
   }
 
-  /**
-   * 阻塞式拉取云端已发布关卡（5秒超时），成功则用云端数据，失败/超时则用本地。
-   * 拉取完成后才调用 loadLevel()，期间 _loading=true 阻止一切用户操作。
-   */
-  _loadLevelFromCloud(localData) {
-    var self = this;
-    var TIMEOUT_MS = 5000;
-    var pullPromise = cloud.downloadLevel(null, self.levelName, true);
-    var timeoutPromise = new Promise(function (_, reject) {
-      setTimeout(function () { reject(new Error('timeout')); }, TIMEOUT_MS);
-    });
+  /** 读取本地关卡文件，失败返回 null */
+  _readLocalLevel(name) {
+    try {
+      var fs = wx.getFileSystemManager();
+      var raw = fs.readFileSync('assets/levels/' + name + '.json', 'utf8');
+      var data = JSON.parse(raw);
+      console.log('[Playing] 本地关卡 ' + name + '.json 读取成功');
+      return data;
+    } catch(e) {
+      console.warn('[Playing] 本地无 ' + name + '.json');
+      return null;
+    }
+  }
 
-    Promise.race([pullPromise, timeoutPromise])
-      .then(function (result) {
-        if (result && result.data) {
-          // crownSteps 双保险：优先用 data 内嵌值，否则用顶级字段
-          if (result.data.crownSteps == null && result.crownSteps != null) {
-            result.data.crownSteps = result.crownSteps;
-          }
-          console.log('[Cloud] 已发布关卡 ' + self.levelName + ' 拉取成功，使用云端配置');
-          console.log('[Cloud] 云端数据 name=' + (result.data.name || '?') + ' pigs=' + (result.data && result.data.pigs && result.data.pigs.length)
-            + ' board.cols=' + (result.data && result.data.board ? result.data.board.cols : '?')
-            + ' board.rows=' + (result.data && result.data.board ? result.data.board.rows : '?'));
-          self.loadLevel(result.data);
-        } else {
-          console.log('[Cloud] 关卡 ' + self.levelName + ' 未发布，使用本地关卡');
-          console.log('[Cloud] 本地数据 name=' + self.levelName + ' pigs=' + (localData && localData.pigs && localData.pigs.length)
-            + ' board.cols=' + (localData && localData.board ? localData.board.cols : '?')
-            + ' board.rows=' + (localData && localData.board ? localData.board.rows : '?'));
-          self.loadLevel(localData);
-        }
-      })
-      .catch(function (err) {
-        console.log('[Cloud] 关卡拉取失败（' + (err && err.message) + '），使用本地关卡');
-        self.loadLevel(localData);
-      })
-      .finally(function () {
-        self._loading = false;
-      });
+  /** loadLevel + 恢复 _loading。data 为 null 时销毁关卡并返回主菜单 */
+  _loadAndStart(data) {
+    if (!data) {
+      console.warn('[Playing] 关卡数据加载失败（云端+本地均无），返回主菜单');
+      this._loading = false;
+      wx.showToast({ title: '关卡数据加载失败', icon: 'none', duration: 2000 });
+      databus.gameState = 'menu';
+      return;
+    }
+    this.loadLevel(data);
+    this._loading = false;
+  }
+
+  activate() {
+    var name = databus.currentLevel ? databus.currentLevel.name : '';
+    this.startLevel(name);
   }
 
   deactivate() {
@@ -753,7 +788,7 @@ class PlayingEngine {
 
   restartLevel() {
     audio.play('reset');
-    this.loadLevel(databus.currentLevel ? databus.currentLevel.data : null);
+    this.startLevel(this.levelName);
   }
 
   _markCleared() {
@@ -848,17 +883,9 @@ class PlayingEngine {
       return;
     }
     const next = databus.projectLevels[idx];
-    try {
-      const fs = wx.getFileSystemManager();
-      const raw = fs.readFileSync(`assets/levels/${next.file}`, 'utf8');
-      const data = JSON.parse(raw);
-      databus.currentLevel = { name: next.name, data };
-      databus.currentLevelIndex = idx;
-      this.levelName = next.name;
-      this.loadLevel(data);
-    } catch (err) {
-      console.warn(`[Playing] 加载下一关 ${next.file} 失败:`, err);
-    }
+    databus.currentLevelIndex = idx;
+    databus.currentLevel = { name: next.name, data: null };
+    this.startLevel(next.name);
   }
 
   // ========== 关主系统 ==========

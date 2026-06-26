@@ -67,6 +67,7 @@ class PigRenderer {
   constructor(engine) {
     this.e = engine; // GameplayEngine 引用（读取 holes / topBarH / boardOffsetY / diameter / dragState）
     this._animState = new Map(); // pigId → { frame, lastAdvance }
+    this._overlayOC = null;     // 染色离屏画布（drawTinted 复用）
   }
 
   // ---- 猪身体尺寸 ----
@@ -183,7 +184,7 @@ class PigRenderer {
   // animType: 可选 AnimType 枚举值，不传则自动判断（拖拽→RUN，否则→IDLE）
   draw(ctx, pig, offDx, offDy, animType) {
     const c = this._pigCenter(pig, offDx, offDy);
-    if (!c) return;
+    if (!c) return null;
 
     const ds = this.e.dragState;
     animType = animType || ((ds && ds.pigId === pig.id) ? AnimType.RUN : AnimType.IDLE);
@@ -214,6 +215,70 @@ class PigRenderer {
     this._drawPigImage(ctx, c.totalLen, pig, animType);
 
     ctx.restore();
+    return c;
+  }
+
+  // ---- 染色猪绘制（离屏隔离，避免 source-atop 污染主画布） ----
+  // 内部调用 draw() 保证抖动/帧号完全同步，然后 source-atop 染色，最后叠回目标画布
+  drawTinted(targetCtx, pig, offDx, offDy, animType, tint) {
+    if (!tint || tint.alpha <= 0) return;
+
+    const c = this._pigCenter(pig, offDx, offDy);
+    if (!c) return;
+
+    const totalLen = c.totalLen;
+    const bodyH = Math.ceil(this.pigBodyWidth * 1.3);
+    const pad = 8;
+    const ocW = totalLen + pad * 2;
+    const ocH = bodyH * 2 + pad * 2;
+
+    if (!this._overlayOC) this._overlayOC = wx.createCanvas();
+    const oc = this._overlayOC;
+    if (oc.width !== ocW || oc.height !== ocH) {
+      oc.width = ocW; oc.height = ocH;
+    }
+    const octx = oc.getContext('2d');
+    octx.clearRect(0, 0, ocW, ocH);
+
+    // 把离屏画布的 origin 对准猪中心，旋转与猪同向
+    octx.save();
+    octx.translate(ocW / 2, ocH / 2);
+    octx.rotate(-c.rad);
+
+    // 直接复用 _drawPigImage（跳过 draw() 的 translate/rotate，因为上面已设好）
+    const ds = this.e.dragState;
+    var at = animType || ((ds && ds.pigId === pig.id) ? AnimType.RUN : AnimType.IDLE);
+
+    // 风筝抖动（与 draw() 完全一致）
+    if ((at === AnimType.IDLE) && databus.gameState !== 'editor') {
+      const halfLen = totalLen / 2;
+      const now = Date.now();
+      const bodyPivotOff = halfLen * WOBBLE_PIVOT;
+      const bodyWobble = Math.sin(now * 0.001 * WOBBLE_FREQ + pig.id * 1.7) * WOBBLE_AMPLITUDE;
+      octx.translate(-bodyPivotOff, 0);
+      octx.rotate(bodyWobble);
+      octx.translate(bodyPivotOff, 0);
+      const tailWobble = Math.sin(now * 0.001 * TAIL_WOBBLE_FREQ + pig.id * 2.3) * TAIL_WOBBLE_AMPLITUDE;
+      octx.translate(-halfLen, 0);
+      octx.rotate(tailWobble);
+      octx.translate(halfLen, 0);
+    }
+
+    this._drawPigImage(octx, totalLen, pig, at);
+
+    // source-atop 染色（离屏画布，只有猪像素）
+    octx.globalCompositeOperation = 'source-atop';
+    octx.globalAlpha = tint.alpha;
+    octx.fillStyle = tint.color;
+    octx.fillRect(-ocW / 2, -ocH / 2, ocW, ocH);
+    octx.restore();
+
+    // 叠回目标画布
+    const pigR = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig));
+    if (!pigR) return;
+    const screenCx = this.e.boardOffsetX + pigR.cx + (offDx || 0);
+    const screenCy = this.e.topBarH + this.e.boardOffsetY + pigR.cy + (offDy || 0);
+    targetCtx.drawImage(oc, screenCx - ocW / 2, screenCy - ocH / 2);
   }
 
   // ---- 头部中心绿点 ----
