@@ -26,6 +26,7 @@ function BottomBar(opts) {
   this._cardW = opts.cardW;
   this._buttonPress = opts.buttonPress;
   this._hintActive = false;
+  this._trialMode = !!opts.trialMode;  // 试玩模式：隐藏提示/移除按钮
 
   // 按钮尺寸
   this._btnW = Theme.button.defaultW;   // 90
@@ -94,6 +95,13 @@ BottomBar.prototype.getHitType = function (px, py) {
 };
 
 BottomBar.prototype.render = function (ctx) {
+  // 试玩模式：不渲染任何按钮
+  if (this._trialMode) {
+    this.hintBtnRect = null;
+    this.removeBtnRect = null;
+    return;
+  }
+
   var barY = this.y;
   var barW = this._cardW;
   var btnW = this._btnW, btnH = this._btnH;

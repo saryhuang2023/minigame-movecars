@@ -209,11 +209,12 @@ class PlayingEngine {
       });
       this.ui.add(this._uiTopBar, UIManager.LAYER.CONTROL);
 
-      // Layer 2 — BottomBar
+      // Layer 2 — BottomBar（试玩模式隐藏提示/移除按钮）
       this._uiBottomBar = new BottomBar({
         zIndex: UIManager.LAYER.CONTROL,
         cardW: SCREEN_WIDTH - PADDING * 2,
         buttonPress: this._btnPress,
+        trialMode: databus.returnState === 'editor',
         onHintClick: function () {
           var best = self._hint.show();
           if (best) {
@@ -348,7 +349,11 @@ class PlayingEngine {
     this._loading = true;
     var self = this;
 
-    if (self._cloudFetchedData.has(name)) {
+    // 试玩模式：直接用编辑器提供的关卡数据，不拉云端（新建关卡云端没有）
+    if (databus.returnState === 'editor' && databus.currentLevel && databus.currentLevel.data) {
+      console.log('[Playing] 试玩模式，使用编辑器关卡数据');
+      self._loadAndStart(databus.currentLevel.data);
+    } else if (self._cloudFetchedData.has(name)) {
       // 本次会话已拉取过，直接走缓存
       var cached = self._cloudFetchedData.get(name);
       console.log('[Playing] ' + name + ' 已缓存，直接加载');
