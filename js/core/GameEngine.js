@@ -709,7 +709,7 @@ class GameEngine {
 
     // ===== 猪鼻子 Logo =====
     var logoSize = 72;
-    var logoY = safeTop + 70;
+    var logoY = safeTop + 46;
     this.drawPigNoseLogo(cx, logoY, logoSize);
 
     // 记录标题碰撞区域（用于5连击解锁编辑器）
@@ -736,7 +736,7 @@ class GameEngine {
     var btnW = SCREEN_WIDTH - 64; // 两侧各留32px
     var btnH = 64;
     var btnX = (SCREEN_WIDTH - btnW) / 2;
-    var mainBtnY = titleY + 80;
+    var mainBtnY = titleY + 56;
     var mainBtnCX = btnX + btnW / 2;
     var mainBtnCY = mainBtnY + btnH / 2;
 
@@ -800,7 +800,7 @@ class GameEngine {
     ctx.restore();
 
     // ===== 统计卡片 =====
-    var cardY = arenaBtnY + arenaBtnH + 20;
+    var cardY = arenaBtnY + arenaBtnH + 14;
     var cardH = 70;
     this.drawScoreCard(btnX, cardY, btnW, cardH, 22);
 
@@ -839,7 +839,7 @@ class GameEngine {
     // ===== 左上角金币徽章 =====
     var goldAmount = GoldSystem.getGold();
     var badgeX = 16;
-    var badgeY = safeTop + 6;
+    var badgeY = safeTop + 2;
     var badgeH = 26;
     var badgeR = 13;
 
