@@ -79,6 +79,8 @@ class EditorEngine {
     if (databus.returnState === 'editor') {
       this._cloudLoading = false;
       this.input.on('editor', (e) => this.handleEvent(e));
+      // 检查试玩逃脱序列，弹出提示数据保存对话框
+      this._checkTrialHintData();
       return;
     }
 
@@ -659,6 +661,43 @@ class EditorEngine {
     }
   }
 
+  /**
+   * 试玩返回时检测逃脱序列，弹出提示数据保存对话框
+   */
+  _checkTrialHintData() {
+    var seq = databus._trialEscapeSequence;
+    if (!seq || seq.length === 0) {
+      // 清理标记
+      databus._trialEscapeSequence = null;
+      return;
+    }
+    // 标记为脏（提示数据变更需要保存）
+    this.confirmDialog = {
+      title: '保存提示数据',
+      message: '检测到试玩通关路径，是否保存为提示数据？',
+      buttonLabels: ['保存', '不保存'],
+      onSave: () => {
+        // 应用逃脱序列到编辑器猪：顺序 = hintId，方向 = hintAngle
+        var pigs = this.gp.pigs;
+        for (var i = 0; i < seq.length; i++) {
+          var pig = pigs.find(function (p) { return p.id === seq[i].pigId; });
+          if (pig) {
+            pig.hintId = i + 1;
+            pig.hintAngle = seq[i].angle;
+          }
+        }
+        this.dirty = true;
+        databus._trialEscapeSequence = null;
+        this.showToast('提示数据已保存，请点击保存按钮上传');
+        this.confirmDialog = null;
+      },
+      onSkip: () => {
+        databus._trialEscapeSequence = null;
+        this.confirmDialog = null;
+      }
+    };
+  }
+
   // ============================================================
   // 关卡数据
   // ============================================================
@@ -850,8 +889,8 @@ class EditorEngine {
       return;
     }
     entry.data = this.getLevelData();
-    // 每次保存时 version+1
-    entry.data.version = (entry.data.version || 0) + 1;
+    // 发送当前版本号，云端负责 +1 并返回新版本（乐观并发控制要求 clientVersion === serverVersion）
+    entry.data.version = entry.data.version || 0;
     entry._version = entry.data.version;
     entry.isDirty = false;
     this.dirty = false;
@@ -1042,12 +1081,10 @@ class EditorEngine {
       const res = await cloud.uploadLevel(entry.name, uploadData, version, published);
 
       if (res.code === 2) {
-        // 版本冲突：其他设备已保存 → 自动刷新为云端最新版本
-        console.log(`[Cloud] 关卡 ${entry.name} 版本冲突 (本地v${version}, 云端v${res.serverVersion})，自动刷新`);
+        // 版本冲突：其他设备已保存更新版本 → 用云端最新数据覆盖本地
+        console.log(`[Cloud] 关卡 ${entry.name} 版本冲突 (本地v${version}, 云端v${res.serverVersion})，拉取云端覆盖本地`);
         this.showToast('关卡已被其他设备更新，已刷新为最新版本');
-        // 用服务器返回的最新数据覆盖本地
         if (res.data) {
-          // 将服务器 version 写入数据再存储
           res.data.version = res.serverVersion;
           entry.data = res.data;
           entry.isDirty = false;
@@ -1057,8 +1094,8 @@ class EditorEngine {
           const fullPath = `${dir}/${entry.fileName}`;
           fs.writeFileSync(fullPath, JSON.stringify(res.data, null, 2), 'utf8');
           entry._version = res.serverVersion;
-          entry._cloudId = res.id;
-          this._saveCloudMeta(entry.name, res.id, res.serverVersion);
+          entry._cloudId = res.id || entry._cloudId;
+          this._saveCloudMeta(entry.name, res.id || entry._cloudId, res.serverVersion);
           // 如果当前正在编辑这个关卡，刷新编辑器内容
           if (this.currentLevelIdx >= 0 && this.levelList[this.currentLevelIdx] === entry) {
             this.loadLevelData(entry.data);
@@ -2580,21 +2617,28 @@ class EditorEngine {
     const totalBtnW = btnW * 2 + gap;
     const btnBaseX = dx + (dw - totalBtnW) / 2;
 
-    // "保存并跳转" — 绿色
+    var saveLabel = '保存并跳转';
+    var skipLabel = '直接跳转';
+    if (d.buttonLabels && d.buttonLabels.length >= 2) {
+      saveLabel = d.buttonLabels[0];
+      skipLabel = d.buttonLabels[1];
+    }
+
+    // 保存按钮 — 绿色
     ctx.fillStyle = '#4CAF50';
     roundRect(ctx, btnBaseX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('保存并跳转', btnBaseX + btnW / 2, btnY + btnH / 2);
+    ctx.fillText(saveLabel, btnBaseX + btnW / 2, btnY + btnH / 2);
 
-    // "直接跳转" — 灰色
+    // 跳过按钮 — 灰色
     const skipX = btnBaseX + btnW + gap;
     ctx.fillStyle = '#999';
     roundRect(ctx, skipX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.fillText('直接跳转', skipX + btnW / 2, btnY + btnH / 2);
+    ctx.fillText(skipLabel, skipX + btnW / 2, btnY + btnH / 2);
 
     this._confirmSaveRect = { x: btnBaseX, y: btnY, w: btnW, h: btnH };
     this._confirmSkipRect = { x: skipX, y: btnY, w: btnW, h: btnH };

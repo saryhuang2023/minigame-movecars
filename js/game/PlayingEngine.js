@@ -124,6 +124,7 @@ class PlayingEngine {
     this._guide.reset();
     this._lastFrameTime = 0;       // 防止切关卡时 dt 突增
     this._hasUsedRemove = false;
+    this._pendingResume = false;    // 防御：每次重置关卡状态都清理恢复标志
     // 小金猪状态
     this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
     this._gotCrown = this._hadCrownBefore;
@@ -140,6 +141,9 @@ class PlayingEngine {
     // 金币奖励状态
     this._pendingGoldReward = false;
     this._goldAmount = 0;
+    // 试玩逃脱序列记录（供编辑器提示数据自动生成）
+    this._trialEscapeSequence = [];
+    this._trialUsedRemove = false;
     // 关主状态重置 + 读取个人记录
     this._master.reset();
     this._master.init(this.levelName);
@@ -209,12 +213,11 @@ class PlayingEngine {
       });
       this.ui.add(this._uiTopBar, UIManager.LAYER.CONTROL);
 
-      // Layer 2 — BottomBar（试玩模式隐藏提示/移除按钮）
+      // Layer 2 — BottomBar
       this._uiBottomBar = new BottomBar({
         zIndex: UIManager.LAYER.CONTROL,
         cardW: SCREEN_WIDTH - PADDING * 2,
         buttonPress: this._btnPress,
-        trialMode: databus.returnState === 'editor',
         onHintClick: function () {
           var best = self._hint.show();
           if (best) {
@@ -436,6 +439,15 @@ class PlayingEngine {
 
   activate() {
     var name = databus.currentLevel ? databus.currentLevel.name : '';
+
+    // 试玩模式：跳过存档自检 + 清理旧存档，强制使用编辑器数据
+    if (databus.returnState === 'editor') {
+      console.log('[LOG] activate 试玩模式，跳过存档自检，清理旧存档');
+      this._clearCheckpoint();
+      this.startLevel(name, { resume: false });
+      return;
+    }
+
     // 自检：外部未设 _checkpointResume 时，主动读取存档（杀进程重启场景）
     if (!databus._checkpointResume) {
       var cp;
@@ -820,18 +832,39 @@ class PlayingEngine {
       // 连击系统 ——— 每次逃脱触发
       this._combo.trigger();
 
+      // 试玩模式：记录逃脱序列（供编辑器提示数据自动生成）
+      if (databus.returnState === 'editor') {
+        this._trialEscapeSequence.push({ pigId: pigId, angle: pig.angle });
+      }
+
       // 所有猪都逃脱 → 通关
       if (this.gp.pigs.length === 0) {
-        // 结算开始，面板就绪但先隐藏
         this._markCleared();
         this._victory = true;
-        setTimeout(() => {
-          if (this._earnedCrown) {
-            this._victoryAnim.startCrown(this._boardCardX + this._boardCardW / 2, this._boardCardY + this._boardCardH / 2);
-          } else {
-            this._checkMasterAfterCrown();
-          }
-        }, 1000);
+        // 试玩模式：跳过结算动画和面板，弹出系统提示框
+        if (databus.returnState === 'editor') {
+          // 传递逃脱序列数据（供编辑器提示数据自动生成）
+          databus._trialEscapeSequence = this._trialUsedRemove ? null : this._trialEscapeSequence.slice();
+          wx.showModal({
+            title: '试玩结束',
+            content: '已将所有小猪推出棋盘',
+            showCancel: false,
+            confirmText: '返回编辑',
+            success: function (res) {
+              if (res.confirm) {
+                databus.gameState = 'editor';
+              }
+            }
+          });
+        } else {
+          setTimeout(() => {
+            if (this._earnedCrown) {
+              this._victoryAnim.startCrown(this._boardCardX + this._boardCardW / 2, this._boardCardY + this._boardCardH / 2);
+            } else {
+              this._checkMasterAfterCrown();
+            }
+          }, 1000);
+        }
       }
       // 动画结束后清理渲染层
       setTimeout(() => {
@@ -853,21 +886,27 @@ class PlayingEngine {
 
   _markCleared() {
     console.log('[关主] _markCleared called, level=' + this.levelName + ' steps=' + this.steps);
-    // 推进 lastLevelIndex：通关后无论点"退出"还是"下一关"，下次"开始游戏"都进下一关
-    var currentIdx = databus.currentLevelIndex;
-    var savedRaw = wx.getStorageSync('lastLevelIndex');
-    var savedIdx = (savedRaw !== '' && savedRaw !== undefined && savedRaw !== null) ? parseInt(savedRaw, 10) : -1;
-    if (currentIdx >= 0 && currentIdx >= savedIdx) {
-      var nextIdx = currentIdx + 1;
-      if (nextIdx < databus.projectLevels.length) {
-        wx.setStorageSync('lastLevelIndex', nextIdx);
-        console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
+    var isTrial = databus.returnState === 'editor';
+    // 推进 lastLevelIndex（试玩模式不推进）
+    if (!isTrial) {
+      var currentIdx = databus.currentLevelIndex;
+      var savedRaw = wx.getStorageSync('lastLevelIndex');
+      var savedIdx = (savedRaw !== '' && savedRaw !== undefined && savedRaw !== null) ? parseInt(savedRaw, 10) : -1;
+      if (currentIdx >= 0 && currentIdx >= savedIdx) {
+        var nextIdx = currentIdx + 1;
+        if (nextIdx < databus.projectLevels.length) {
+          wx.setStorageSync('lastLevelIndex', nextIdx);
+          console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
+        }
       }
     }
     // 清理存档：通关后杀进程恢复会出现"关卡已完成但仍有存档"的矛盾，这里清除掉
     try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
-    // 小金猪：已获得过则跳过，不再重复检查/写存储/播动画
-    if (this._hadCrownBefore) {
+    // 小金猪：试玩模式不写存储；已获得过则跳过，不再重复检查/写存储/播动画
+    if (isTrial) {
+      this._earnedCrown = false;
+      this._gotCrown = false;
+    } else if (this._hadCrownBefore) {
       // 仍设 _gotCrown=true 确保渲染显示金色（重玩场景）
       this._gotCrown = true;
       this._earnedCrown = false;
@@ -881,10 +920,10 @@ class PlayingEngine {
       this._gotCrown = false;
       console.log('[小金猪] 未获得 ' + this.levelName + ' ' + this.steps + '/' + (this._crownSteps || '?') + '步');
     }
-    // 金币奖励：首次通关本关 → 计算奖励金额（独立于小金猪系统）
+    // 金币奖励：试玩模式不触发；首次通关本关 → 计算奖励金额（独立于小金猪系统）
     this._pendingGoldReward = false;
     this._goldAmount = 0;
-    if (GoldSystem.isFirstGoldClear(this.levelName)) {
+    if (!isTrial && GoldSystem.isFirstGoldClear(this.levelName)) {
       var idx = databus.currentLevelIndex;
       var reward = GoldSystem.calculateReward(idx);
       if (reward > 0) {
@@ -1247,19 +1286,34 @@ class PlayingEngine {
       this.gp.clearPigOccupancy(pig.id);
     }
     this._hasUsedRemove = true;
+    this._trialUsedRemove = true;   // 试玩中用了移除 → 不保存提示数据
     this._hint.clear();
 
     // 所有猪都消失 → 通关
     if (this.gp.pigs.length === 0) {
       this._markCleared();
       this._victory = true;
-      setTimeout(function() {
-        if (this._earnedCrown) {
-          this._victoryAnim.startCrown(this._boardCardX + this._boardCardW / 2, this._boardCardY + this._boardCardH / 2);
-        } else {
-          this._checkMasterAfterCrown();
-        }
-      }.bind(this), 1000);
+      if (databus.returnState === 'editor') {
+        // 使用了移除 → 不保存提示数据
+        databus._trialEscapeSequence = null;
+        wx.showModal({
+          title: '试玩结束',
+          content: '已将所有小猪移除棋盘',
+          showCancel: false,
+          confirmText: '返回编辑',
+          success: function (res) {
+            if (res.confirm) { databus.gameState = 'editor'; }
+          }
+        });
+      } else {
+        setTimeout(function () {
+          if (this._earnedCrown) {
+            this._victoryAnim.startCrown(this._boardCardX + this._boardCardW / 2, this._boardCardY + this._boardCardH / 2);
+          } else {
+            this._checkMasterAfterCrown();
+          }
+        }.bind(this), 1000);
+      }
     }
     wx.showToast({ title: '已移除', icon: 'none', duration: 1000 });
   }
@@ -1276,6 +1330,10 @@ class PlayingEngine {
     }
     if (this.steps === 0) {
       console.log('[LOG] 跳过保存: 步数为0，无操作无需保存');
+      return;
+    }
+    if (databus.returnState === 'editor') {
+      console.log('[LOG] 跳过保存: 试玩模式');
       return;
     }
     if (this._victory) {
