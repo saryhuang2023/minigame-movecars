@@ -723,14 +723,25 @@ class GameplayEngine {
     if (diff < -180) diff += 360;
     if (Math.abs(diff) < 0.5) return;
 
-    // 碰撞锁：被挡住后，同方向继续推就跳过追逐，防止 12° 步长跳过挡路猪撞到后面的猪
+    // 碰撞锁：被挡住后，newAngle 不得超过上次碰撞边界，防止 12° 步长跳过挡路猪
     var chaseDir = Math.sign(diff);
-    if (ds._blockedDir === chaseDir) return;
 
     const step = Math.max(-CHASE_SPEED, Math.min(CHASE_SPEED, diff));
     let newAngle = ds.displayAngle + step;
     newAngle = ((newAngle % 360) + 360) % 360;
     newAngle = Math.round(newAngle);
+
+    // 如果上次碰撞锁定了某个边界角度，且本次追逐方向与锁方向一致，则 cap newAngle 不超过边界
+    if (ds._blockedAngle !== undefined && ds._blockedDir === chaseDir) {
+      // 计算新角度是否越过了 _blockedAngle（在追逐方向上）
+      var past = newAngle - ds._blockedAngle;
+      if (past > 180) past -= 360;
+      if (past < -180) past += 360;
+      if (Math.sign(past) === chaseDir) {
+        // 越过了 → 停在边界
+        newAngle = ds._blockedAngle;
+      }
+    }
 
     const check = this.checkAngleValid(ds.tailIndex, len, targetId, newAngle, false);
 
@@ -757,7 +768,18 @@ class GameplayEngine {
         ds.lastValid = { tailIndex: ds.tailIndex, length: len, angle: newAngle };
         ds.headHoleIdx = headHoleIdx;
         ds.lastCollidedId = null;
-        ds._blockedDir = 0;
+        // 碰撞锁带回退阈值：仅当猪后退足够远才解锁，防止快速回推→前推跳过挡路猪
+        if (ds._blockedAngle !== undefined) {
+          var backtrack = newAngle - ds._blockedAngle;
+          if (backtrack > 180) backtrack -= 360;
+          if (backtrack < -180) backtrack += 360;
+          if (Math.abs(backtrack) > CHASE_SPEED * 2) {
+            ds._blockedAngle = undefined;
+            ds._blockedDir = 0;
+          }
+        } else {
+          ds._blockedDir = 0;
+        }
         ds.isValidNow = true;
       } else {
         ds.headHoleIdx = -1;
@@ -799,6 +821,7 @@ class GameplayEngine {
         }
         ds.lastCollidedId = check.collidedId;
         ds._blockedDir = chaseDir;
+        ds._blockedAngle = ds.displayAngle;
       }
       ds.isValidNow = false;
     } else {
