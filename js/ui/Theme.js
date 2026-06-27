@@ -25,11 +25,6 @@ const Theme = {
 
     white: '#FFFFFF',
     surface: 'rgba(255,255,255,0.92)',
-
-    // 连击进度条
-    combo_safe: '#4ADE80',         // >50% 绿色
-    combo_warn: '#F59E0B',         // 25-50% 黄色
-    combo_danger: '#EF4444',       // <25% 红色
   },
 
   // ========== 间距 ==========

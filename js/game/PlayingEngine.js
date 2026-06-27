@@ -17,8 +17,6 @@ const BottomBar = require('../ui/widgets/BottomBar.js');
 const MasterPanel = require('../ui/widgets/MasterPanel.js');
 const VictoryPopup = require('../ui/widgets/VictoryPopup.js');
 const AuthDialog = require('../ui/widgets/AuthDialog.js');
-const ComboWidget = require('../ui/widgets/ComboWidget.js');
-const ComboSystem = require('./ComboSystem.js');
 const MasterSystem = require('./MasterSystem.js');
 const HintSystem = require('./HintSystem.js');
 const VictoryAnimation = require('./VictoryAnimation.js');
@@ -44,7 +42,6 @@ const CARD_PADDING = 12;    // 棋盘卡片内边距
 const ESCAPE_SPEED = 120;  // 正常逃脱速度（逻辑像素/秒）
 
 const SNAP_ANGLE_PUSH_THRESHOLD = 45;
-const COMBO_WINDOW = 3000;             // 连击窗口（毫秒）
 
 class PlayingEngine {
   constructor(input) {
@@ -58,8 +55,6 @@ class PlayingEngine {
     this._victory = false;
     this._exitBtn = null;
     this._nextBtn = null;
-    // 连击系统
-    this._combo = new ComboSystem(COMBO_WINDOW);
     // 关主系统
     this._master = new MasterSystem(this._loadAvatarImage.bind(this));
     // 提示系统
@@ -129,7 +124,6 @@ class PlayingEngine {
     this._victoryAnimStart = 0;
     this._victoryAnimator.close();  // 立即关闭（无动画）
     this._victoryClosing = false;
-    this._combo.reset();
     this._hint.clear();
     this._guide.reset();
     this._lastFrameTime = 0;       // 防止切关卡时 dt 突增
@@ -181,13 +175,6 @@ class PlayingEngine {
         },
       });
       this.ui.add(this._uiMasterPanel, UIManager.LAYER.INFO);
-
-      // Layer 1 — ComboWidget（自管理 PopupAnimator）
-      this._uiComboWidget = new ComboWidget({
-        zIndex: UIManager.LAYER.INFO,
-      });
-      this._combo.setWidget(this._uiComboWidget);
-      this.ui.add(this._uiComboWidget, UIManager.LAYER.INFO);
 
       // Layer 1 — CrownPigWidget
       this._uiCrownPig = new CrownPigWidget({
@@ -260,7 +247,6 @@ class PlayingEngine {
       console.error('[PlayingEngine] _setupUI 失败:', e);
       this.ui = null;
       this._uiMasterPanel = null;
-      this._uiComboWidget = null;
       this._uiCrownPig = null;
       this._uiTopBar = null;
       this._uiBottomBar = null;
@@ -296,9 +282,6 @@ class PlayingEngine {
       this._uiMasterPanel.setAvatar(avatarImg);
     }
 
-    // ComboWidget — 仅同步位置（计数/动画由 ComboWidget 内部管理）
-    this._uiComboWidget.updatePosition(this._boardCardY);
-
     // CrownPigWidget
     this._uiCrownPig.setHidden(databus.returnState === 'editor');
     this._uiCrownPig.setData(this._crownSteps, this.steps, this._gotCrown);
@@ -330,7 +313,6 @@ class PlayingEngine {
     // 0. 如果当前有关卡在运行，先反初始化
     if (this.levelName) {
       this.input.off('playing');
-      this._combo.reset();
       this._guide.reset();
       this._destroyAuthBtn(true);
     }
@@ -462,7 +444,6 @@ class PlayingEngine {
 
   deactivate() {
     this.input.off('playing');
-    this._combo.reset();
     this._guide.reset();         // 退出关卡时强制结束引导
     this._destroyAuthBtn(true);  // 立即关闭，无动画
     this._clearCheckpoint();     // 任何退出关卡路径都清理存档
@@ -828,9 +809,6 @@ class PlayingEngine {
       // 如果推出的是提示目标 → 清除提示
       this._hint.onPigExited(pigId);
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
-
-      // 连击系统 ——— 每次逃脱触发
-      this._combo.trigger();
 
       // 试玩模式：记录逃脱序列（供编辑器提示数据自动生成）
       if (databus.returnState === 'editor') {
@@ -1245,10 +1223,7 @@ class PlayingEngine {
     this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
     this.gp.renderBoard(ctx, { hintPigId: this._hint.getTargetId() });
 
-    // 3. 连击组件（UIManager）
-    this._uiComboWidget.render(ctx);
-
-    // 3.5 关主卡片（UIManager）
+    // 3. 关主卡片（UIManager）
     this._uiMasterPanel.render(ctx);
 
     // 3.8 小金猪（UIManager）
