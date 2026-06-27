@@ -337,7 +337,7 @@ let _pigParts = null;
 function _loadPigParts() {
   if (_pigParts) return _pigParts;
 
-  var base = 'assets/animals/roles/pig/idle/1/';
+  var base = 'assets/skins/0/idle/';
   var parts = {
     frameImg: wx.createImage(),
     _loaded: false,
@@ -374,7 +374,7 @@ let _runParts = null;
 function _loadRunParts() {
   if (_runParts) return _runParts;
 
-  var base = 'assets/animals/roles/pig/run/1/';
+  var base = 'assets/skins/0/run/';
   var parts = {
     frameImg: wx.createImage(),
     _loaded: false,
@@ -410,7 +410,7 @@ let _escapeParts = null;
 function _loadEscapeParts() {
   if (_escapeParts) return _escapeParts;
 
-  var base = 'assets/animals/roles/pig/escape/1/';
+  var base = 'assets/skins/0/escape/';
   var parts = {
     frameImg: wx.createImage(),
     _loaded: false,
@@ -446,7 +446,7 @@ let _hintParts = null;
 function _loadHintParts() {
   if (_hintParts) return _hintParts;
 
-  var base = 'assets/animals/roles/pig/hint/1/';
+  var base = 'assets/skins/0/hint/';
   var parts = {
     frameImg: wx.createImage(),
     _loaded: false,
