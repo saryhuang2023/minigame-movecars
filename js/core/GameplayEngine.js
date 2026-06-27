@@ -998,12 +998,14 @@ class GameplayEngine {
       var flashAlpha = this._getFlashOverlayAlpha(pig.id);
       var drawAnim = (isHinted || flashAlpha > 0) ? AnimType.HINT : undefined;
 
-      // Tint：被撞优先于提示（两者都激活时闪红更醒目）
+      // Tint 优先级：碰撞闪红 > 提示粉色 > 拖拽/选中金色
       var tint = null;
       if (flashAlpha > 0) {
-        tint = { color: '#CC1111', alpha: 0.75 * flashAlpha };
+        tint = { color: '#C45A5A', alpha: 0.60 * flashAlpha };
       } else if (isHinted) {
-        tint = { color: '#FF80A8', alpha: 0.55 };
+        tint = { color: '#E88DA0', alpha: 0.50 };
+      } else if (isDragPig || (this.selectedPigId != null && this.selectedPigId === pig.id)) {
+        tint = { color: '#C9A343', alpha: 0.38 };
       }
 
       // 正常绘制
