@@ -13,6 +13,8 @@ class HintSystem {
     this._gp = gp;
     this._target = null;  // 当前被提示的猪
     this._timer = null;   // 幽灵动画定时器 ID
+    // 预绑定：避免每次 startGhostTimer 都创建新的 bind 函数对象
+    this._tick = this._playGhostAnimation.bind(this);
   }
 
   // ------------------------------------------------------------------
@@ -56,7 +58,7 @@ class HintSystem {
       clearInterval(this._timer);
       this._timer = null;
     }
-    this._gp.ghostAnimations = [];
+    this._gp.ghostAnimations.length = 0;
     this._target = null;
   }
 
@@ -82,15 +84,20 @@ class HintSystem {
 
   _startGhostTimer() {
     if (this._timer) clearInterval(this._timer);
-    this._timer = setInterval(this._playGhostAnimation.bind(this), 2000);
-    this._playGhostAnimation(); // 立即播放第一次
+    this._timer = setInterval(this._tick, 2000);
+    this._tick(); // 立即播放第一次
   }
 
   _playGhostAnimation() {
+    // 防止 clear() 后定时器回调仍执行
+    if (!this._timer) return;
     if (!this._target) return;
     var pig = this._target;
     // 确保猪还在（未被移除）
-    if (this._gp.pigs.indexOf(pig) < 0) return;
+    if (this._gp.pigs.indexOf(pig) < 0) {
+      this.clear();
+      return;
+    }
     var ha = pig.hintAngle != null ? pig.hintAngle : pig.angle;
     var r = this._gp.getPigRect(pig.tailIndex, pig.length, ha);
     if (!r) return;

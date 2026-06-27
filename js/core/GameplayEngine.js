@@ -891,6 +891,12 @@ class GameplayEngine {
       a.currentDx = a.dirX * a.totalDist * eased;
       a.currentDy = a.dirY * a.totalDist * eased;
     }
+    // 先清理失效的幽灵条目（对应猪已不存在）
+    for (var gi = this.ghostAnimations.length - 1; gi >= 0; gi--) {
+      if (!this.pigs.some(function(p) { return p.id === this.ghostAnimations[gi].pigId; }, this)) {
+        this.ghostAnimations.splice(gi, 1);
+      }
+    }
     for (const g of this.ghostAnimations) {
       var elapsed = now - g.startTime;
       var progress = elapsed / g.duration;
