@@ -1180,20 +1180,24 @@ class EditorEngine {
   }
 
   // 逐个下载（兜底方案，当 batchDownloadLevels 不可用时）
+  // listLevels() 返回 {minLevel, maxLevel}，按数字区间逐个下载
   async _pullCloudLevelsFallback() {
-    const cloudList = await cloud.listLevels();
-    if (!cloudList || cloudList.length === 0) return;
+    const range = await cloud.listLevels();
+    if (!range || range.maxLevel === 0) return;
 
     const fs = wx.getFileSystemManager();
     const dir = `${wx.env.USER_DATA_PATH}/levels`;
     try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
 
-    for (const cl of cloudList) {
+    const minLevel = range.minLevel || 0;
+    const maxLevel = range.maxLevel || 0;
+    for (let lv = minLevel; lv <= maxLevel; lv++) {
+      var name = String(lv).padStart(4, '0');
       try {
-        const full = await cloud.downloadLevel(cl._id);
+        const full = await cloud.downloadLevel(null, name, false);
         if (full && full.data) {
-          const cloudVersion = (full.version != null) ? full.version : (cl.version || 1);
-          const fileName = cl.name + '.json';
+          const cloudVersion = (full.version != null) ? full.version : (full._version || 1);
+          const fileName = name + '.json';
           full.data.version = cloudVersion;
           // crownSteps 双保险：优先用 full.data 内嵌值，否则用顶级字段
           if (full.data.crownSteps == null && full.crownSteps != null) {
@@ -1206,10 +1210,10 @@ class EditorEngine {
             full.data.ready = 0;
           }
           fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(full.data, null, 2), 'utf8');
-          this._saveCloudMeta(cl.name, cl._id, cloudVersion);
+          this._saveCloudMeta(name, full._id, cloudVersion);
         }
       } catch (e) {
-        console.warn(`[Cloud] 下载 ${cl.name} 失败:`, e);
+        console.warn(`[Cloud] 下载 ${name} 失败:`, e);
       }
     }
   }

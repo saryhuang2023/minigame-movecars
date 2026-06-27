@@ -194,8 +194,8 @@ class GameplayEngine {
     const capRadius = this.scaledDiameter * 2 / 3;
     // 猪间碰撞半径 = 孔直径 * 1/3（保持窄，避免猪之间轻易碰撞）
     const collisionCapRadius = this.scaledDiameter / 3;
-    // 胶囊线段端点：尾部不延长也不收缩（碰撞区恰好到尾孔中心）
-    const tailShrink = 0;
+    // 胶囊线段端点：尾部收缩孔直径的 1/6（减少尾部碰撞区）
+    const tailShrink = this.scaledDiameter / 6;
     const capTailX = tail.x + tailShrink * cosL;
     const capTailY = tail.y + tailShrink * sinL;
     const capHeadX = cx + hw * cosL;
