@@ -69,6 +69,9 @@ class EditorEngine {
 
     // ===== 金猪阈值 =====
     this._crownSteps = 0;
+
+    // ===== 碰撞框全局开关 =====
+    this._showAllCollisionBoxes = false;
   }
 
   // ============================================================
@@ -1481,7 +1484,7 @@ class EditorEngine {
 
     // 计算提示文字（提示模式下不显示操作提示）
     let hintText = '';
-    var opts = { hintText, showSelection: !this.hintMode, showCollisionBox: !this.hintMode };
+    var opts = { hintText, showSelection: !this.hintMode, showAllCollisionBoxes: this._showAllCollisionBoxes };
     if (!this.hintMode) {
       if (this.gp.selectedPigId != null && !this.gp.dragState) {
         const pig = this.gp.pigs.find(p => p.id === this.gp.selectedPigId);
@@ -1891,6 +1894,23 @@ class EditorEngine {
       this.showToast(this.hintMode ? '提示模式：选中猪后点击编号或方向' : '退出提示模式');
     }});
     x += hintModeW + 12;
+
+    // 碰撞框开关按钮
+    const collBoxW = 42;
+    this._drawBtn('btm:collBox', x, btnY1, collBoxW, btnH, function() {
+      ctx.fillStyle = this._showAllCollisionBoxes ? '#4CAF50' : 'rgba(76, 175, 80, 0.2)';
+      roundRect(ctx, x, btnY1, collBoxW, btnH, 6);
+      ctx.fill();
+      ctx.fillStyle = this._showAllCollisionBoxes ? '#fff' : '#4CAF50';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('框', x + collBoxW / 2, midY1);
+    }.bind(this));
+    this.bottomBtns.push({ x, y: btnY1, w: collBoxW, h: btnH, id: 'btm:collBox', onClick: () => {
+      this._showAllCollisionBoxes = !this._showAllCollisionBoxes;
+    }});
+    x += collBoxW + 8;
 
     // 金猪输入框
     ctx.fillStyle = '#999';

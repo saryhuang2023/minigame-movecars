@@ -194,8 +194,8 @@ class GameplayEngine {
     const capRadius = this.scaledDiameter * 2 / 3;
     // 猪间碰撞半径 = 孔直径 * 1/3（保持窄，避免猪之间轻易碰撞）
     const collisionCapRadius = this.scaledDiameter / 3;
-    // 胶囊线段端点：尾部收缩孔直径的 1/3（减少尾部碰撞区）
-    const tailShrink = this.scaledDiameter / 3;
+    // 胶囊线段端点：尾部不延长也不收缩（碰撞区恰好到尾孔中心）
+    const tailShrink = 0;
     const capTailX = tail.x + tailShrink * cosL;
     const capTailY = tail.y + tailShrink * sinL;
     const capHeadX = cx + hw * cosL;
@@ -1008,11 +1008,6 @@ class GameplayEngine {
         pr.drawTinted(ctx, pig, off.dx, off.dy, drawAnim, tint);
       }
 
-      // 拖拽中：头部绿点 + 碰撞区空心虚线轮廓（仅编辑模式）
-      if (options.showCollisionBox && isDragPig) {
-        pr.drawHeadDot(ctx, pig, off.dx, off.dy);
-        pr.drawCollisionBox(ctx, pig, off.dx, off.dy);
-      }
     }
 
     // 幽灵动画（面向 hintAngle 飞行，前 10% 淡入，循环播放）
@@ -1035,12 +1030,12 @@ class GameplayEngine {
       pr.draw(ctx, fp, off.dx, off.dy, AnimType.ESCAPE);
     }
 
-    // 选中时：碰撞区空心虚线轮廓 + 头部绿色圆点（仅编辑模式，无拖拽时）
-    if (options.showCollisionBox && options.showSelection && this.selectedPigId != null && !this.dragState) {
-      const pig = this.pigs.find(p => p.id === this.selectedPigId);
-      if (pig) {
-        pr.drawCollisionBox(ctx, pig, 0, 0);
-        pr.drawHeadDot(ctx, pig, 0, 0);
+    // 全局碰撞框开关：显示所有猪的碰撞区虚线框 + 头部绿点
+    if (options.showAllCollisionBoxes) {
+      for (const pig of this.pigs) {
+        const off = animOffs[pig.id] || { dx: 0, dy: 0 };
+        pr.drawCollisionBox(ctx, pig, off.dx, off.dy);
+        pr.drawHeadDot(ctx, pig, off.dx, off.dy);
       }
     }
 
