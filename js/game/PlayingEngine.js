@@ -12,7 +12,6 @@ const GameplayEngine = require('../core/GameplayEngine.js');
 // === UI 层 ===
 const Theme = require('../ui/Theme.js');
 const UIManager = require('../ui/UIManager.js');
-const BoardCard = require('../ui/widgets/BoardCard.js');
 const TopBar = require('../ui/widgets/TopBar.js');
 const BottomBar = require('../ui/widgets/BottomBar.js');
 const MasterPanel = require('../ui/widgets/MasterPanel.js');
@@ -26,6 +25,8 @@ const VictoryAnimation = require('./VictoryAnimation.js');
 const CrownPigWidget = require('../ui/widgets/CrownPigWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
 const GoldSystem = require('./GoldSystem.js');
+const SkinSystem = require('./SkinSystem.js');
+const SceneDefaults = require('./SceneDefaults.js');
 
 // 矩形碰撞检测辅助
 function _hitRect(px, py, rect) {
@@ -105,6 +106,15 @@ class PlayingEngine {
     // 金币奖励
     this._pendingGoldReward = false; // 是否有待领取的金币奖励
     this._goldAmount = 0;           // 本次通关奖励金币数
+
+    // 场景背景图
+    this._sceneBgImg = wx.createImage();
+    this._sceneBgLoaded = false;
+    var self = this;
+    this._sceneBgImg.onload = function () {
+      self._sceneBgLoaded = true;
+    };
+    this._sceneBgImg.src = SceneDefaults.background;
   }
 
   /**
@@ -159,10 +169,6 @@ class PlayingEngine {
       this.ui = new UIManager(Theme);
       this.ui.screenWidth = SCREEN_WIDTH;
       this.ui.screenHeight = SCREEN_HEIGHT;
-
-      // Layer 0 — BoardCard（棋盘白色卡片背景）
-      this._uiBoardCard = new BoardCard({ zIndex: UIManager.LAYER.BOARD_CARD });
-      this.ui.add(this._uiBoardCard, UIManager.LAYER.BOARD_CARD);
 
       // Layer 1 — MasterPanel（关主面板，数据后填）
       this._uiMasterPanel = new MasterPanel({
@@ -253,7 +259,6 @@ class PlayingEngine {
       // 初始化失败：清空所有引用，确保 render() 的 guard 能兜底
       console.error('[PlayingEngine] _setupUI 失败:', e);
       this.ui = null;
-      this._uiBoardCard = null;
       this._uiMasterPanel = null;
       this._uiComboWidget = null;
       this._uiCrownPig = null;
@@ -266,13 +271,7 @@ class PlayingEngine {
 
   /** 每帧更新 UI 层数据（引擎 → UI 组件单向数据流） */
   _syncUIData() {
-    if (!this._uiBoardCard) return;  // 第一个创建的组件，作为哨兵
-
-    // BoardCard 位置
-    this._uiBoardCard.updatePosition(
-      this._boardCardX, this._boardCardY,
-      this._boardCardW, this._boardCardH
-    );
+    if (!this._uiTopBar) return;  // 哨兵检查
 
     // TopBar 位置 + 内容
     this._uiTopBar.setBounds(0, databus.safeTop, this._boardCardW, Theme.layout.topBarH);
@@ -309,7 +308,6 @@ class PlayingEngine {
     // VictoryPopup
     this._uiVictoryPopup.setData({
       steps: this.steps,
-      maxCombo: this._combo.getMaxCombo(),
       isNewMaster: this._master.isNewMaster(),
       hasCrown: this._earnedCrown,
       returnState: databus.returnState || 'menu',
@@ -695,7 +693,8 @@ class PlayingEngine {
     }
 
     // 棋盘区域：找小猪，按下即激活拖拽
-    const hit = this.gp.getPigAtPoint(x, y);
+    var boardPos = this.gp.screenToBoard(x, y);
+    const hit = this.gp.getPigAtPoint(boardPos.x, boardPos.y);
     if (hit) {
       const pig = this.gp.pigs.find(p => p.id === hit.id);
       if (pig) {
@@ -725,7 +724,8 @@ class PlayingEngine {
       if (!this._rotateHandle) {
         this._rotateHandle = audio.playLooped('rotate_loop');
       }
-      this.gp.handleRotateDrag(x, y);
+      var boardPos = this.gp.screenToBoard(x, y);
+      this.gp.handleRotateDrag(boardPos.x, boardPos.y);
     }
   }
 
@@ -924,8 +924,7 @@ class PlayingEngine {
     this._pendingGoldReward = false;
     this._goldAmount = 0;
     if (!isTrial && GoldSystem.isFirstGoldClear(this.levelName)) {
-      var idx = databus.currentLevelIndex;
-      var reward = GoldSystem.calculateReward(idx);
+      var reward = GoldSystem.calculateReward(this.gp.pigs.length);
       if (reward > 0) {
         this._goldAmount = reward;
         this._pendingGoldReward = true;
@@ -977,6 +976,7 @@ class PlayingEngine {
         lastLevelIndex: lastLevelIndex,
         crowns: crowns,
         gold: GoldSystem.getGold(),
+        skins: SkinSystem.getCloudState(),
         avatarUrl: info.avatarUrl || '',
         nickname: info.nickName || ''
       }).then(function() {
@@ -1195,7 +1195,19 @@ class PlayingEngine {
     if (dt > 0 && dt < 1) this._guide.onFrame(dt); // dt > 1s 视为异常（如切后台），跳过
 
     // 兜底：若 UI 层尚未初始化（_setupUI 可能因异常未执行），静默跳过
-    if (!this._uiBoardCard) return;
+    if (!this._uiTopBar) return;
+
+    // ===== 场景背景图（覆盖 GameEngine 的菜单背景）=====
+    if (this._sceneBgLoaded) {
+      var imgW = this._sceneBgImg.width;
+      var imgH = this._sceneBgImg.height;
+      var scale = Math.max(SCREEN_WIDTH / imgW, SCREEN_HEIGHT / imgH);
+      var dw = imgW * scale;
+      var dh = imgH * scale;
+      var dx = (SCREEN_WIDTH - dw) / 2;
+      var dy = (SCREEN_HEIGHT - dh) / 2;
+      ctx.drawImage(this._sceneBgImg, dx, dy, dw, dh);
+    }
 
     const safeTop = databus.safeTop;
 
@@ -1211,7 +1223,6 @@ class PlayingEngine {
 
     // 加载中：仅渲染 UI 框架，棋盘保持空白
     if (this._loading) {
-      this._uiBoardCard.render(ctx);
       this._uiTopBar.setBounds(0, databus.safeTop, this._boardCardW, Theme.layout.topBarH);
       this._uiTopBar.setLevelText('第 ' + (parseInt(this.levelName) || '1') + ' 关');
       this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
@@ -1229,10 +1240,7 @@ class PlayingEngine {
       return;
     }
 
-    // 1. 棋盘卡片背景（UIManager）
-    this._uiBoardCard.render(ctx);
-
-    // 2. 棋盘主体
+    // 1. 棋盘主体
     this.gp.topBarH = this._boardCardY + CARD_PADDING;
     this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
     this.gp.renderBoard(ctx, { hintPigId: this._hint.getTargetId() });

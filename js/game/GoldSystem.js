@@ -52,42 +52,12 @@ var GoldSystem = {
   },
 
   /**
-   * 查找 levelIndex 所在的章节
-   * @param {number} levelIndex - 关卡全局索引
-   * @returns {Object|null} 章节对象
+   * 计算通关金币奖励 = 该关卡的小猪数量
+   * @param {number} pigCount - 关卡的小猪数量
+   * @returns {number} 金币数量
    */
-  _findChapter: function (levelIndex) {
-    var chapters = this._chapters;
-    if (!chapters || chapters.length === 0) return null;
-    var start = 0;
-    for (var i = 0; i < chapters.length; i++) {
-      var end = chapters[i].endIndex;
-      if (levelIndex >= start && levelIndex <= end) {
-        return chapters[i];
-      }
-      start = end + 1;
-    }
-    return null;
-  },
-
-  /**
-   * 计算通关金币奖励
-   * @param {number} levelIndex - 关卡全局索引
-   * @returns {number} 金币数量（章节数据缺失时返回 0 并上报异常）
-   */
-  calculateReward: function (levelIndex) {
-    var chapter = this._findChapter(levelIndex);
-    if (!chapter) {
-      console.error('[LOG] GoldSystem.calculateReward 无法定位章节: levelIndex=' + levelIndex + ' chapters=' + (this._chapters ? this._chapters.length : 'null'));
-      return 0;
-    }
-    if (typeof chapter.goldBase !== 'number' || chapter.goldBase <= 0) {
-      console.error('[LOG] GoldSystem.calculateReward 章节缺少 goldBase: levelIndex=' + levelIndex + ' chapter=' + (chapter.name || 'unknown') + ' goldBase=' + chapter.goldBase);
-      return 0;
-    }
-    var base = chapter.goldBase;
-    var ratio = 0.9 + Math.random() * 0.2;   // 0.9 ~ 1.1
-    return Math.round(base * ratio);
+  calculateReward: function (pigCount) {
+    return Math.max(0, pigCount || 0);
   },
 
   /**

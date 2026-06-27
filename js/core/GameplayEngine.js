@@ -7,14 +7,11 @@ const { PigRenderer, roundRect, AnimType } = require('../render/PigRenderer.js')
 const databus = require('../databus');
 const audio = require('../audio/AudioManager.js');
 const Easing = require('./Easing.js');
+const SceneDefaults = require('../game/SceneDefaults.js');
 
 // ========== 常量 ==========
-// Claymorphism 风格：格子 = 棋盘上的凹陷引导，非独立视觉元素
-// 用内阴影制造浮雕感，颜色贴近白色但不消失
-const HOLE_EMPTY = '#FFFFFF';       // 空闲格子：淡紫灰 + 内阴影 0.3
-const HOLE_OCCUPIED = '#E8DFF0';    // 已占用：略浅 + 内阴影 0.25
-const HOLE_SHADOW_EMPTY = '#D4C5DF';   // 空闲内阴影边缘色（向 rgba(112,97,120,0.3) 方向）
-const HOLE_SHADOW_OCCUPIED = '#D9CBE8'; // 已占用内阴影边缘色（向 rgba(112,97,120,0.25) 方向）
+// 孔位颜色从场景配置获取
+const BC = SceneDefaults.boardColors;
 const BG_COLOR = '#1a1a2e';
 const PUSH_ANIM_DURATION = 6400;
 const CHASE_SPEED = 12;
@@ -449,6 +446,16 @@ class GameplayEngine {
       if (dx * dx + dy * dy <= r * r) return i;
     }
     return -1;
+  }
+
+  /** 屏幕坐标 → 棋盘坐标（逆变换，用于触摸适配） */
+  screenToBoard(sx, sy) {
+    var xf = this._xform;
+    if (!xf) return { x: sx, y: sy };
+    return {
+      x: xf.boardCX + (sx - xf.screenCX) / xf.scale,
+      y: xf.boardCY + (sy - xf.screenCY) / xf.scale
+    };
   }
 
   // ============================================================
@@ -917,12 +924,45 @@ class GameplayEngine {
   // ============================================================
 
   // 渲染完整棋盘：孔位 + 小猪 + 预览高亮 + 动画
-  // options: { hintText, drawHint }
+  // options: { drawHint }
   renderBoard(ctx, options = {}) {
-    const r = this.scaledHalfDiameter;
+    const BA = SceneDefaults.boardArea;
+    const visualW = this.boardWidth;
+    const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
+    const availW = SCREEN_WIDTH - BA.hMargin * 2;
+    const availH = SCREEN_HEIGHT - BA.top - BA.bottom;
+
+    // 自适应缩放：棋盘超出可用区域时等比缩小
+    const autoScale = Math.min(availW / visualW, availH / visualH, 1.0);
+
     const offY = this.topBarH + this.boardOffsetY;
 
-    // 孔位（Claymorphism 凹陷效果：径向渐变内阴影）
+    // 存储变换参数，供触摸逆变换使用
+    if (autoScale < 1) {
+      const boardCX = this.boardOffsetX + visualW / 2;
+      const boardCY = offY + visualH / 2;
+      const screenCX = SCREEN_WIDTH / 2;
+      const screenCY = BA.top + availH / 2;
+
+      this._xform = {
+        scale: autoScale,
+        boardCX: boardCX,
+        boardCY: boardCY,
+        screenCX: screenCX,
+        screenCY: screenCY,
+      };
+
+      ctx.save();
+      ctx.translate(screenCX, screenCY);
+      ctx.scale(autoScale, autoScale);
+      ctx.translate(-boardCX, -boardCY);
+    } else {
+      this._xform = null;
+    }
+
+    const r = this.scaledHalfDiameter;
+
+    // 孔位（纯色填充）
     for (let i = 0; i < this.holes.length; i++) {
       const h = this.holes[i];
       const occ = this.holeOccupied[i];
@@ -932,22 +972,12 @@ class GameplayEngine {
       ctx.arc(hx, hy, r, 0, Math.PI * 2);
 
       if (occ !== -1) {
-        // 已占用：浅色 + 弱内阴影，猪身之上隐约可见
-        const grad = ctx.createRadialGradient(hx - 1, hy - 1, r * 0.1, hx, hy, r);
-        grad.addColorStop(0, HOLE_OCCUPIED);
-        grad.addColorStop(0.7, HOLE_OCCUPIED);
-        grad.addColorStop(1, HOLE_SHADOW_OCCUPIED);
-        ctx.fillStyle = grad;
+        ctx.fillStyle = BC.holeOccupied;
         ctx.fill();
       } else {
-        // 空闲：凹陷引导，内阴影更明显，透明度 70%
         ctx.save();
-        ctx.globalAlpha = 0.7;
-        const grad = ctx.createRadialGradient(hx - 1, hy - 1, r * 0.1, hx, hy, r);
-        grad.addColorStop(0, HOLE_EMPTY);
-        grad.addColorStop(0.65, HOLE_EMPTY);
-        grad.addColorStop(1, HOLE_SHADOW_EMPTY);
-        ctx.fillStyle = grad;
+        ctx.globalAlpha = BC.holeEmptyAlpha;
+        ctx.fillStyle = BC.holeEmpty;
         ctx.fill();
         ctx.restore();
       }
@@ -971,15 +1001,20 @@ class GameplayEngine {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 拖拽中头部占孔 → 红色外边框高亮
+    // 落袋圈：填充 #FF5151 30% + 外圈 #D04343 30%
     if (this.dragState && this.dragState.headHoleIdx >= 0) {
       const hh = this.holes[this.dragState.headHoleIdx];
       const hhx = this.boardOffsetX + hh.x, hhy = offY + hh.y;
+      ctx.save();
+      ctx.globalAlpha = 0.3;
       ctx.beginPath();
       ctx.arc(hhx, hhy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = '#FF3B30';
+      ctx.fillStyle = '#FF5151';
+      ctx.fill();
+      ctx.strokeStyle = '#D04343';
       ctx.lineWidth = 2.5;
       ctx.stroke();
+      ctx.restore();
     }
 
     // 小猪（含动画偏移）
@@ -1047,18 +1082,11 @@ class GameplayEngine {
       }
     }
 
-    // 底部提示文字（屏幕坐标）
-    if (options.hintText !== undefined) {
-      const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
-      const hintY = Math.min(SCREEN_HEIGHT - this.bottomStripH - 12, this.topBarH + this.boardOffsetY + visualH + 8);
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(options.hintText, SCREEN_WIDTH / 2, hintY);
+    // === 退出自适应变换 ===
+    if (autoScale < 1) {
+      ctx.restore();
     }
   }
-
 }
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
 GameplayEngine.HEAD_ZONE_MULT = HEAD_ZONE_MULT;

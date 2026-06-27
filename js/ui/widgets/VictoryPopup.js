@@ -23,7 +23,6 @@ function VictoryPopup(opts) {
 
   // 数据
   this._steps = 0;
-  this._maxCombo = 0;
   this._isNewMaster = false;
   this._hasCrown = false;
   this._returnState = 'menu';
@@ -59,7 +58,6 @@ VictoryPopup.prototype.setAnimator = function (animator) {
 
 VictoryPopup.prototype.setData = function (data) {
   this._steps = data.steps || 0;
-  this._maxCombo = data.maxCombo || 0;
   this._isNewMaster = !!data.isNewMaster;
   this._hasCrown = !!data.hasCrown;
   this._returnState = data.returnState || 'menu';
@@ -122,13 +120,11 @@ VictoryPopup.prototype.render = function (ctx) {
   var panelAlpha = state.alpha;
   if (panelAlpha < 0.01) return;
 
-  var hasCombo = this._maxCombo >= 2;
   var isNewMaster = this._isNewMaster;
   var hasCrown = this._hasCrown;
   var showGold = this._showGold;
 
   var ph = 200;
-  if (hasCombo) ph += 20;
   if (isNewMaster) ph += 22;
   if (hasCrown) ph += 22;
   if (showGold) ph += 36;
@@ -209,21 +205,6 @@ VictoryPopup.prototype.render = function (ctx) {
   ctx.restore();
 
   var nextY = py + 78;
-
-  // 最大连击
-  if (hasCombo) {
-    staggerIdx++;
-    var comboAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
-    ctx.save();
-    ctx.globalAlpha = comboAnim.alpha;
-    ctx.fillStyle = '#FF9800';
-    ctx.font = 'bold 15px ' + Theme.font.family;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('\uD83D\uDD25 最大连击 ' + this._maxCombo, SCREEN_WIDTH / 2, py + 112);
-    ctx.restore();
-    nextY = py + 112;
-  }
 
   // 新关主
   if (isNewMaster) {

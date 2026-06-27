@@ -4,8 +4,11 @@ const databus = require('../databus.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
+const commonIcons = require('../ui/commonIcons.js');
 const checkpointDialog = require('../ui/CheckpointDialog.js');
 const GoldSystem = require('../game/GoldSystem.js');
+const SkinSystem = require('../game/SkinSystem.js');
+const ShopPanel = require('../ui/ShopPanel.js');
 const Easing = require('./Easing.js');
 const TransitionManager = require('./TransitionManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -43,7 +46,12 @@ class GameEngine {
 
     // 背景图
     this.bgImg = wx.createImage();
-    this.bgImg.src = 'assets/images/bg.jpeg';
+    this._bgLoaded = false;
+    var self = this;
+    this.bgImg.onload = function () {
+      self._bgLoaded = true;
+    };
+    this.bgImg.src = 'assets/images/main/bg.jpg';
 
     // 菜单按钮
     this.menuButtons = [];
@@ -51,6 +59,13 @@ class GameEngine {
     this._titleLongPressTimer = null;  // 标题长按计时器（模拟器弹 debug 面板用）
     this._pressedBtnIdx = -1;   // 当前被按下的按钮索引（用于按压动画）
     this._pressedBtnTime = 0;   // 按钮按下时间
+
+    // 皮肤系统初始化（三层加载：本地打包 → 本地缓存 → 云端热更新）
+    SkinSystem.loadConfig(function () {
+      if (ShopPanel.isOpen()) {
+        ShopPanel.refresh();
+      }
+    });
 
     console.log('[GameEngine] constructor 完成，准备调用 start()');
     this.start();
@@ -77,6 +92,7 @@ class GameEngine {
     // 避免在启动路径上同步 I/O 阻塞首帧渲染
 
     databus.gameState = 'menu';
+    this._hasLeftMenu = false;  // 离开过主菜单标志（防止异步恢复弹窗延迟弹出）
     console.log('[GameEngine] 设置 gameState=menu');
     this.setupMenuInput();
     console.log('[GameEngine] 菜单输入注册完成');
@@ -126,6 +142,10 @@ class GameEngine {
       // 合并金币：云端值 > 本地值则覆盖（换设备恢复）
       if (typeof cloudData.gold === 'number') {
         GoldSystem.mergeFromCloud(cloudData.gold);
+      }
+      // 合并皮肤数据（云端优先覆盖本地）
+      if (cloudData.skins) {
+        SkinSystem.mergeFromCloud(cloudData.skins);
       }
       // 云端头像昵称 > 本地缓存
       if (cloudData.avatarUrl && cloudData.nickname) {
@@ -196,11 +216,21 @@ class GameEngine {
   _checkAutoStart() {
     // 入口日志：标记每次调用
     console.log('[LOG] ===== _checkAutoStart 被调用 =====');
-    console.log('[LOG] _didAutoStart=' + this._didAutoStart);
+    console.log('[LOG] _didAutoStart=' + this._didAutoStart + ' _hasLeftMenu=' + this._hasLeftMenu);
     if (this._didAutoStart) {
       console.log('[LOG] 已执行过，直接返回');
       return;
     }
+
+    // 保护：如果玩家已经离开过主菜单（如云端数据异步到达太晚），
+    // 不弹恢复弹窗，直接清理存档
+    if (this._hasLeftMenu) {
+      console.log('[LOG] ✗ 玩家已离开过主菜单，跳过恢复弹窗，清理存档');
+      try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
+      this._didAutoStart = true;
+      return;
+    }
+
     this._didAutoStart = true;
 
     var li = wx.getStorageSync('lastLevelIndex');
@@ -442,25 +472,8 @@ class GameEngine {
     var cx = x + iconSize / 2;
     var cy = y + iconSize / 2;
 
-    // 圆形底（同 drawIconBtn）
-    ctx.save();
-    ctx.shadowColor = 'rgba(236, 72, 153, 0.08)';
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
-    ctx.fillStyle = C.cardBg;
-    ctx.fill();
-    ctx.restore();
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
-    ctx.fillStyle = C.cardBg;
-    ctx.fill();
-
-    // 矢量齿轮图标
-    settingsPanel.drawGearIcon(ctx, cx, cy, iconSize * 0.4, C.primary);
+    // 设置图标
+    ctx.drawImage(commonIcons.setting, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
 
     // 标签文字
     ctx.fillStyle = C.textMuted;
@@ -570,6 +583,7 @@ class GameEngine {
     databus.currentLevelIndex = levelIndex;
     databus.returnState = 'menu';
     databus.gameState = 'playing';
+    this._hasLeftMenu = true;   // 标记已离开主菜单，防止异步恢复弹窗
 
     // 同步 databus.projectLevels（PlayingEngine 下一关/重玩依赖）
     this._buildProjectLevels(totalLevels);
@@ -616,14 +630,21 @@ class GameEngine {
     }
 
     this.input.on('menu', (e) => {
+      // 面板打开时，所有触控事件（touchstart/move/end）由面板处理
+      if (ShopPanel.isOpen()) {
+        var t0 = e.touches && e.touches[0];
+        ShopPanel.handleEvent({ type: e.type, x: t0 ? t0.x : 0, y: t0 ? t0.y : 0 });
+        return;
+      }
+      if (checkpointDialog.isOpen()) {
+        if (e.touches && e.touches[0]) {
+          checkpointDialog.handleTouch(e.touches[0].x, e.touches[0].y, e.type);
+        }
+        return;
+      }
+
       if (e.type === 'touchstart' && e.touches[0]) {
         var t = e.touches[0];
-
-        // 存档恢复弹窗打开时，所有触控由弹窗处理
-        if (checkpointDialog.isOpen()) {
-          checkpointDialog.handleTouch(t.x, t.y, e.type);
-          return;
-        }
 
         // 设置面板打开时，所有触控由面板处理
         if (settingsPanel.isOpen()) {
@@ -699,14 +720,6 @@ class GameEngine {
     var setScale   = this._pressedBtnIdx === 4 ? pressScale : 1;
     var editScale  = this._pressedBtnIdx === 5 ? pressScale : 1;
 
-    // ===== 天空渐变背景 =====
-    var bgGrad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
-    bgGrad.addColorStop(0, C.bgTop);
-    bgGrad.addColorStop(0.4, C.bgMid);
-    bgGrad.addColorStop(1, C.bgBottom);
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
     // ===== 猪鼻子 Logo =====
     var logoSize = 72;
     var logoY = safeTop + 46;
@@ -774,7 +787,7 @@ class GameEngine {
     ctx.fillText('📋 关卡选择', cx, secBtnY + secBtnH / 2);
     ctx.restore();
 
-    // ===== 次按钮：竞技大厅（金色边框） =====
+    // ===== 次按钮：装扮（金色边框） =====
     var arenaBtnH = 52;
     var arenaBtnY = secBtnY + secBtnH + 12;
     var arenaBtnCX = btnX + btnW / 2;
@@ -796,7 +809,7 @@ class GameEngine {
     ctx.font = 'bold 18px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🏆 竞技大厅', cx, arenaBtnY + arenaBtnH / 2);
+    ctx.fillText('🎨 装扮', cx, arenaBtnY + arenaBtnH / 2);
     ctx.restore();
 
     // ===== 统计卡片 =====
@@ -835,34 +848,6 @@ class GameEngine {
     ctx.fillStyle = C.accent;
     ctx.font = 'bold 28px sans-serif';
     ctx.fillText(`${clearedCount} 关`, rightCX, cardY + 49);
-
-    // ===== 左上角金币徽章 =====
-    var goldAmount = GoldSystem.getGold();
-    var badgeX = 16;
-    var badgeY = safeTop + 2;
-    var badgeH = 26;
-    var badgeR = 13;
-
-    // 半透明背景胶囊
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.beginPath();
-    ctx.moveTo(badgeX + badgeR, badgeY);
-    ctx.lineTo(badgeX + badgeR + 60, badgeY);
-    ctx.arcTo(badgeX + badgeR + 60, badgeY, badgeX + badgeR + 60, badgeY + badgeH, badgeR);
-    ctx.lineTo(badgeX + badgeR + 60, badgeY + badgeH);
-    ctx.arcTo(badgeX + badgeR + 60, badgeY + badgeH, badgeX + badgeR, badgeY + badgeH, badgeR);
-    ctx.lineTo(badgeX + badgeR, badgeY + badgeH);
-    ctx.arcTo(badgeX, badgeY + badgeH, badgeX, badgeY, badgeR);
-    ctx.arcTo(badgeX, badgeY, badgeX + badgeR, badgeY, badgeR);
-    ctx.closePath();
-    ctx.fill();
-
-    // 金币图标 + 数字
-    ctx.fillStyle = '#F59E0B';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('💰 ' + goldAmount, badgeX + 8, badgeY + badgeH / 2);
 
     // ===== 底部图标行：分享 + 设置 + 编辑（隐藏入口） =====
     var iconSize = 48;
@@ -905,8 +890,8 @@ class GameEngine {
     var self = this;
     this.menuButtons = [
       { x: btnX, y: mainBtnY, w: btnW, h: btnH, action: function() { self.startLastLevel(); } },
-      { x: btnX, y: secBtnY, w: btnW, h: secBtnH, action: function() { databus.gameState = 'levelSelect'; } },
-      { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH, action: function() { /* 竞技大厅 — 暂未开放 */ } },
+      { x: btnX, y: secBtnY, w: btnW, h: secBtnH, action: function() { self._hasLeftMenu = true; databus.gameState = 'levelSelect'; } },
+      { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH, action: function() { ShopPanel.open(); } },
       { x: shareArea.x, y: shareArea.y, w: shareArea.w, h: shareArea.h,
         action: function() { wx.shareAppMessage({ title: '猪了个猪呀，快来一起推猪猪！' }); }
       },
@@ -919,14 +904,17 @@ class GameEngine {
     if (editArea) {
       this.menuButtons.push({
         x: editArea.x, y: editArea.y, w: editArea.w, h: editArea.h,
-        action: function() { databus.gameState = 'editor'; }
+        action: function() { self._hasLeftMenu = true; databus.gameState = 'editor'; }
       });
     }
 
     // 设置面板（最顶层）
     settingsPanel.render(ctx);
 
-    // 存档恢复确认弹窗（比设置面板更高一层）
+    // 商城面板（比设置面板更高一层）
+    ShopPanel.render(ctx);
+
+    // 存档恢复确认弹窗（最高层）
     checkpointDialog.render(ctx);
   }
 
@@ -1046,13 +1034,25 @@ class GameEngine {
   }
 
   drawBackground() {
-    var C = this.COLORS;
-    var grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
-    grad.addColorStop(0, C.bgTop);
-    grad.addColorStop(0.4, C.bgMid);
-    grad.addColorStop(1, C.bgBottom);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    // 背景图片优先，未加载则渐变兜底
+    if (this._bgLoaded) {
+      var imgW = this.bgImg.width;
+      var imgH = this.bgImg.height;
+      var scale = Math.max(SCREEN_WIDTH / imgW, SCREEN_HEIGHT / imgH);
+      var dw = imgW * scale;
+      var dh = imgH * scale;
+      var dx = (SCREEN_WIDTH - dw) / 2;
+      var dy = (SCREEN_HEIGHT - dh) / 2;
+      ctx.drawImage(this.bgImg, dx, dy, dw, dh);
+    } else {
+      var C = this.COLORS;
+      var grad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+      grad.addColorStop(0, C.bgTop);
+      grad.addColorStop(0.4, C.bgMid);
+      grad.addColorStop(1, C.bgBottom);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    }
   }
 
   loop() {

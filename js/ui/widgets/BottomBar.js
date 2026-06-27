@@ -1,11 +1,21 @@
 // 底部栏 — 提示按钮 + 条件移除按钮
 // PlayingEngine 专用
+// v124: 提示按钮改用背景图 hint.png + ad_icon.png，删除手绘按钮
 
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../Theme.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
-var PADDING = Theme.layout.padding || 16;
+// 不跟随场景变化
+var HINT_BG = 'assets/sceen/0/hint.png';
+var HINT_ERASE_BG = 'assets/sceen/0/hint_erase.png';
+var AD_ICON = 'assets/sceen/0/ad_icon.png';
+
+// 提示按钮尺寸（由背景图决定）
+var HINT_W = 151;
+var HINT_H = 69;
+var AD_ICON_W = 35;
+var AD_ICON_H = 22;
 
 /**
  * @param {Object} opts
@@ -27,19 +37,33 @@ function BottomBar(opts) {
   this._buttonPress = opts.buttonPress;
   this._hintActive = false;
 
-  // 按钮尺寸
-  this._btnW = Theme.button.defaultW;   // 90
-  this._btnH = Theme.button.defaultH;   // 68
-  this._gap = 14;
-
   // 回调
-  var self = this;
   this.onHintClick = opts.onHintClick || function () {};
   this.onRemoveClick = opts.onRemoveClick || function () {};
 
-  // 曝光按钮的点击区域（供外部 hitTest 查询）
+  // 按钮点击区域（供外部 hitTest 查询）
   this.hintBtnRect = null;
   this.removeBtnRect = null;
+
+  var self = this;
+
+  // 提示按钮背景图
+  this._hintBgImg = wx.createImage();
+  this._hintBgLoaded = false;
+  this._hintBgImg.onload = function () { self._hintBgLoaded = true; };
+  this._hintBgImg.src = HINT_BG;
+
+  // 移除按钮背景图
+  this._hintEraseBgImg = wx.createImage();
+  this._hintEraseBgLoaded = false;
+  this._hintEraseBgImg.onload = function () { self._hintEraseBgLoaded = true; };
+  this._hintEraseBgImg.src = HINT_ERASE_BG;
+
+  // 广告图标
+  this._adIconImg = wx.createImage();
+  this._adIconLoaded = false;
+  this._adIconImg.onload = function () { self._adIconLoaded = true; };
+  this._adIconImg.src = AD_ICON;
 }
 
 BottomBar.prototype = Object.create(UIComponent.prototype);
@@ -94,94 +118,41 @@ BottomBar.prototype.getHitType = function (px, py) {
 };
 
 BottomBar.prototype.render = function (ctx) {
-  var barY = this.y;
-  var barW = this._cardW;
-  var btnW = this._btnW, btnH = this._btnH;
-  var gap = this._gap;
-  var btnY = SCREEN_HEIGHT - 5 - btnH;  // 底部与关主面板对齐
-
-  // === 提示按钮 ===
-  var hintX = PADDING + barW - btnW;
-  this.hintBtnRect = { x: hintX, y: btnY, w: btnW, h: btnH };
+  // ===== 提示/移除按钮（同位置互斥）=====
+  var hintX = SCREEN_WIDTH - 20 - HINT_W;
+  var hintY = SCREEN_HEIGHT - 33 - HINT_H;
 
   var hintScale = this._buttonPress ? this._buttonPress.getScale('hint') : 1;
-  var hintCX = hintX + btnW / 2, hintCY = btnY + btnH / 2;
+  this.hintBtnRect = this.removeBtnRect = { x: hintX, y: hintY, w: HINT_W, h: HINT_H };
 
   ctx.save();
-  ctx.translate(hintCX, hintCY);
-  ctx.scale(hintScale, hintScale);
-  ctx.translate(-hintCX, -hintCY);
+  ctx.fillStyle = Theme.colors.white;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = '24px ' + Theme.font.family;
 
-  var hintDisabled = this._hintActive;
-  this._drawStyledBtn(ctx, hintX, btnY, btnW, btnH, Theme.colors.primaryLight, Theme.colors.primary, hintDisabled);
-  ctx.fillStyle = hintDisabled ? Theme.colors.primaryMuted : Theme.colors.primary;
-  ctx.font = 'bold ' + Theme.font.size.xl + 'px ' + Theme.font.family;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('\u2726 \u63D0\u793A', hintCX, hintCY);
-  ctx.restore();
+  // 缩放动画（以按钮中心为锚点）
+  if (hintScale !== 1) {
+    var hintCX = hintX + HINT_W / 2, hintCY = hintY + HINT_H / 2;
+    ctx.translate(hintCX, hintCY);
+    ctx.scale(hintScale, hintScale);
+    ctx.translate(-hintCX, -hintCY);
+  }
 
-  // === 移除按钮（提示激活时出现）===
+  // 移除按钮
   if (this._hintActive) {
-    var removeX = hintX - btnW - gap;
-    this.removeBtnRect = { x: removeX, y: btnY, w: btnW, h: btnH };
-
-    var rmvScale = this._buttonPress ? this._buttonPress.getScale('remove') : 1;
-    var rmvCX = removeX + btnW / 2;
-
-    ctx.save();
-    ctx.translate(rmvCX, btnY + btnH / 2);
-    ctx.scale(rmvScale, rmvScale);
-    ctx.translate(-rmvCX, -(btnY + btnH / 2));
-
-    this._drawStyledBtn(ctx, removeX, btnY, btnW, btnH, Theme.colors.dangerLight, Theme.colors.danger, false);
-    ctx.fillStyle = Theme.colors.danger;
-    ctx.font = 'bold ' + Theme.font.size.xl + 'px ' + Theme.font.family;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('\u2715 \u79FB\u9664', rmvCX, btnY + btnH / 2);
+    this.hintBtnRect = null;
+    if (this._hintEraseBgLoaded) ctx.drawImage(this._hintEraseBgImg, hintX, hintY, HINT_W, HINT_H);
+    if (this._adIconLoaded) ctx.drawImage(this._adIconImg, hintX + 22, hintY + 20, AD_ICON_W, AD_ICON_H);
+    ctx.fillText('\u79FB\u9664', hintX + 66, hintY + 15.5);
     ctx.restore();
-  } else {
+  }else{ // 提示按钮
     this.removeBtnRect = null;
+    if (this._hintBgLoaded) ctx.drawImage(this._hintBgImg, hintX, hintY, HINT_W, HINT_H);
+    if (this._adIconLoaded) ctx.drawImage(this._adIconImg, hintX + 22, hintY + 20, AD_ICON_W, AD_ICON_H);
+    ctx.fillText('\u63D0\u793A', hintX + 66, hintY + 15.5);
+    ctx.restore();
   }
-};
-
-/** 绘制渐变圆角按钮 */
-BottomBar.prototype._drawStyledBtn = function (ctx, x, y, w, h, fillColor, borderColor, disabled) {
-  ctx.save();
-  ctx.shadowColor = Theme.shadow.button.color;
-  ctx.shadowBlur = Theme.shadow.button.blur;
-  ctx.shadowOffsetX = Theme.shadow.button.offsetX;
-  ctx.shadowOffsetY = Theme.shadow.button.offsetY;
-
-  var r = Theme.button.radius;
-  if (disabled) {
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(139,92,246,0.2)';
-  } else {
-    var grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, fillColor);
-    grad.addColorStop(1, Theme.colors.white);
-    ctx.fillStyle = grad;
-    ctx.lineWidth = Theme.button.borderWidth;
-    ctx.strokeStyle = borderColor;
-  }
-
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arcTo(x + w, y, x + w, y + r, r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-  ctx.lineTo(x + r, y + h);
-  ctx.arcTo(x, y + h, x, y + h - r, r);
-  ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
 };
 
 module.exports = BottomBar;

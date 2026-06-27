@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "skins": [
+    {
+      "skinId": 1,
+      "name": "熊猫猪",
+      "quality": "稀有",
+      "price": 2000,
+      "sortOrder": 1,
+      "unlockCondition": {
+        "chapterCleared": 1,
+        "goldenPigs": 10
+      }
+    },
+    {
+      "skinId": 2,
+      "name": "暗夜猪",
+      "quality": "史诗",
+      "price": 5000,
+      "sortOrder": 2,
+      "unlockCondition": {}
+    }
+  ]
+}

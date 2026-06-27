@@ -3,12 +3,11 @@
 
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../Theme.js');
-var settingsPanel = require('../SettingsPanel.js');
+var commonIcons = require('../commonIcons.js');
 var databus = require('../../databus.js');
 
 // 颜色常量
 var DARK = Theme.colors.dark;
-var PINK = Theme.colors.pink;
 var PADDING = Theme.layout.padding || 16;
 
 /**
@@ -48,7 +47,7 @@ TopBar.prototype.render = function (ctx) {
   var barY = this.y;
   var barW = this.w;
 
-  // === 左上角按钮 ===
+  // === 左上角设置按钮 ===
   var backW = 49, backH = 47;
   var backX = PADDING;
   var backY = PADDING;
@@ -62,22 +61,6 @@ TopBar.prototype.render = function (ctx) {
   ctx.scale(setScale, setScale);
   ctx.translate(-setCX, -setCY);
 
-  // 白色半透明底 + 圆角
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  var r = 18;
-  ctx.beginPath();
-  ctx.moveTo(backX + r, backY);
-  ctx.lineTo(backX + backW - r, backY);
-  ctx.arcTo(backX + backW, backY, backX + backW, backY + r, r);
-  ctx.lineTo(backX + backW, backY + backH - r);
-  ctx.arcTo(backX + backW, backY + backH, backX + backW - r, backY + backH, r);
-  ctx.lineTo(backX + r, backY + backH);
-  ctx.arcTo(backX, backY + backH, backX, backY + backH - r, r);
-  ctx.lineTo(backX, backY + r);
-  ctx.arcTo(backX, backY, backX + r, backY, r);
-  ctx.closePath();
-  ctx.fill();
-
   if (this.mode === 'trial') {
     // 试玩模式：返回箭头
     ctx.strokeStyle = DARK;
@@ -90,38 +73,19 @@ TopBar.prototype.render = function (ctx) {
     ctx.lineTo(setCX + 8, setCY + 10);
     ctx.stroke();
   } else {
-    // 正常模式：齿轮图标
-    settingsPanel.drawGearIcon(ctx, setCX, setCY, 17, DARK);
+    // 正常模式：设置图标
+    var iconSz = 44;
+    ctx.drawImage(commonIcons.setting, setCX - iconSz / 2, setCY - iconSz / 2, iconSz, iconSz);
   }
   ctx.restore();
 
-  // === 关卡徽章（居中），试玩时隐藏 ===
+  // === 关卡标题（居中），试玩时隐藏 ===
   if (this.mode !== 'trial') {
-    ctx.font = 'bold ' + Theme.font.size.xl + 'px ' + Theme.font.family;
-    var levelTW = ctx.measureText(this.levelText).width;
-    var levelW = levelTW + 16;
-    var levelH = 33;
-    var levelX = PADDING + (barW - levelW) / 2;
-    var levelY = barY + (Theme.layout.topBarH - levelH) / 2;
-
-    ctx.fillStyle = PINK;
-    var lr = 12;
-    ctx.beginPath();
-    ctx.moveTo(levelX + lr, levelY);
-    ctx.lineTo(levelX + levelW - lr, levelY);
-    ctx.arcTo(levelX + levelW, levelY, levelX + levelW, levelY + lr, lr);
-    ctx.lineTo(levelX + levelW, levelY + levelH - lr);
-    ctx.arcTo(levelX + levelW, levelY + levelH, levelX + levelW - lr, levelY + levelH, lr);
-    ctx.lineTo(levelX + lr, levelY + levelH);
-    ctx.arcTo(levelX, levelY + levelH, levelX, levelY + levelH - lr, lr);
-    ctx.lineTo(levelX, levelY + lr);
-    ctx.arcTo(levelX, levelY, levelX + lr, levelY, lr);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = Theme.colors.white;
+    ctx.font = '32px ' + Theme.font.family;
+    ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(this.levelText, levelX + levelW / 2, levelY + levelH / 2);
+    ctx.textBaseline = 'top';
+    ctx.fillText(this.levelText, barW / 2, 29);
   }
 };
 

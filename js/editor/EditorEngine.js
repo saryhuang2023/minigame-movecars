@@ -18,6 +18,7 @@ const { roundRect } = require('../render/PigRenderer.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const ButtonPress = require('../anim/ButtonPress.js');
+const SceneDefaults = require('../game/SceneDefaults.js');
 
 
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
@@ -72,6 +73,15 @@ class EditorEngine {
 
     // ===== 碰撞框全局开关 =====
     this._showAllCollisionBoxes = false;
+
+    // ===== 场景背景图 =====
+    this._sceneBgImg = wx.createImage();
+    this._sceneBgLoaded = false;
+    var self = this;
+    this._sceneBgImg.onload = function () {
+      self._sceneBgLoaded = true;
+    };
+    this._sceneBgImg.src = SceneDefaults.background;
   }
 
   // ============================================================
@@ -205,7 +215,10 @@ class EditorEngine {
   // ============================================================
   // === 提示模式触摸处理 ===
   // ============================================================
-  _onHintTouchStart(x, y) {
+  _onHintTouchStart(screenX, screenY) {
+    var boardPos = this.gp.screenToBoard(screenX, screenY);
+    var x = boardPos.x;
+    var y = boardPos.y;
     // 1. 命中徽章 → 切换 hintId
     for (var i = 0; i < this.hintHintBtns.length; i++) {
       var b = this.hintHintBtns[i];
@@ -231,9 +244,8 @@ class EditorEngine {
       if (pig) {
         var tailHole = this.gp.holes[pig.tailIndex];
         if (tailHole) {
-          var tx = this.gp.boardOffsetX + tailHole.x;
-          var ty = this.gp.topBarH + this.gp.boardOffsetY + tailHole.y;
-          var angle = Math.atan2(-(y - ty), x - tx) * 180 / Math.PI;
+          // 棋盘局部坐标，直接使用 hole 位置
+          var angle = Math.atan2(-(y - tailHole.y), x - tailHole.x) * 180 / Math.PI;
           if (angle < 0) angle += 360;
           pig.hintAngle = Math.round(angle);
           this.markCurrentDirty();
@@ -276,7 +288,12 @@ class EditorEngine {
   // ============================================================
   // 编辑模式 — 触摸处理
   // ============================================================
-  handleEditTouchStart(x, y) {
+  handleEditTouchStart(screenX, screenY) {
+    // 棋盘触摸坐标转换（auto-scale 适配）
+    var boardPos = this.gp.screenToBoard(screenX, screenY);
+    var x = boardPos.x;
+    var y = boardPos.y;
+
     const pigInfo = this.gp.getPigAtPoint(x, y);
     if (pigInfo) {
       const pig = this.gp.pigs.find(p => p.id === pigInfo.id);
@@ -284,7 +301,7 @@ class EditorEngine {
       this.gp.selectedPigId = pigInfo.id;
 
       // 暂存触摸信息，等 move 超阈值后再激活拖拽；未超阈值则为点击
-      this._pendingTouch = { x, y, pig, pigInfo };
+      this._pendingTouch = { x: screenX, y: screenY, pig, pigInfo };
       return;
     }
 
@@ -370,7 +387,9 @@ class EditorEngine {
     this.gp.lastDragTime = now;
 
     if (this.gp.dragState && this.gp.dragState.type === 'rotate') {
-      this.gp.handleRotateDrag(x, y);
+      // handleRotateDrag 是 GP 方法，需传入棋盘坐标
+      var boardPos = this.gp.screenToBoard(x, y);
+      this.gp.handleRotateDrag(boardPos.x, boardPos.y);
     } else if (this.gp.dragState && this.gp.dragState.type === 'adjustHead') {
       this.handleAdjustHeadDrag(x, y);
     } else if (this.gp.dragState) {
@@ -549,7 +568,6 @@ class EditorEngine {
           pig.angle = snapped.angle;
           this.gp.updatePigOccupancy(pig.id, snapped.tailIndex, snapped.length, snapped.angle);
           this.markCurrentDirty();
-          this.showToast(`小猪 #${pig.id} → ${snapped.length}px ${snapped.angle}°`);
         } else {
           // 无法落孔 → 回退到 lastValid（保持无碰撞状态）
           pig.angle = lv.angle;
@@ -577,7 +595,6 @@ class EditorEngine {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
           }
           this.gp.updatePigOccupancy(realId, snapped.tailIndex, snapped.length, snapped.angle);
-          this.showToast(`小猪 #${realId} → ${snapped.length}px ${snapped.angle}°`);
           this.markCurrentDirty();
         } else if (this.gp.dragState.originalPig) {
           this.gp.pigs.push(this.gp.dragState.originalPig);
@@ -607,7 +624,6 @@ class EditorEngine {
               hintId: (origPig && origPig.hintId != null) ? origPig.hintId : null,
               hintAngle: (origPig && origPig.hintAngle != null) ? origPig.hintAngle : snapped.angle });
             this.gp.selectedPigId = realId;
-            this.showToast(`小猪 #${realId} 已调整 (${snapped.length}px, ${snapped.angle}°)`);
           } else {
             realId = this.gp.nextPigId++;
             this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
@@ -744,9 +760,9 @@ class EditorEngine {
     this.gp.ghostAnimations = [];
     this.gp.recomputeBoard();
     var corrected = this.gp.snapAllPigsAngles();
-    // 用 PlayingEngine 的棋盘卡片布局参数重新居中 —— 确保渲染与正式关卡一致
-    var boardCardY = (databus.safeTop || 0) + 16 + 48 + 8 - 30;
-    this.gp.topBarH = boardCardY + 12;
+    // 与 render() 中的布局对齐（无白色卡片，直接渲染棋盘在背景上）
+    var safeTop = databus.safeTop || 0;
+    this.gp.topBarH = safeTop + 48 + 4;
     this.gp.bottomStripH = 92;
     this.gp.recenterBoard();
     this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
@@ -1454,62 +1470,55 @@ class EditorEngine {
     var self = this;
     this.gp.update();
     ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    // 与游玩界面相同的渐变背景：淡紫 → 浅粉 → 米粉
-    const bgGrad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
-    bgGrad.addColorStop(0, '#F0EAFA');
-    bgGrad.addColorStop(0.4, '#FDE8EF');
-    bgGrad.addColorStop(1, '#FDF2F8');
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // === 棋盘卡片（与 PlayingEngine 布局一致）===
-    const CARD_PADDING = 12;
-    const CARD_RADIUS = 32;
-    const safeTop = databus.safeTop || 0;
-    var boardCardX = 16;
-    var boardCardY = safeTop + 16 + 48 + 8 - 30;
-    var boardCardW = SCREEN_WIDTH - 32;
-    var boardCardH = SCREEN_HEIGHT - 92 - 8 - boardCardY;
+    // ===== 场景背景图（与 PlayingEngine 一致）=====
+    if (this._sceneBgLoaded) {
+      var imgW = this._sceneBgImg.width;
+      var imgH = this._sceneBgImg.height;
+      var scale = Math.max(SCREEN_WIDTH / imgW, SCREEN_HEIGHT / imgH);
+      var dw = imgW * scale;
+      var dh = imgH * scale;
+      var ddx = (SCREEN_WIDTH - dw) / 2;
+      var ddy = (SCREEN_HEIGHT - dh) / 2;
+      ctx.drawImage(this._sceneBgImg, ddx, ddy, dw, dh);
+    } else {
+      // 图片未加载 → 渐变兜底
+      var bgGrad = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+      bgGrad.addColorStop(0, '#F0EAFA');
+      bgGrad.addColorStop(0.4, '#FDE8EF');
+      bgGrad.addColorStop(1, '#FDF2F8');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    }
 
-    // 白色卡片 + 阴影
-    ctx.save();
-    ctx.shadowColor = 'rgba(161, 150, 181, 0.2)';
-    ctx.shadowBlur = 24;
-    ctx.shadowOffsetX = 12;
-    ctx.shadowOffsetY = 12;
-    ctx.fillStyle = '#FFFFFF';
-    roundRect(ctx, boardCardX, boardCardY, boardCardW, boardCardH, CARD_RADIUS);
-    ctx.fill();
-    ctx.restore();
-
-    // 棋盘在卡片内的布局参数
-    this.gp.topBarH = boardCardY + CARD_PADDING;
+    // 棋盘布局参数（不再画白色卡片，直接让棋盘渲染在背景上）
+    var safeTop = databus.safeTop || 0;
+    var topBarH = 48;  // 编辑器顶部工具栏高度
+    this.gp.topBarH = safeTop + topBarH + 4;
     this.gp.bottomStripH = 92;
 
     // 计算提示文字（提示模式下不显示操作提示）
-    let hintText = '';
-    var opts = { hintText, showSelection: !this.hintMode, showAllCollisionBoxes: this._showAllCollisionBoxes };
-    if (!this.hintMode) {
-      if (this.gp.selectedPigId != null && !this.gp.dragState) {
-        const pig = this.gp.pigs.find(p => p.id === this.gp.selectedPigId);
-        if (pig) {
-          hintText = `小猪 #${pig.id} | 长度:${Math.round(pig.length)}px | 角度:${pig.angle}°`;
-        }
-      }
-      if (!hintText) {
-        hintText = '按住小猪头部调长度 | 按住身体/尾部调方向 | 点击空孔放置';
-      }
-    }
-    opts.hintText = hintText;
+    var opts = { showSelection: !this.hintMode, showAllCollisionBoxes: this._showAllCollisionBoxes };
 
     this.gp.renderBoard(ctx, opts);
-    this._renderConflictOverlays();  // 占用冲突红色高亮
+
+    // 冲突高亮 & 提示叠加：需与 renderBoard 内相同的 auto-scale 变换
+    var xf = this.gp._xform;
+    if (xf) {
+      ctx.save();
+      ctx.translate(xf.screenCX, xf.screenCY);
+      ctx.scale(xf.scale, xf.scale);
+      ctx.translate(-xf.boardCX, -xf.boardCY);
+    }
+    this._renderConflictOverlays();
+    if (this.hintMode) this._renderHintOverlays();
+    if (xf) {
+      ctx.restore();
+    }
+
     this.renderTopBar();
     this.renderBottomStrip();
     this.renderToast();
-
-    // 提示模式：渲染 hintId 徽章和方向指示器
-    if (this.hintMode) this._renderHintOverlays();
 
     if (this.showPigSheet) this.renderPigSheet();
     if (this.showLevelSheet) this.renderLevelSheet();
@@ -1527,7 +1536,10 @@ class EditorEngine {
     var hasGreen = this._collisionPigIds && this._collisionPigIds.size > 0;
     if (!hasRed && !hasGreen) return;
 
-    var offY = this.gp.topBarH + this.gp.boardOffsetY;
+    // 在 auto-scale 变换内，使用棋盘局部坐标（原点=棋盘左上角）
+    var xf = this.gp._xform;
+    var offX = xf ? 0 : this.gp.boardOffsetX;
+    var offY = xf ? 0 : (this.gp.topBarH + this.gp.boardOffsetY);
 
     // 冲突孔位：红色粗圆环
     if (hasRed) {
@@ -1539,20 +1551,20 @@ class EditorEngine {
           var h = this.gp.holes[hi];
           if (!h) return;
           ctx.beginPath();
-          ctx.arc(this.gp.boardOffsetX + h.x, offY + h.y, r + 1, 0, Math.PI * 2);
+          ctx.arc(offX + h.x, offY + h.y, r + 1, 0, Math.PI * 2);
           ctx.stroke();
         }.bind(this));
       }
     }
 
-    // 辅助函数：画碰撞胶囊体（与 _capsuleIntersect 尺寸完全一致）
+    // 辅助函数：画碰撞胶囊体
     var drawPigOverlay = function(pig, color) {
       var pr = this.gp.getPigRect(pig.tailIndex, pig.length, pig.angle);
       if (!pr) return;
-      var bx = this.gp.boardOffsetX;
+      var bx = offX;
       var by = offY;
-      var r = pr.collisionCapRadius || pr.capRadius;  // 与 _capsuleIntersect 用同一半径
-      var tw = r * 2;  // 胶囊直径 = strokeWidth
+      var r = pr.collisionCapRadius || pr.capRadius;
+      var tw = r * 2;
       ctx.strokeStyle = color;
       ctx.lineWidth = tw;
       ctx.lineCap = 'round';
@@ -1586,7 +1598,10 @@ class EditorEngine {
   // === 提示模式 — 叠加渲染 ===
   // ============================================================
   _renderHintOverlays() {
-    var offY = this.gp.topBarH + this.gp.boardOffsetY;
+    // 在 auto-scale 变换内，使用棋盘局部坐标
+    var xf = this.gp._xform;
+    var offX = xf ? 0 : this.gp.boardOffsetX;
+    var offY = xf ? 0 : (this.gp.topBarH + this.gp.boardOffsetY);
     var badgeR = 14;
     var arrowLen = 38;
 
@@ -1596,7 +1611,7 @@ class EditorEngine {
       var pig = this.gp.pigs[i];
       var tailHole = this.gp.holes[pig.tailIndex];
       if (!tailHole) continue;
-      var tx = this.gp.boardOffsetX + tailHole.x;
+      var tx = offX + tailHole.x;
       var ty = offY + tailHole.y;
       var isSelected = (pig.id === this.gp.selectedPigId);
       var hasHintId = (pig.hintId != null);
