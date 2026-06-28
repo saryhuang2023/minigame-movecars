@@ -11,7 +11,7 @@ const FLASH_DURATION = 800;  // 闪烁阶段时长 ms
 const TROPHY_SIZE = 36;
 const TROPHY_TOP = 84;
 const TROPHY_RIGHT = 20;
-const TROPHY_IMG = 'assets/sceen/0/leftStep_1.png';
+const TROPHY_IMG = 'assets/images/levels/leftStep_1.png';
 
 class VictoryAnimation {
   /**

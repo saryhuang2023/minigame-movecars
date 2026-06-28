@@ -162,19 +162,19 @@ describe('CrownPigWidget constructor', () => {
   test('sets active image src to leftStep_1', () => {
     new CrownPigWidget({});
     const activeCall = mockWx.createImage.mock.results[0].value;
-    expect(activeCall.src).toBe('assets/sceen/0/leftStep_1');
+    expect(activeCall.src).toBe('assets/images/levels/leftStep_1');
   });
 
   test('sets inactive image src to leftStep_2', () => {
     new CrownPigWidget({});
     const inactiveCall = mockWx.createImage.mock.results[1].value;
-    expect(inactiveCall.src).toBe('assets/sceen/0/leftStep_2');
+    expect(inactiveCall.src).toBe('assets/images/levels/leftStep_2');
   });
 
   test('sets step bg image src to leftStep_num', () => {
     new CrownPigWidget({});
     const bgCall = mockWx.createImage.mock.results[2].value;
-    expect(bgCall.src).toBe('assets/sceen/0/leftStep_num');
+    expect(bgCall.src).toBe('assets/images/levels/leftStep_num');
   });
 
   test('initializes all loaded flags to false', () => {

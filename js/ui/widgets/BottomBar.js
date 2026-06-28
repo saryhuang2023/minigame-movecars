@@ -7,9 +7,9 @@ var Theme = require('../Theme.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 // 不跟随场景变化
-var HINT_BG = 'assets/sceen/0/hint.png';
-var HINT_ERASE_BG = 'assets/sceen/0/hint_erase.png';
-var AD_ICON = 'assets/sceen/0/ad_icon.png';
+var HINT_BG = 'assets/images/levels/hint.png';
+var HINT_ERASE_BG = 'assets/images/levels/hint_erase.png';
+var AD_ICON = 'assets/images/levels/ad_icon.png';
 
 // 提示按钮尺寸（由背景图决定）
 var HINT_W = 151;

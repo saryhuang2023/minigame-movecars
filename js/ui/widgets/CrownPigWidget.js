@@ -15,9 +15,9 @@ var STEP_BG_TOP = 120;
 var STEP_BG_RIGHT = 11;
 
 // 奖杯图片路径
-var IMG_ACTIVE = 'assets/sceen/0/leftStep_1.png';
-var IMG_INACTIVE = 'assets/sceen/0/leftStep_2.png';
-var IMG_STEP_BG = 'assets/sceen/0/leftStep_num.png';
+var IMG_ACTIVE = 'assets/images/levels/leftStep_1.png';
+var IMG_INACTIVE = 'assets/images/levels/leftStep_2.png';
+var IMG_STEP_BG = 'assets/images/levels/leftStep_num.png';
 
 function CrownPigWidget(opts) {
   UIComponent.call(this, {

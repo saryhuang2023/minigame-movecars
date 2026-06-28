@@ -7,7 +7,7 @@ module.exports = {
   name: '默认场景',
 
   // 背景图
-  background: 'assets/sceen/0/bg.jpg',
+  background: 'assets/images/levels/0/bg.jpg',
 
   // 孔位颜色
   boardColors: {

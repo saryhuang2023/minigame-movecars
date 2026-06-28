@@ -9,7 +9,7 @@ var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 var MUTED = Theme.colors.muted;
 
 // 不跟随场景变化
-var MASTER_BG = 'assets/sceen/0/master_bg.png';
+var MASTER_BG = 'assets/images/levels/master_bg.png';
 
 // 卡片尺寸（由背景图决定）
 var CARD_W = 190;

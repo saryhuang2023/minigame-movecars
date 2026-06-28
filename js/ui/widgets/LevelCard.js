@@ -2,8 +2,8 @@
 // 三态：locked（灰卡）、completed（白卡）、current（粉色描边白卡）
 
 // 奖章图片路径
-var IMG_ACTIVE = 'assets/sceen/0/leftStep_1.png';
-var IMG_INACTIVE = 'assets/sceen/0/leftStep_2.png';
+var IMG_ACTIVE = 'assets/images/levels/leftStep_1.png';
+var IMG_INACTIVE = 'assets/images/levels/leftStep_2.png';
 var MEDAL_SIZE = 16;
 
 // 卡片配色（与引擎内 C 常量同步）
