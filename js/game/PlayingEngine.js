@@ -195,10 +195,11 @@ class PlayingEngine {
           } else {
             audio.play('button_click');
             settingsPanel.open({
+              title: '暂停',
               buttons: [
-                { icon: '🏠', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
-                { label: '继续游戏', wide: true, action: function() { audio.play('button_click'); settingsPanel.close(); } },
-                { icon: '🔄', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+                { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
+                { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
+                { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
               ]
             });
           }
@@ -557,10 +558,11 @@ class PlayingEngine {
           settingsPanel.close();
         } else {
           settingsPanel.open({
+            title: '暂停',
             buttons: [
-              { icon: '🏠', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
-              { label: '继续游戏', wide: true, action: function() { audio.play('button_click'); settingsPanel.close(); } },
-              { icon: '🔄', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+              { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
+              { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
+              { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
             ]
           });
         }
@@ -624,10 +626,11 @@ class PlayingEngine {
       } else {
         this._btnPress.press('settings');
         settingsPanel.open({
+          title: '暂停',
           buttons: [
-            { icon: '🏠', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
-            { label: '继续游戏', wide: true, action: function() { audio.play('button_click'); settingsPanel.close(); } },
-            { icon: '🔄', label: '', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+            { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
+            { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
+            { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
           ]
         });
       }

@@ -9,6 +9,7 @@ const checkpointDialog = require('../ui/CheckpointDialog.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
 const ShopPanel = require('../ui/ShopPanel.js');
+const AssetPreloader = require('../ui/AssetPreloader.js');
 const Easing = require('./Easing.js');
 const TransitionManager = require('./TransitionManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -66,6 +67,17 @@ class GameEngine {
         ShopPanel.refresh();
       }
     });
+
+    // 预加载面板资源（避免首次打开面板时图片未就绪）
+    AssetPreloader.register({
+      settings_bg: 'assets/images/common/popup_bg.png',
+      icon_music: 'assets/images/common/icon_music.png',
+      icon_sound: 'assets/images/common/icon_sound.png',
+      btn_home: 'assets/images/common/btn_home.png',
+      btn_continue: 'assets/images/common/btn_continue.png',
+      btn_again: 'assets/images/common/btn_again.png',
+    });
+    AssetPreloader.preload();
 
     console.log('[GameEngine] constructor 完成，准备调用 start()');
     this.start();
@@ -896,7 +908,7 @@ class GameEngine {
         action: function() { wx.shareAppMessage({ title: '猪了个猪呀，快来一起推猪猪！' }); }
       },
       { x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
-        action: function() { settingsPanel.open(); }
+        action: function() { settingsPanel.open({ title: '设置' }); }
       }
     ];
 
