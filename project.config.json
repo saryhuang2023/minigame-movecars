@@ -53,7 +53,7 @@
   "packOptions": {
     "ignore": [],
     "include": [
-      { "type": "file", "value": "assets/font/GenSenRounded2TW-H-subset.otf" }
+      { "type": "file", "value": "assets/font/dudu.ttf" }
     ]
   },
   "isGameTourist": false,

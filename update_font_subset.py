@@ -10,7 +10,6 @@
 
 import os
 import sys
-import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -50,50 +49,46 @@ def main():
     # 确保输出目录存在
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # 运行 pyftsubset
-    cmd = [
-        "pyftsubset",
-        source_font,
-        f"--text={charset}",
-        f"--output-file={OUTPUT_FILE}",
-        "--drop-tables+=GPOS,GSUB,GDEF",
-        "--drop-tables+=vhea,vmtx",
-        "--layout-features=",
-        "--name-IDs=",
-        "--no-subset-tables+=cmap",
-    ]
-
-    print(f"[执行] {' '.join(cmd)}")
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    if result.returncode != 0:
-        print(f"[错误] pyftsubset 失败:")
-        print(result.stderr)
-        sys.exit(1)
-
-    # 后处理：重命名字体 family name（去掉空格，WeChat wx.loadFont 不支持含空格的 family name）
+    # 使用 fontTools Subsetter API（比 pyftsubset 更稳，避免 CID 字体 bug）
     try:
         from fontTools.ttLib import TTFont
-        tt = TTFont(OUTPUT_FILE)
-        for record in tt['name'].names:
-            if record.nameID in (1, 4, 16):  # Family, Full Name, Preferred Family
-                old = record.toUnicode()
-                new = old.replace(' ', '')
-                if old != new:
-                    record.string = new
-                    print(f"[改名] nameID={record.nameID}: '{old}' → '{new}'")
-        tt.save(OUTPUT_FILE)
-        print("[改名] 完成")
+        from fontTools.subset import Subsetter
     except ImportError:
-        print("[警告] fontTools 未安装，跳过字体改名步骤")
-    except Exception as e:
-        print(f"[警告] 字体改名失败: {e}")
+        print("[错误] 需要安装 fontTools: pip install fonttools")
+        sys.exit(1)
+
+    print("[OK] 加载源字体...")
+    tt = TTFont(source_font)
+
+    print("[OK] 裁剪子集...")
+    subsetter = Subsetter()
+    subsetter.populate(unicodes=[ord(c) for c in set(charset)])
+    subsetter.subset(tt)
+
+    # 后处理：修正字体 family name
+    # WeChat wx.loadFont 不支持含空格的 family name
+    # 源字体 "GenSenRounded2 TW H" → Family="GenSenRounded2TW", Full="GenSenRounded2TW-H"
+    for record in tt['name'].names:
+        if record.nameID == 1:   # Family
+            old = record.toUnicode()
+            record.string = 'GenSenRounded2TW'
+            print(f"[改名] nameID=1: '{old}' -> 'GenSenRounded2TW'")
+        elif record.nameID == 4:  # Full Name
+            old = record.toUnicode()
+            record.string = 'GenSenRounded2TW-H'
+            print(f"[改名] nameID=4: '{old}' -> 'GenSenRounded2TW-H'")
+        elif record.nameID == 16:  # Typographic Family
+            old = record.toUnicode()
+            record.string = 'GenSenRounded2TW'
+            print(f"[改名] nameID=16: '{old}' -> 'GenSenRounded2TW'")
+
+    print("[OK] 保存字体...")
+    tt.save(OUTPUT_FILE)
 
     # 输出结果
     if os.path.isfile(OUTPUT_FILE):
         size_kb = os.path.getsize(OUTPUT_FILE) / 1024
-        print(f"[完成] 字体已更新 → {OUTPUT_FILE}")
+        print(f"[完成] 字体已更新 -> {OUTPUT_FILE}")
         print(f"[完成] 文件大小: {size_kb:.1f} KB")
     else:
         print("[错误] 输出文件未生成")
