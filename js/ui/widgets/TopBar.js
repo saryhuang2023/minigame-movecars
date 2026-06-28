@@ -50,7 +50,7 @@ TopBar.prototype.render = function (ctx) {
   // === 左上角设置按钮 ===
   var backW = 49, backH = 47;
   var backX = PADDING;
-  var backY = PADDING;
+  var backY = 26;  // 离屏幕顶部 26px
 
   var setScale = this._buttonPress ? this._buttonPress.getScale('settings') : 1;
   var setCX = backX + backW / 2;

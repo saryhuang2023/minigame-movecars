@@ -555,7 +555,7 @@ class PlayingEngine {
       }
 
       // 顶部返回/设置按钮
-      if (_hitRect(t.x, t.y, { x: PADDING, y: PADDING, w: 49, h: 47 })) {
+      if (_hitRect(t.x, t.y, { x: PADDING, y: 26, w: 49, h: 47 })) {
         this._btnPress.press('settings');
         this._btnPress.breathe('settings');
         audio.play('button_click');
@@ -1220,14 +1220,8 @@ class PlayingEngine {
     // 同步引擎数据 → UI 组件
     this._syncUIData();
 
-    // 加载中：仅渲染 UI 框架，棋盘保持空白
+    // 加载中：不显示任何 UI（设置/关主/提示/奖杯等），仅显示加载提示
     if (this._loading) {
-      this._uiTopBar.setBounds(0, databus.safeTop, this._boardCardW, Theme.layout.topBarH);
-      this._uiTopBar.setLevelText('第 ' + (parseInt(this.levelName) || '1') + ' 关');
-      this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
-      this._uiTopBar.render(ctx);
-      this._uiBottomBar.render(ctx);
-
       // 加载提示
       ctx.save();
       ctx.fillStyle = Theme.colors.textSecondary || '#999';

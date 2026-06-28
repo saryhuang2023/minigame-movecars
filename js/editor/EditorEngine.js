@@ -861,9 +861,28 @@ class EditorEngine {
       const assetsIndexPath = 'assets/levels/index.json';
       const indexRaw = fs.readFileSync(assetsIndexPath, 'utf8');
       const index = JSON.parse(indexRaw);
-      for (var i = 0; i < index.length; i++) {
-        var entry = index[i];
-        var name = entry.file.replace('.json', '');
+
+      // 支持两种 index.json 格式：
+      //   range:  { "minLevel": 1, "maxLevel": 8 } → 生成 0001~0008
+      //   array:  [{ "file": "0001.json" }, ...]
+      var assetEntries = [];
+      if (typeof index.maxLevel === 'number') {
+        // range 格式
+        for (var lv = index.minLevel || 1; lv <= index.maxLevel; lv++) {
+          var fn = String(lv).padStart(4, '0') + '.json';
+          assetEntries.push({ file: fn, name: fn.replace('.json', '') });
+        }
+      } else if (Array.isArray(index)) {
+        // array 格式
+        for (var i = 0; i < index.length; i++) {
+          var entry = index[i];
+          assetEntries.push({ file: entry.file, name: entry.file.replace('.json', '') });
+        }
+      }
+
+      for (var i = 0; i < assetEntries.length; i++) {
+        var entry = assetEntries[i];
+        var name = entry.name;
         if (cachedNames.has(name)) continue;  // 云端/缓存优先
         try {
           var raw = fs.readFileSync('assets/levels/' + entry.file, 'utf8');
@@ -1182,11 +1201,14 @@ class EditorEngine {
       var result = res.result;
       if (!result || !result.ok) return;
 
-      console.log('[Cloud] 增量同步: ' + result.count + ' 个云端关卡, ' +
-        result.changed + ' 个变更, ' + (result.skipped || 0) + ' 个跳过');
+      // 无变更则直接返回（changed 可能 undefined — 兼容旧云函数）
+      var changed = result.changed;
+      if (changed === undefined) changed = (result.count || 0) - (result.skipped || 0);
 
-      // 无变更则直接返回
-      if (!result.changed || !result.base64) return;
+      console.log('[Cloud] 增量同步: ' + result.count + ' 个云端关卡, ' +
+        changed + ' 个变更, ' + (result.skipped || 0) + ' 个跳过');
+
+      if (!changed || !result.base64) return;
 
       // ③ base64 → Uint8Array → pako.inflate → JSON
       var binaryStr = atob(result.base64);
