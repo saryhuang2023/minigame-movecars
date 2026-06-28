@@ -285,7 +285,7 @@ class PlayingEngine {
 
     // 奖杯组件
     this._uiCrownPig.setHidden(databus.returnState === 'editor');
-    this._uiCrownPig.setData(this._crownSteps, this.steps, this._gotCrown);
+    this._uiCrownPig.setData(this._crownSteps, this.steps, this._gotCrown, this._hasUsedRemove);
 
     // VictoryPopup
     this._uiVictoryPopup.setData({
@@ -889,7 +889,7 @@ class PlayingEngine {
       // 仍设 _gotCrown=true 确保渲染显示金色（重玩场景）
       this._gotCrown = true;
       this._earnedCrown = false;
-    } else if (this._crownSteps > 0 && this.steps <= this._crownSteps) {
+    } else if (this._crownSteps > 0 && this.steps <= this._crownSteps && !this._hasUsedRemove) {
       wx.setStorageSync('crown_' + databus.currentLevelIndex, true);
       this._earnedCrown = true;
       this._gotCrown = false;  // 动画期间保持灰色
@@ -1271,6 +1271,7 @@ class PlayingEngine {
     }
     this._hasUsedRemove = true;
     this._trialUsedRemove = true;   // 试玩中用了移除 → 不保存提示数据
+    this._saveCheckpoint();         // 立档存盘，确保断点恢复
     this._hint.clear();
 
     // 所有猪都消失 → 通关
@@ -1336,6 +1337,7 @@ class PlayingEngine {
       pigs: this.gp.pigs.map(function(p) {
         return { id: p.id, tailIndex: p.tailIndex, length: p.length, angle: p.angle };
       }),
+      hasUsedRemove: this._hasUsedRemove,
       savedAt: Date.now()
     };
     try {
@@ -1428,7 +1430,8 @@ class PlayingEngine {
     this.gp.rebuildOccupancy();
 
     // 恢复完成后不清理存档 — 由 30 秒定时器自然覆盖
-    console.log('[LOG] 存档已恢复 steps=' + this.steps + ' pigs=' + this.gp.pigs.length);
+    this._hasUsedRemove = !!cp.hasUsedRemove;
+    console.log('[LOG] 存档已恢复 steps=' + this.steps + ' pigs=' + this.gp.pigs.length + ' hasUsedRemove=' + this._hasUsedRemove);
   }
 }
 

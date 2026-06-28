@@ -9,6 +9,57 @@ var PopupAnimator = require('./PopupAnimator.js');
 var AssetPreloader = require('./AssetPreloader.js');
 var Theme = require('./Theme.js');
 
+// ===== 继续按钮手绘（3层 Figma 设计还原）=====
+function _drawContinueBtnBg(ctx, x, y, w, h) {
+  ctx.save();
+
+  // === 第1层：深青色外框 127×48, #1D6C72, radius 14 ===
+  _roundRect(ctx, x, y, w, h, 14);
+  ctx.fillStyle = '#1D6C72';
+  ctx.fill();
+
+  // === 第2层：青色渐变内框 123×44, #00C3D8, radius 12，偏移约 (2, 2) ===
+  var ix = x + 2;
+  var iy = y + 2;
+  var iw = w - 4;
+  var ih = h - 4;
+
+  _roundRect(ctx, ix, iy, iw, ih, 12);
+  ctx.fillStyle = '#00C3D8';
+  ctx.fill();
+
+  // 内高光/阴影（clip 到内框）
+  _roundRect(ctx, ix, iy, iw, ih, 12);
+  ctx.save();
+  ctx.clip();
+
+  // inset top: 0px 3px 3px rgba(255,255,255,0.3)
+  var tGrad = ctx.createLinearGradient(ix, iy, ix, iy + 4);
+  tGrad.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+  tGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = tGrad;
+  ctx.fillRect(ix, iy, iw, 5);
+
+  // inset bottom: 0px -4px 0px #0A88B6
+  ctx.fillStyle = '#0A88B6';
+  ctx.fillRect(ix, iy + ih - 4, iw, 4);
+
+  ctx.restore();  // clip
+
+  // === 第3层：亮青色描边 123×41, 1.5px #33D4D7, radius 12 ===
+  var sx = x + 2;
+  var sy = y + 2;
+  var sw = w - 4;
+  var sh = h - 7;  // 41 height
+
+  _roundRect(ctx, sx, sy, sw, sh, 12);
+  ctx.strokeStyle = '#33D4D7';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.restore();  // outer save
+}
+
 // ===== 背景图 key（需在 GameEngine 启动时预加载）=====
 // popup_bg.png: Figma @1x = 289×225，@3x 导出 = 867×675
 // 三宫格（@1x）：top≈135 / bottom≈36；对应 @3x：405 / 108
@@ -380,8 +431,8 @@ function _updateToggleSliders() {
 
 var BOTTOM_ICON_CONFIG = {
   btn_home:     { fromLeft: 26,  fromBottomFn: function(ph) { return Math.max(26, Math.floor(ph * 0.112)); }, w: 36, h: 36 },
-  btn_continue: { fromLeft: null, fromBottom: 36, w: 127, h: 48, label: '继续游戏',
-    labelStyle: { size: 22, weight: '900', color: '#FFFFFF', spacing: 1, shadowColor: 'rgba(3,48,75,0.6)', shadowBlur: 2 } },
+  btn_continue: { fromLeft: null, fromBottom: 36, w: 127, h: 48, label: '继续游戏', handDrawn: true,
+    labelStyle: { size: 22, weight: '400', color: '#FFFFFF', spacing: 1, shadowColor: 'rgba(3,48,75,0.6)', shadowBlur: 2 } },
   btn_again:    { fromRight: 26, fromBottomFn: function(ph) { return Math.max(26, Math.floor(ph * 0.112)); }, w: 36, h: 36 },
 };
 var BOTTOM_ICON_SIZE_DEFAULT = 36;
@@ -441,7 +492,9 @@ function _renderBottomIcons(ctx, isEntering) {
     ctx.translate(-cX, -cY);
 
     var img = AssetPreloader.get(iconKey);
-    if (img && AssetPreloader.isReady(iconKey)) {
+    if (cfg.handDrawn) {
+      _drawContinueBtnBg(ctx, bx, by, iw, ih);
+    } else if (img && AssetPreloader.isReady(iconKey)) {
       ctx.drawImage(img, bx, by, iw, ih);
     }
 

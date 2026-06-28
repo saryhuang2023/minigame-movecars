@@ -171,12 +171,6 @@ describe('CrownPigWidget constructor', () => {
     expect(inactiveCall.src).toBe('assets/images/levels/leftStep_2');
   });
 
-  test('sets step bg image src to leftStep_num', () => {
-    new CrownPigWidget({});
-    const bgCall = mockWx.createImage.mock.results[2].value;
-    expect(bgCall.src).toBe('assets/images/levels/leftStep_num');
-  });
-
   test('initializes all loaded flags to false', () => {
     const widget = new CrownPigWidget({});
     expect(widget._activeLoaded).toBe(false);

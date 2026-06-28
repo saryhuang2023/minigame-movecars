@@ -45,6 +45,7 @@ function CrownPigWidget(opts) {
   this._crownSteps = 0;
   this._steps = 0;
   this._gotCrown = false;
+  this._hasUsedRemove = false;
   this._hidden = false;
 
   // 奖杯图片
@@ -62,10 +63,11 @@ function CrownPigWidget(opts) {
 CrownPigWidget.prototype = Object.create(UIComponent.prototype);
 CrownPigWidget.prototype.constructor = CrownPigWidget;
 
-CrownPigWidget.prototype.setData = function (crownSteps, steps, gotCrown) {
+CrownPigWidget.prototype.setData = function (crownSteps, steps, gotCrown, hasUsedRemove) {
   this._crownSteps = crownSteps || 0;
   this._steps = steps || 0;
   this._gotCrown = !!gotCrown;
+  this._hasUsedRemove = !!hasUsedRemove;
 };
 
 CrownPigWidget.prototype.setAnimPhase = function () { /* 位置固定后不再需要动画阶段 */ };
@@ -96,15 +98,15 @@ CrownPigWidget.prototype.render = function (ctx) {
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 4;
 
-  if (this._steps <= this._crownSteps) {
+  if (this._hasUsedRemove || this._steps > this._crownSteps) {
+    // 未激活状态（使用过移除 或 步数已超）
+    if (this._inactiveLoaded) {
+      ctx.drawImage(this._imgInactive, trophyX, trophyY, TROPHY_SIZE, TROPHY_SIZE);
+    }
+  } else {
     // 激活状态
     if (this._activeLoaded) {
       ctx.drawImage(this._imgActive, trophyX, trophyY, TROPHY_SIZE, TROPHY_SIZE);
-    }
-  } else {
-    // 未激活状态
-    if (this._inactiveLoaded) {
-      ctx.drawImage(this._imgInactive, trophyX, trophyY, TROPHY_SIZE, TROPHY_SIZE);
     }
   }
 
@@ -115,7 +117,7 @@ CrownPigWidget.prototype.render = function (ctx) {
   ctx.shadowOffsetY = 0;
 
   // === 步数进度条 ===
-  var remaining = this._crownSteps - this._steps;
+  var remaining = this._hasUsedRemove ? 0 : (this._crownSteps - this._steps);
   if (remaining < 0) remaining = 0;
   var progressRatio = this._crownSteps > 0 ? remaining / this._crownSteps : 0;
   var fillW = Math.floor(STEP_BG_W * progressRatio);
@@ -171,16 +173,16 @@ CrownPigWidget.prototype.render = function (ctx) {
 
   // === 步数文字 ===
   var text = '';
-  if (!this._gotCrown) {
+  if (this._hasUsedRemove) {
+    text = '移除无效';
+  } else if (!this._gotCrown) {
     if (this._steps > this._crownSteps) {
-      // 步数已超 → 灰色奖杯 + "步数已超"
       text = '步数已超';
     } else {
       var remaining = this._crownSteps - this._steps;
       text = '剩' + remaining + '步';
     }
   } else {
-    // 已获得
     text = '已获得';
   }
   ctx.fillText(text, bgX + STEP_BG_W / 2, bgY + STEP_BG_H / 2);

@@ -53,7 +53,7 @@
   "packOptions": {
     "ignore": [],
     "include": [
-      { "type": "file", "value": "assets/font/dudu.ttf" }
+      { "type": "file", "value": "assets/font/ZiYuDuDuTi.ttf" }
     ]
   },
   "isGameTourist": false,

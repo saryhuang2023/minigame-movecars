@@ -1,21 +1,72 @@
 // 底部栏 — 提示按钮 + 条件移除按钮
 // PlayingEngine 专用
-// v124: 提示按钮改用背景图 hint.png + ad_icon.png，删除手绘按钮
+// v125: 提示按钮底框改为 Canvas 2D 绘制（3层叠加：白色外框 → 渐变填充+棕色边框 → 内高光），不再加载背景图
 
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../Theme.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
+var { roundRect } = require('../../render/PigRenderer.js');
 
-// 不跟随场景变化
-var HINT_BG = 'assets/images/levels/hint.png';
-var HINT_ERASE_BG = 'assets/images/levels/hint_erase.png';
 var AD_ICON = 'assets/images/levels/ad_icon.png';
 
-// 提示按钮尺寸（由背景图决定）
-var HINT_W = 151;
-var HINT_H = 69;
+// 提示按钮尺寸（白色外框 146×63）
+var HINT_W = 146;
+var HINT_H = 63;
 var AD_ICON_W = 33;
 var AD_ICON_H = 33;
+
+// 按钮底框通用绘制 — 白色外框 + 渐变 + 棕色边框 + 内高光/阴影
+function _drawBtnBg(ctx, x, y, gradTop, gradBot, insetTop, insetBot) {
+  ctx.save();  // 隔离底框绘制，不污染调用方的 fillStyle/strokeStyle/lineWidth
+
+  // === 第3层：白色外框 146×63, border-radius 15 ===
+  roundRect(ctx, x, y, 146, 63, 15);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+
+  // === 第1层（棕色边框）+ 第2层（渐变填充）===
+  var ix = x + 3, iy = y + 3, iw = 140, ih = 57;
+
+  var grad = ctx.createLinearGradient(ix, iy, ix, iy + ih);
+  grad.addColorStop(0, gradTop);
+  grad.addColorStop(1, gradBot);
+
+  roundRect(ctx, ix, iy, iw, ih, 14);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.strokeStyle = '#733C29';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // === 内阴影高光 ===
+  roundRect(ctx, ix + 1, iy + 1, iw - 2, ih - 2, 13);
+  ctx.clip();
+
+  var tGrad = ctx.createLinearGradient(ix, iy, ix, iy + 4);
+  tGrad.addColorStop(0, insetTop);
+  tGrad.addColorStop(1, 'rgba(255,255,90,0)');
+  ctx.fillStyle = tGrad;
+  ctx.fillRect(ix + 1, iy + 2, iw - 2, 4);
+
+  var bGrad = ctx.createLinearGradient(ix, iy + ih - 4, ix, iy + ih);
+  bGrad.addColorStop(0, 'rgba(217,110,0,0)');
+  bGrad.addColorStop(1, insetBot);
+  ctx.fillStyle = bGrad;
+  ctx.fillRect(ix + 1, iy + ih - 4, iw - 2, 4);
+
+  ctx.restore();
+}
+
+// 提示按钮：黄→橙，高光黄，阴影深橙
+function _drawHintBg(ctx, x, y) {
+  _drawBtnBg(ctx, x, y, '#FFD640', '#FF8925', '#FFFF5A', '#D96E00');
+}
+
+// 移除按钮：粉→红，高光肉粉，阴影深红
+function _drawEraseBg(ctx, x, y) {
+  _drawBtnBg(ctx, x, y, '#FE9368', '#FD3919', '#FFCCB6', '#D90000');
+}
 
 /**
  * @param {Object} opts
@@ -47,19 +98,7 @@ function BottomBar(opts) {
 
   var self = this;
 
-  // 提示按钮背景图
-  this._hintBgImg = wx.createImage();
-  this._hintBgLoaded = false;
-  this._hintBgImg.onload = function () { self._hintBgLoaded = true; };
-  this._hintBgImg.src = HINT_BG;
-
-  // 移除按钮背景图
-  this._hintEraseBgImg = wx.createImage();
-  this._hintEraseBgLoaded = false;
-  this._hintEraseBgImg.onload = function () { self._hintEraseBgLoaded = true; };
-  this._hintEraseBgImg.src = HINT_ERASE_BG;
-
-  // 广告图标
+  // 广告图标（仍用图片）
   this._adIconImg = wx.createImage();
   this._adIconLoaded = false;
   this._adIconImg.onload = function () { self._adIconLoaded = true; };
@@ -117,12 +156,23 @@ BottomBar.prototype.getHitType = function (px, py) {
   return null;
 };
 
+/**
+ * 绘制带字间距和描边的文本
+ */
+function _drawLabel(ctx, text, x, y, spacing) {
+  for (var i = 0; i < text.length; i++) {
+    ctx.fillText(text[i], x, y);
+    ctx.strokeText(text[i], x, y);
+    x += ctx.measureText(text[i]).width + spacing;
+  }
+}
+
 BottomBar.prototype.render = function (ctx) {
   // ===== 提示/移除按钮（同位置互斥）=====
   var hintX = SCREEN_WIDTH - 20 - HINT_W;
   var hintY = SCREEN_HEIGHT - 30 - HINT_H;
 
-  var witchBtn = this._hintActive?'erase':'hint';
+  var witchBtn = this._hintActive ? 'remove' : 'hint';
   var btnScale = this._buttonPress ? this._buttonPress.getScale(witchBtn) : 1;
   this.hintBtnRect = this.removeBtnRect = { x: hintX, y: hintY, w: HINT_W, h: HINT_H };
 
@@ -131,28 +181,41 @@ BottomBar.prototype.render = function (ctx) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.font = '24px ' + Theme.font.family;
+  ctx.strokeStyle = '#733C29';
+  ctx.lineWidth = 1;
 
   // 缩放动画（以按钮中心为锚点）
   if (btnScale !== 1) {
-    var hintCX = hintX + HINT_W / 2, hintCY = hintY + HINT_H / 2;
+    var hintCX = hintX + HINT_W / 2;
+    var hintCY = hintY + HINT_H / 2;
     ctx.translate(hintCX, hintCY);
     ctx.scale(btnScale, btnScale);
     ctx.translate(-hintCX, -hintCY);
   }
 
-  // 移除按钮
+  // 绘制按钮底框（提示/移除使用不同配色）
+  if (this._hintActive) {
+    _drawEraseBg(ctx, hintX, hintY);
+  } else {
+    _drawHintBg(ctx, hintX, hintY);
+  }
+
+  // 广告图标
+  if (this._adIconLoaded) {
+    ctx.drawImage(this._adIconImg, hintX + 22, hintY + 15, AD_ICON_W, AD_ICON_H);
+  }
+
+  // 文字
+  var label = this._hintActive ? '移除!' : '提示!';
+  _drawLabel(ctx, label, hintX + 66, hintY + 19.5, 2);
+
+  ctx.restore();
+
+  // 互斥：设置正确的点击区域
   if (this._hintActive) {
     this.hintBtnRect = null;
-    if (this._hintEraseBgLoaded) ctx.drawImage(this._hintEraseBgImg, hintX, hintY, HINT_W, HINT_H);
-    if (this._adIconLoaded) ctx.drawImage(this._adIconImg, hintX + 22, hintY + 20, AD_ICON_W, AD_ICON_H);
-    ctx.fillText('\u79FB\u9664', hintX + 66, hintY + 15.5);
-    ctx.restore();
-  }else{ // 提示按钮
+  } else {
     this.removeBtnRect = null;
-    if (this._hintBgLoaded) ctx.drawImage(this._hintBgImg, hintX, hintY, HINT_W, HINT_H);
-    if (this._adIconLoaded) ctx.drawImage(this._adIconImg, hintX + 22, hintY + 20, AD_ICON_W, AD_ICON_H);
-    ctx.fillText('\u63D0\u793A', hintX + 66, hintY + 15.5);
-    ctx.restore();
   }
 };
 

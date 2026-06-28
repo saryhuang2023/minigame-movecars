@@ -75,7 +75,6 @@ class GameEngine {
       icon_music: 'assets/images/common/icon_music.png',
       icon_sound: 'assets/images/common/icon_sound.png',
       btn_home: 'assets/images/common/btn_home.png',
-      btn_continue: 'assets/images/common/btn_continue.png',
       btn_again: 'assets/images/common/btn_again.png',
       win_cancel: 'assets/images/common/win_cancel.png',
     });
@@ -85,7 +84,7 @@ class GameEngine {
     var _loadFont = function() {
       if (typeof wx === 'undefined' || !wx.loadFont) return;
 
-      var fontPath = 'assets/font/dudu.ttf';
+      var fontPath = 'assets/font/ZiYuDuDuTi.ttf';
       var family = wx.loadFont(fontPath);
       if (family) {
         Theme.font.family = family;
