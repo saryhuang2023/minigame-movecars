@@ -543,7 +543,7 @@ describe('CrownPigWidget.render — no crown, with threshold', () => {
     const ctx = makeCtx();
     widget.render(ctx);
 
-    expect(ctx.font).toBe('12px sans-serif');
+    expect(ctx.font).toBe('12px ' + Theme.font.family + '');
     expect(ctx.fillStyle).toBe('#733C29');
     expect(ctx.textAlign).toBe('center');
     expect(ctx.textBaseline).toBe('middle');

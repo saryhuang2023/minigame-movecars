@@ -14,8 +14,8 @@ var AD_ICON = 'assets/images/levels/ad_icon.png';
 // 提示按钮尺寸（由背景图决定）
 var HINT_W = 151;
 var HINT_H = 69;
-var AD_ICON_W = 35;
-var AD_ICON_H = 22;
+var AD_ICON_W = 33;
+var AD_ICON_H = 33;
 
 /**
  * @param {Object} opts

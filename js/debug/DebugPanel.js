@@ -3,6 +3,7 @@
 
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const BugReporter = require('./BugReporter.js');
+const Theme = require('../ui/Theme.js');
 
 // ========== 配置 ==========
 const CONFIG = {
@@ -228,14 +229,14 @@ class DebugPanel {
     // 标题栏
     var titleY = cardY + 18;
     ctx.fillStyle = C.titleText;
-    ctx.font = 'bold ' + CONFIG.FONT_SIZE_TITLE + 'px sans-serif';
+    ctx.font = 'bold ' + CONFIG.FONT_SIZE_TITLE + 'px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('🔧 Debug Panel', cardX + 20, titleY + CONFIG.FONT_SIZE_TITLE / 2);
 
     // 关闭按钮区域 (右上角)
     ctx.fillStyle = C.labelText;
-    ctx.font = '12px sans-serif';
+    ctx.font = '12px ' + Theme.font.family + '';
     ctx.textAlign = 'right';
     ctx.fillText('点击外部关闭', cardX + CONFIG.CARD_WIDTH - 20, titleY + CONFIG.FONT_SIZE_TITLE / 2);
 
@@ -257,14 +258,14 @@ class DebugPanel {
 
       // 标签
       ctx.fillStyle = C.labelText;
-      ctx.font = CONFIG.FONT_SIZE_LABEL + 'px sans-serif';
+      ctx.font = CONFIG.FONT_SIZE_LABEL + 'px ' + Theme.font.family + '';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       ctx.fillText(row.label, midX - 8, ry + CONFIG.ROW_HEIGHT / 2);
 
       // 值（支持带颜色）
       ctx.fillStyle = row.color || C.valueText;
-      ctx.font = 'bold ' + CONFIG.FONT_SIZE_VALUE + 'px sans-serif';
+      ctx.font = 'bold ' + CONFIG.FONT_SIZE_VALUE + 'px ' + Theme.font.family + '';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(row.value, midX + 8, ry + CONFIG.ROW_HEIGHT / 2);
@@ -295,7 +296,7 @@ class DebugPanel {
       this._drawRoundRectStroke(bx, by, btnW, CONFIG.BTN_HEIGHT, 8);
 
       ctx.fillStyle = textColor;
-      ctx.font = 'bold ' + CONFIG.FONT_SIZE_BTN + 'px sans-serif';
+      ctx.font = 'bold ' + CONFIG.FONT_SIZE_BTN + 'px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(btn.label, bx + btnW / 2, by + CONFIG.BTN_HEIGHT / 2);
@@ -325,7 +326,7 @@ class DebugPanel {
 
     // 标题
     ctx.fillStyle = C.titleText;
-    ctx.font = 'bold ' + CONFIG.FONT_SIZE_TITLE + 'px sans-serif';
+    ctx.font = 'bold ' + CONFIG.FONT_SIZE_TITLE + 'px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('📋 Console Logs (点击继续滚动)', cardX + 16, cardY + 14);
@@ -368,7 +369,7 @@ class DebugPanel {
 
     // 滚动提示
     ctx.fillStyle = C.labelText;
-    ctx.font = '11px sans-serif';
+    ctx.font = '11px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.fillText('点击继续滚动 · 点击外部返回', cardX + cardW / 2, cardY + cardH - 16);
 

@@ -10,6 +10,7 @@ const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
 const ShopPanel = require('../ui/ShopPanel.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
+const Theme = require('../ui/Theme.js');
 const Easing = require('./Easing.js');
 const TransitionManager = require('./TransitionManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -78,6 +79,50 @@ class GameEngine {
       btn_again: 'assets/images/common/btn_again.png',
     });
     AssetPreloader.preload();
+
+    // 加载自定义字体
+    var _loadFont = function() {
+      if (typeof wx === 'undefined') { console.log('[Font] wx 不可用'); return; }
+      if (!wx.loadFont)          { console.log('[Font] wx.loadFont 不可用'); return; }
+      if (!wx.getFileSystemManager) { console.log('[Font] FileSystemManager 不可用'); return; }
+
+      var fs = wx.getFileSystemManager();
+      var fontName = 'GenSenRounded2TW-H-subset.otf';
+      var codePath = 'assets/font/' + fontName;
+      var dataPath = wx.env.USER_DATA_PATH + '/' + fontName;
+
+      // 方案A：直接从代码包加载
+      console.log('[Font] 方案A: 从代码包加载', codePath);
+      try {
+        var family = wx.loadFont(codePath);
+        if (family) { Theme.font.family = family; console.log('[Font] 方案A 成功:', family); return; }
+        console.log('[Font] 方案A 返回 null');
+      } catch (e1) { console.log('[Font] 方案A 异常:', e1.message || e1); }
+
+      // 方案B：复制到 USER_DATA_PATH 后加载
+      console.log('[Font] 方案B: 复制到 USER_DATA_PATH...');
+      try {
+        var fileExists = false;
+        try { fs.accessSync(codePath); fileExists = true; } catch (_) {}
+        console.log('[Font] 代码包文件存在:', fileExists);
+
+        if (fileExists) {
+          var data = fs.readFileSync(codePath);
+          console.log('[Font] 读取代码包成功, size:', data ? data.byteLength || data.length : 'null');
+          fs.writeFileSync(dataPath, data, 'binary');
+          console.log('[Font] 写入 USER_DATA_PATH 成功');
+
+          family = wx.loadFont(dataPath);
+          if (family) { Theme.font.family = family; console.log('[Font] 方案B 成功:', family); return; }
+          console.log('[Font] 方案B wx.loadFont 返回 null');
+        } else {
+          console.log('[Font] 代码包中找不到字体文件，packOptions.include 可能未生效');
+        }
+      } catch (e2) { console.log('[Font] 方案B 异常:', e2.message || e2); }
+
+      console.log('[Font] 所有方案均失败，使用默认字体');
+    };
+    _loadFont();
 
     console.log('[GameEngine] constructor 完成，准备调用 start()');
     this.start();
@@ -458,7 +503,7 @@ class GameEngine {
 
     // Emoji
     ctx.fillStyle = '#333';
-    ctx.font = Math.round(iconSize * 0.45) + 'px sans-serif';
+    ctx.font = Math.round(iconSize * 0.45) + 'px ' + Theme.font.family;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(emoji, cx, cy);
@@ -466,7 +511,7 @@ class GameEngine {
     // 标签文字
     if (label) {
       ctx.fillStyle = C.textMuted;
-      ctx.font = 'bold 11px sans-serif';
+      ctx.font = 'bold 11px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText(label, cx, cy + iconSize / 2 + 6);
@@ -489,7 +534,7 @@ class GameEngine {
 
     // 标签文字
     ctx.fillStyle = C.textMuted;
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 11px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText('设置', cx, cy + iconSize / 2 + 6);
@@ -746,13 +791,13 @@ class GameEngine {
     // ===== 游戏标题 + 副标题 =====
     var titleY = logoY + logoSize / 2 + 28;
     ctx.fillStyle = C.textDark;
-    ctx.font = 'bold 34px sans-serif';
+    ctx.font = 'bold 34px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('猪了个猪呀', cx, titleY);
 
     ctx.fillStyle = C.textMuted;
-    ctx.font = '14px sans-serif';
+    ctx.font = '14px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText('推一推，消除烦恼', cx, titleY + 22);
@@ -774,7 +819,7 @@ class GameEngine {
 
     // 按钮文字
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 22px sans-serif';
+    ctx.font = 'bold 22px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🎮 开始游戏', cx, mainBtnY + btnH / 2);
@@ -793,7 +838,7 @@ class GameEngine {
     this.drawClaySecondary(btnX, secBtnY, btnW, secBtnH, 28);
 
     ctx.fillStyle = C.primary;
-    ctx.font = 'bold 18px sans-serif';
+    ctx.font = 'bold 18px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('📋 关卡选择', cx, secBtnY + secBtnH / 2);
@@ -818,7 +863,7 @@ class GameEngine {
     ctx.stroke();
 
     ctx.fillStyle = '#D97706';
-    ctx.font = 'bold 18px sans-serif';
+    ctx.font = 'bold 18px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🎨 装扮', cx, arenaBtnY + arenaBtnH / 2);
@@ -832,12 +877,12 @@ class GameEngine {
     // 左边：最高分
     var leftCX = btnX + btnW * 0.28;
     ctx.fillStyle = C.textMuted;
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🏆 最高分', leftCX, cardY + 21);
     ctx.fillStyle = C.textDark;
-    ctx.font = 'bold 28px sans-serif';
+    ctx.font = 'bold 28px ' + Theme.font.family + '';
     ctx.fillText('128', leftCX, cardY + 49);
 
     // 分隔线
@@ -853,12 +898,12 @@ class GameEngine {
     var clearedCount = wx.getStorageSync('lastLevelIndex') || 0;
     var rightCX = btnX + btnW * 0.72;
     ctx.fillStyle = C.textMuted;
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🎯 已通关', rightCX, cardY + 21);
     ctx.fillStyle = C.accent;
-    ctx.font = 'bold 28px sans-serif';
+    ctx.font = 'bold 28px ' + Theme.font.family + '';
     ctx.fillText(`${clearedCount} 关`, rightCX, cardY + 49);
 
     // ===== 底部图标行：分享 + 设置 + 编辑（隐藏入口） =====

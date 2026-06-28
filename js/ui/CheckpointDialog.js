@@ -5,6 +5,7 @@
 var databus = require('../databus.js');
 var Easing = require('../core/Easing.js');
 var PopupAnimator = require('./PopupAnimator.js');
+var Theme = require('./Theme.js');
 
 // ===== PopupAnimator 实例 =====
 var _animator = PopupAnimator.createPopupAnimator();
@@ -128,7 +129,7 @@ function render(ctx) {
 
   // 3. 标题
   ctx.fillStyle = '#0F172A';
-  ctx.font = 'bold 20px sans-serif';
+  ctx.font = 'bold 20px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('发现存档', databus.screenWidth / 2, p.y + 46);
@@ -136,7 +137,7 @@ function render(ctx) {
   // 5. 说明文字
   var stepsText = '您上次玩到了第 ' + (_cpData ? _cpData.steps : '?') + ' 步，是否继续？';
   ctx.fillStyle = '#64748B';
-  ctx.font = '15px sans-serif';
+  ctx.font = '15px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(stepsText, databus.screenWidth / 2, p.y + 82);
@@ -202,7 +203,7 @@ function _renderButtons(ctx, p, isEntering) {
       ctx.restore();
 
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 16px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('继续', bCenterX, bCenterY);
@@ -218,7 +219,7 @@ function _renderButtons(ctx, p, isEntering) {
       ctx.stroke();
 
       ctx.fillStyle = '#0F172A';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 16px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('放弃', bCenterX, bCenterY);

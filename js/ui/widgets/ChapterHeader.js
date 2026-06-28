@@ -35,7 +35,7 @@ ChapterHeader.prototype.render = function (ctx) {
   var iconCY = this._y;
 
   // 图标 emoji
-  ctx.font = '16px sans-serif';
+  ctx.font = '16px ' + Theme.font.family + '';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = Theme.colors.dark;
@@ -44,12 +44,12 @@ ChapterHeader.prototype.render = function (ctx) {
   // 章节名（主题色）
   var nameX = this._x + 26;
   ctx.fillStyle = this._themeColor;
-  ctx.font = 'bold 14px sans-serif';
+  ctx.font = 'bold 14px ' + Theme.font.family + '';
   ctx.fillText(this._name, nameX, iconCY);
 
   // 进度文字（右侧）
   ctx.fillStyle = COLORS.textMuted;
-  ctx.font = '12px sans-serif';
+  ctx.font = '12px ' + Theme.font.family + '';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   ctx.fillText(this._cleared + '/' + this._total, this._w, iconCY);

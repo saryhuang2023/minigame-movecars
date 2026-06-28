@@ -6,7 +6,7 @@ var Theme = require('../Theme.js');
 var { SCREEN_WIDTH } = require('../../render.js');
 
 // 布局常量（相对屏幕右上角）
-var TROPHY_SIZE = 36;
+var TROPHY_SIZE = 42;
 var TROPHY_TOP = 84;
 var TROPHY_RIGHT = 20;
 var STEP_BG_W = 54;
@@ -79,8 +79,10 @@ CrownPigWidget.prototype.render = function (ctx) {
   var bgY = STEP_BG_TOP;
 
   // === 奖杯图标 ===
-  if (this._gotCrown) {
-    // 激活状态（已获得奖杯）
+  // 激活条件：总步数尚未超过规定步数（steps <= crownSteps）
+  // 超过后在下一帧变灰（steps > crownSteps）
+  if (this._steps <= this._crownSteps) {
+    // 激活状态
     if (this._activeLoaded) {
       ctx.drawImage(this._imgActive, trophyX, trophyY, TROPHY_SIZE, TROPHY_SIZE);
     }
@@ -101,10 +103,10 @@ CrownPigWidget.prototype.render = function (ctx) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // === 未获得，展示剩余步数===
+  // === 未获得，展示剩余步数（纯展示效果，不影响奖杯激活判断）===
   var text = '';
+  var remaining = this._crownSteps - this._steps;
   if (!this._gotCrown) {
-    var remaining = this._crownSteps - this._steps;
     if (remaining < 0) remaining = 0;
 
     // 文字："剩N步"

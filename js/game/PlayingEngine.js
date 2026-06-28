@@ -195,7 +195,7 @@ class PlayingEngine {
           } else {
             audio.play('button_click');
             settingsPanel.open({
-              title: '暂停',
+              title: '设置',
               buttons: [
                 { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
                 { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
@@ -558,7 +558,7 @@ class PlayingEngine {
           settingsPanel.close();
         } else {
           settingsPanel.open({
-            title: '暂停',
+            title: '设置',
             buttons: [
               { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
               { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
@@ -626,7 +626,7 @@ class PlayingEngine {
       } else {
         this._btnPress.press('settings');
         settingsPanel.open({
-          title: '暂停',
+          title: '设置',
           buttons: [
             { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = 'menu'; } },
             { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
@@ -1211,7 +1211,7 @@ class PlayingEngine {
       // 加载提示
       ctx.save();
       ctx.fillStyle = Theme.colors.textSecondary || '#999';
-      ctx.font = '14px sans-serif';
+      ctx.font = '14px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('加载关卡中...', SCREEN_WIDTH / 2, this._boardCardY + this._boardCardH / 2);

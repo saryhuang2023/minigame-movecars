@@ -19,6 +19,7 @@ const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const ButtonPress = require('../anim/ButtonPress.js');
 const SceneDefaults = require('../game/SceneDefaults.js');
+const Theme = require('../ui/Theme.js');
 
 
 const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
@@ -1659,7 +1660,7 @@ class EditorEngine {
       ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px sans-serif';
+      ctx.font = 'bold 11px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, tx, ty);
@@ -1726,7 +1727,7 @@ class EditorEngine {
     roundRect(ctx,backX, backY, backW, backH, 6);
     ctx.fill();
     ctx.fillStyle = '#666';
-    ctx.font = 'bold 18px sans-serif';
+    ctx.font = 'bold 18px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('←', backX + backW / 2, backY + backH / 2);
@@ -1735,7 +1736,7 @@ class EditorEngine {
     const titleX = backX + backW + 8;
 
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 15px sans-serif';
+    ctx.font = 'bold 15px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('关卡编辑器', titleX, topBarH / 2);
@@ -1757,7 +1758,7 @@ class EditorEngine {
     roundRect(ctx,btnX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('试玩', btnX + btnW / 2, btnY + btnH / 2);
@@ -1837,14 +1838,14 @@ class EditorEngine {
       var x2 = 12;
       // 关卡名称（纯文本，不画 −/+ 按钮）
       ctx.fillStyle = '#999';
-      ctx.font = '12px sans-serif';
+      ctx.font = '12px ' + Theme.font.family + '';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText('关卡', x2, midYHint);
       x2 += 30;
       var lvlName = this.currentLevelIdx >= 0 ? this.levelList[this.currentLevelIdx].name : '--';
       ctx.fillStyle = '#FF8C00';
-      ctx.font = 'bold 13px sans-serif';
+      ctx.font = 'bold 13px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.fillText(lvlName, x2 + 9, midYHint);
       x2 += 18;
@@ -1856,7 +1857,7 @@ class EditorEngine {
         roundRect(ctx, x2, btnYHint, hintBtnW, btnH2, 6);
         ctx.fill();
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 14px sans-serif';
+        ctx.font = 'bold 14px ' + Theme.font.family + '';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('退出提示', x2 + hintBtnW / 2, midYHint);
@@ -1875,7 +1876,7 @@ class EditorEngine {
         roundRect(ctx, x2, btnYHint, saveBtnW, btnH2, 6);
         ctx.fill();
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 14px sans-serif';
+        ctx.font = 'bold 14px ' + Theme.font.family + '';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('保存', x2 + saveBtnW / 2, midYHint);
@@ -1908,7 +1909,7 @@ class EditorEngine {
       roundRect(ctx, x, btnY1, pigW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px sans-serif';
+      ctx.font = 'bold 14px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(pigLabel, x + pigW / 2, midY1);
@@ -1929,7 +1930,7 @@ class EditorEngine {
       roundRect(ctx, x, btnY1, hintModeW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = this.hintMode ? '#fff' : '#8B5CF6';
-      ctx.font = 'bold 14px sans-serif';
+      ctx.font = 'bold 14px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('提示', x + hintModeW / 2, midY1);
@@ -1953,7 +1954,7 @@ class EditorEngine {
       roundRect(ctx, x, btnY1, collBoxW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = this._showAllCollisionBoxes ? '#fff' : '#4CAF50';
-      ctx.font = 'bold 14px sans-serif';
+      ctx.font = 'bold 14px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('框', x + collBoxW / 2, midY1);
@@ -1965,7 +1966,7 @@ class EditorEngine {
 
     // 金猪输入框
     ctx.fillStyle = '#999';
-    ctx.font = '12px sans-serif';
+    ctx.font = '12px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('金猪', x, midY1);
@@ -1976,7 +1977,7 @@ class EditorEngine {
     roundRect(ctx, x, btnY1, crownW, crownH, 6);
     ctx.stroke();
     ctx.fillStyle = '#FF8C00';
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     var crownLabel = this._crownSteps > 0 ? String(this._crownSteps) : '无';
@@ -2037,7 +2038,7 @@ class EditorEngine {
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = isDirty ? '#E65100' : '#333';
-      ctx.font = 'bold 14px sans-serif';
+      ctx.font = 'bold 14px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       var lvlLabel2 = (isDirty ? '*' : '') + curName + ' ▼';
@@ -2061,7 +2062,7 @@ class EditorEngine {
           roundRect(ctx, bx, btnY2, opW, btnH, 6);
           ctx.fill();
           ctx.fillStyle = '#fff';
-          ctx.font = 'bold 12px sans-serif';
+          ctx.font = 'bold 12px ' + Theme.font.family + '';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(b.label, bx + opW / 2, bmY);
@@ -2078,7 +2079,7 @@ class EditorEngine {
       roundRect(ctx, x, btnY2, syncW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
+      ctx.font = 'bold 12px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('本地同步', x + syncW / 2, midY2);
@@ -2096,7 +2097,7 @@ class EditorEngine {
       roundRect(ctx, x, btnY2, publishW, btnH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
+      ctx.font = 'bold 12px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(ready === 1 ? '已发布' : '设计中', x + publishW / 2, midY2);
@@ -2115,7 +2116,7 @@ class EditorEngine {
 
     // 标签
     ctx.fillStyle = '#999';
-    ctx.font = '12px sans-serif';
+    ctx.font = '12px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x, midY);
@@ -2123,7 +2124,7 @@ class EditorEngine {
 
     // 当前值
     ctx.fillStyle = '#FF8C00';
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.fillText(String(value), x + valueWidth / 2, midY);
     x += valueWidth;
@@ -2134,7 +2135,7 @@ class EditorEngine {
     roundRect(ctx, x, btnY, btnW, btnH, 4);
     ctx.stroke();
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x + btnW / 2, midY);
@@ -2159,7 +2160,7 @@ class EditorEngine {
     roundRect(ctx, x, y, w, h, 5);
     ctx.stroke();
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 16px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, x + w / 2, y + h / 2);
@@ -2171,7 +2172,7 @@ class EditorEngine {
     roundRect(ctx, x, y, w, h, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = 'bold 12px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, x + w / 2, y + h / 2);
@@ -2261,21 +2262,21 @@ class EditorEngine {
     ctx.fill();
 
     ctx.fillStyle = '#555';
-    ctx.font = 'bold 15px sans-serif';
+    ctx.font = 'bold 15px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('选中小猪', 20, sheetY + 24);
 
     const closeX = SCREEN_WIDTH - 50;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.font = '20px sans-serif';
+    ctx.font = '20px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.fillText('✕', closeX + 16, sheetY + 22);
 
     const pig = this.gp.pigs.find(p => p.id === this.gp.selectedPigId);
     if (pig) {
       ctx.fillStyle = '#555';
-      ctx.font = '14px sans-serif';
+      ctx.font = '14px ' + Theme.font.family + '';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       const infoY = sheetY + 56;
@@ -2290,7 +2291,7 @@ class EditorEngine {
       roundRect(ctx,delBtnX, delBtnY, 104, 40, 8);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 15px sans-serif';
+      ctx.font = 'bold 15px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('删除', delBtnX + 52, delBtnY + 20);
@@ -2298,7 +2299,7 @@ class EditorEngine {
       this.sheetPigDeleteRect = { x: delBtnX, y: delBtnY, w: 104, h: 40 };
     } else {
       ctx.fillStyle = '#aaa';
-      ctx.font = '14px sans-serif';
+      ctx.font = '14px ' + Theme.font.family + '';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText('未选中小猪', 28, sheetY + 56);
@@ -2382,7 +2383,7 @@ class EditorEngine {
 
     // 标题
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 15px sans-serif';
+    ctx.font = 'bold 15px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('选择关卡', 20, sheetY + 24);
@@ -2390,7 +2391,7 @@ class EditorEngine {
     // 关闭按钮
     const closeX = SCREEN_WIDTH - 50;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.font = '20px sans-serif';
+    ctx.font = '20px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.fillText('\u2715', closeX + 16, sheetY + 22);
 
@@ -2438,7 +2439,7 @@ class EditorEngine {
 
     // 孔半径（只读）
     ctx.fillStyle = '#999';
-    ctx.font = '12px sans-serif';
+    ctx.font = '12px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('R:' + Math.round(this.gp.scaledHalfDiameter), bx + 8, boardY2 + stepperH / 2);
@@ -2477,7 +2478,7 @@ class EditorEngine {
       roundRect(ctx, abX, abY, abW, abH, 6);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 13px sans-serif';
+      ctx.font = 'bold 13px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(b.label, abX + abW / 2, abY + abH / 2);
@@ -2525,7 +2526,7 @@ class EditorEngine {
 
       // 文字
       ctx.fillStyle = isActive ? '#fff' : '#333';
-      ctx.font = '12px sans-serif';
+      ctx.font = '12px ' + Theme.font.family + '';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const maxChars = Math.floor(btnW / 8);
@@ -2631,7 +2632,7 @@ class EditorEngine {
 
     ctx.save();
     ctx.globalAlpha = this.toastAlpha;
-    ctx.font = '13px sans-serif';
+    ctx.font = '13px ' + Theme.font.family + '';
     const textW = ctx.measureText(this.toastText).width || 200;
     const w = Math.min(textW + 36, SCREEN_WIDTH - 20);
     const h = 36;
@@ -2671,14 +2672,14 @@ class EditorEngine {
 
     // 标题
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 16px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(d.title, dx + dw / 2, dy + 38);
 
     // 消息
     ctx.fillStyle = '#666';
-    ctx.font = '14px sans-serif';
+    ctx.font = '14px ' + Theme.font.family + '';
     ctx.fillText(d.message, dx + dw / 2, dy + 72);
 
     // 按钮
@@ -2700,7 +2701,7 @@ class EditorEngine {
     roundRect(ctx, btnBaseX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px ' + Theme.font.family + '';
     ctx.fillText(saveLabel, btnBaseX + btnW / 2, btnY + btnH / 2);
 
     // 跳过按钮 — 灰色
@@ -2751,13 +2752,13 @@ class EditorEngine {
     ctx.fill();
 
     ctx.fillStyle = '#333';
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 16px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('同步云端关卡中...', bx + bw / 2, by + 33);
 
     ctx.fillStyle = '#999';
-    ctx.font = '12px sans-serif';
+    ctx.font = '12px ' + Theme.font.family + '';
     ctx.fillText('请稍后', bx + bw / 2, by + 56);
   }
 }

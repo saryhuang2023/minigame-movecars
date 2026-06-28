@@ -7,16 +7,17 @@ var databus = require('../databus.js');
 var Easing = require('../core/Easing.js');
 var PopupAnimator = require('./PopupAnimator.js');
 var AssetPreloader = require('./AssetPreloader.js');
+var Theme = require('./Theme.js');
 
 // ===== 背景图 key（需在 GameEngine 启动时预加载）=====
-// popup_bg.png: Figma @1x = 261×161，@3x 导出 = 783×483
-// 三宫格（@1x）：top=95 / mid=26 / bottom=40；对应 @3x：285 / 78 / 120
+// popup_bg.png: Figma @1x = 289×225，@3x 导出 = 867×675
+// 三宫格（@1x）：top≈135 / bottom≈36；对应 @3x：405 / 108
 var BG_KEY = 'settings_bg';
-var _bgSrcTop = 285;      // 图片源区域顶部高度（95×3）
-var _bgSrcMid = 78;       // 图片源区域中部高度（26×3）
-var _bgSrcBottom = 120;   // 图片源区域底部高度（40×3）
-var _bgDstTop = 95;       // 面板目标区域顶部高度（@1x）
-var _bgDstBottom = 40;    // 面板目标区域底部高度（@1x）
+var _bgSrcTop = 405;      // 图片源区域顶部高度（135×3）
+var _bgSrcMid = 162;      // 图片源区域中部高度（54×3）
+var _bgSrcBottom = 108;   // 图片源区域底部高度（36×3）
+var _bgDstTop = 135;      // 面板目标区域顶部高度（@1x）
+var _bgDstBottom = 36;    // 面板目标区域底部高度（@1x）
 
 /**
  * 三宫格绘制背景图：上下固定高度不拉伸，中间垂直拉伸，水平整体拉伸
@@ -30,11 +31,11 @@ function _drawThreeSlice(ctx, img, x, y, w, h) {
   var midDstH = h - _bgDstTop - _bgDstBottom;
   if (midDstH < 1) midDstH = 1;
 
-  // 顶部（源 285px → 目标 95px，宽度整体拉伸）
+  // 顶部（源 405px → 目标 135px，宽度整体拉伸）
   ctx.drawImage(img, 0, 0, sw, _bgSrcTop,              x, y, w, _bgDstTop);
-  // 中部（源 78px → 目标 midDstH 拉伸）
+  // 中部（源 162px → 目标 midDstH 拉伸）
   ctx.drawImage(img, 0, _bgSrcTop, sw, _bgSrcMid,      x, y + _bgDstTop, w, midDstH);
-  // 底部（源 120px → 目标 40px，宽度整体拉伸）
+  // 底部（源 108px → 目标 36px，宽度整体拉伸）
   ctx.drawImage(img, 0, sh - _bgSrcBottom, sw, _bgSrcBottom, x, y + h - _bgDstBottom, w, _bgDstBottom);
 }
 
@@ -63,13 +64,13 @@ var _closeRect = null;
 var _btnRects = null;
 
 // ===== 布局常量 =====
-// 主菜单设置面板（无底部按钮）：261×234
-// 关卡界面设置面板（有底部按钮）：261×296
-var PW_MENU   = 261;
-var PH_MENU   = 234;
-var PW_LEVEL  = 261;
-var PH_LEVEL  = 296;
-var PW = PW_MENU;  // 当前面板宽（open 时赋值）
+// 两种面板尺寸（宽统一 289）：
+//   主菜单弹窗 289×249 · 游戏内暂停 289×249
+var PANEL_WIDTH = 289;
+var SIZE_PRESETS = {
+  dialog: 249,   // 主菜单设置弹窗（无底部按钮，纯音频行）
+  ingame: 333,   // 游戏内暂停面板（音频行 + 底部图标按钮）
+};
 
 // ===== 动画参数 =====
 var STAGGER_INTERVAL = 40;   // 底部按钮错开间隔 (ms)
@@ -83,10 +84,10 @@ function open(opts) {
   _buttons = opts.buttons || null;
   _title = opts.title || '';
 
-  // 根据是否有底部按钮决定面板尺寸
-  var pw = (_buttons && _buttons.length > 0) ? PW_LEVEL : PW_MENU;
-  var ph = (_buttons && _buttons.length > 0) ? PH_LEVEL  : PH_MENU;
-  PW = pw; // 全局宽供内部布局引用
+  // 根据 size 参数或是否有按钮自动选面板高度
+  var sizeKey = opts.size || (_buttons && _buttons.length > 0 ? 'ingame' : 'dialog');
+  var ph = opts.height || SIZE_PRESETS[sizeKey] || SIZE_PRESETS.dialog;
+  var pw = PANEL_WIDTH;
 
   var cx = databus.screenWidth / 2;
   _panel = {
@@ -185,23 +186,23 @@ function render(ctx) {
   // 4. 标题文字
   if (_title) {
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = '20px sans-serif';
+    ctx.font = '20px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(_title, pCenterX, p.y + 46);
+    ctx.fillText(_title, pCenterX, p.y + 65);
   }
 
   // 5. 关闭按钮
   _renderCloseBtn(ctx);
 
-  // 6. 音乐行
+  // 6. 音乐行（图标相对背景：top 133, left 66）
   _musicRect = _renderAudioRow(ctx, p, {
-    text: '音乐', iconKey: 'icon_music', yOff: 0, displayVal: _toggleMusicDisplay,
+    text: '音乐', iconKey: 'icon_music', yOff: 133, gap: 0, displayVal: _toggleMusicDisplay,
   });
 
-  // 7. 音效行（与音乐排版相同，整体 +48 像素）
+  // 7. 音效行（图标相对背景：top 181, left 66）
   _sfxRect = _renderAudioRow(ctx, p, {
-    text: '音效', iconKey: 'icon_sound', yOff: 48, displayVal: _toggleSfxDisplay,
+    text: '音效', iconKey: 'icon_sound', yOff: 181, gap: 48, displayVal: _toggleSfxDisplay,
   });
 
   // 8. 底部图标按钮（仅在入场完成或已打开时渲染，错开淡入）
@@ -267,18 +268,19 @@ var MUSIC_ICON_KEY = 'icon_music';
 var SOUND_ICON_KEY = 'icon_sound';
 
 /**
- * @param {Object} opts — { text, iconKey, yOff, displayVal }
+ * @param {Object} opts — { text, iconKey, yOff, gap, displayVal }
+ *   yOff: 绝对 Y 坐标（p.y + yOff）
  * @returns {Object} 热区 { x, y, w, h }
  */
 function _renderAudioRow(ctx, p, opts) {
   var display = opts.displayVal;
-  var yOff   = opts.yOff || 0;
-  var iconLeft = p.x + 52;
-  var iconTop  = p.y + 107 + yOff;
-  var textLeft = p.x + 86;
-  var textTop  = p.y + 107 + yOff;
-  var sliderX  = p.x + 145;
-  var sliderY  = p.y + 106 + yOff;
+  var yAbs   = p.y + opts.yOff;
+  var iconLeft = p.x + 66;
+  var iconTop  = yAbs;
+  var textLeft = p.x + 103;
+  var textTop  = yAbs;
+  var sliderX  = p.x + 169;
+  var sliderY  = yAbs - 1;
   var sliderW  = 64;
   var sliderH  = 28;
   var sliderR  = 14;  // 高度一半 → 完全圆角 pill
@@ -291,7 +293,7 @@ function _renderAudioRow(ctx, p, opts) {
 
   // 文字
   ctx.fillStyle = '#E3632D';
-  ctx.font = '20px sans-serif';
+  ctx.font = '20px ' + Theme.font.family + '';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(opts.text, textLeft, textTop);
@@ -365,9 +367,9 @@ function _renderAudioRow(ctx, p, opts) {
 
   // 返回热区
   return {
-    x: p.x + 40,
-    y: p.y + 100 + yOff,
-    w: p.w - 80,
+    x: p.x + 45,
+    y: opts.yOff + p.y - 4,
+    w: p.w - 90,
     h: 36,
   };
 }
@@ -394,11 +396,12 @@ function _updateToggleSliders() {
 // ===== 底部图标按钮 =====
 
 var BOTTOM_ICON_CONFIG = {
-  btn_home:     { fromLeft: 23,  fromBottom: 40 },
-  btn_continue: { fromLeft: null, fromBottom: 36 },  // centered
-  btn_again:    { fromRight: 23, fromBottom: 40 },
+  btn_home:     { fromLeft: 26,  fromBottomFn: function(ph) { return Math.max(26, Math.floor(ph * 0.112)); }, w: 36, h: 36 },
+  btn_continue: { fromLeft: null, fromBottom: 36, w: 127, h: 48, label: '继续游戏',
+    labelStyle: { size: 22, weight: '900', color: '#FFFFFF', spacing: 1, shadowColor: 'rgba(3,48,75,0.6)', shadowBlur: 2 } },
+  btn_again:    { fromRight: 26, fromBottomFn: function(ph) { return Math.max(26, Math.floor(ph * 0.112)); }, w: 36, h: 36 },
 };
-var BOTTOM_ICON_SIZE = 36;
+var BOTTOM_ICON_SIZE_DEFAULT = 36;
 
 function _renderBottomIcons(ctx, isEntering) {
   var p = _panel;
@@ -413,16 +416,21 @@ function _renderBottomIcons(ctx, isEntering) {
     var cfg = BOTTOM_ICON_CONFIG[iconKey];
     if (!cfg) continue;
 
+    var iw = cfg.w || BOTTOM_ICON_SIZE_DEFAULT;
+    var ih = cfg.h || BOTTOM_ICON_SIZE_DEFAULT;
+
     // 计算坐标
     var bx, by;
-    by = p.y + p.h - cfg.fromBottom - BOTTOM_ICON_SIZE;
-    if (cfg.fromRight !== undefined) {
-      bx = p.x + p.w - cfg.fromRight - BOTTOM_ICON_SIZE;
-    } else if (cfg.fromLeft !== undefined) {
+    var fromBottom = cfg.fromBottom !== undefined ? cfg.fromBottom
+      : (cfg.fromBottomFn ? cfg.fromBottomFn(p.h) : 40);
+    by = p.y + p.h - fromBottom - ih;
+    if (cfg.fromRight != null) {
+      bx = p.x + p.w - cfg.fromRight - iw;
+    } else if (cfg.fromLeft != null) {
       bx = p.x + cfg.fromLeft;
     } else {
       // 水平居中
-      bx = p.x + Math.floor((p.w - BOTTOM_ICON_SIZE) / 2);
+      bx = p.x + Math.floor((p.w - iw) / 2);
     }
 
     // Stagger 入场动画
@@ -438,8 +446,8 @@ function _renderBottomIcons(ctx, isEntering) {
     var btnAlpha = btnAnimT;
     var btnScale = 0.5 + 0.5 * btnAnimT;
 
-    var cX = bx + BOTTOM_ICON_SIZE / 2;
-    var cY = by + BOTTOM_ICON_SIZE / 2;
+    var cX = bx + iw / 2;
+    var cY = by + ih / 2;
     var pressScale = _getBtnPressScale('btn_' + i, cX, cY);
     var finalScale = btnScale * pressScale;
 
@@ -451,14 +459,58 @@ function _renderBottomIcons(ctx, isEntering) {
 
     var img = AssetPreloader.get(iconKey);
     if (img && AssetPreloader.isReady(iconKey)) {
-      ctx.drawImage(img, bx, by, BOTTOM_ICON_SIZE, BOTTOM_ICON_SIZE);
+      ctx.drawImage(img, bx, by, iw, ih);
+    }
+
+    // 按钮文字（如"继续游戏"）
+    if (cfg.label) {
+      var ls = cfg.labelStyle || {};
+      ctx.fillStyle = ls.color || '#FFFFFF';
+      ctx.font = (ls.weight || '400') + ' ' + (ls.size || 16) + 'px ' + Theme.font.family + '';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // 文字阴影
+      if (ls.shadowColor) {
+        ctx.shadowColor = ls.shadowColor;
+        ctx.shadowBlur = ls.shadowBlur || 2;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+      }
+
+      var labelX = bx + iw / 2;
+      var labelY = by + ih / 2;
+
+      // 支持 letter-spacing（逐字绘制）
+      var spacing = ls.spacing || 0;
+      if (spacing > 0) {
+        var totalW = 0;
+        for (var ci = 0; ci < cfg.label.length; ci++) {
+          totalW += ctx.measureText(cfg.label[ci]).width + spacing;
+        }
+        totalW -= spacing; // 最后一个字不加间距
+        var curX = labelX - totalW / 2;
+        for (var ci = 0; ci < cfg.label.length; ci++) {
+          var charW = ctx.measureText(cfg.label[ci]).width;
+          ctx.fillText(cfg.label[ci], curX + charW / 2, labelY);
+          curX += charW + spacing;
+        }
+      } else {
+        ctx.fillText(cfg.label, labelX, labelY);
+      }
+
+      // 重置阴影
+      if (ls.shadowColor) {
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+      }
     }
 
     ctx.restore();
 
     _btnRects.push({
       x: bx, y: by,
-      w: BOTTOM_ICON_SIZE, h: BOTTOM_ICON_SIZE,
+      w: iw, h: ih,
       action: b.action,
     });
   }

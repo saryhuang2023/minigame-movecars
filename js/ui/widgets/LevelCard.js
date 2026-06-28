@@ -6,6 +6,8 @@ var IMG_ACTIVE = 'assets/images/levels/leftStep_1.png';
 var IMG_INACTIVE = 'assets/images/levels/leftStep_2.png';
 var MEDAL_SIZE = 16;
 
+var Theme = require('../Theme.js');
+
 // 卡片配色（与引擎内 C 常量同步）
 var CARD = {
   primary: '#EC4899',
@@ -114,7 +116,7 @@ function _drawLocked(ctx, x, y, w, h, r, label) {
   ctx.fill();
 
   ctx.fillStyle = CARD.textLocked;
-  ctx.font = 'bold 20px sans-serif';
+  ctx.font = 'bold 20px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, x + w / 2, y + h / 2);
@@ -155,7 +157,7 @@ function _drawActive(ctx, x, y, w, h, r, label, isCurrent) {
 
   // 编号文字
   ctx.fillStyle = isCurrent ? CARD.primary : CARD.textDark;
-  ctx.font = 'bold 20px sans-serif';
+  ctx.font = 'bold 20px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, x + w / 2, y + h / 2);

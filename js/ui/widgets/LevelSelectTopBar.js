@@ -7,6 +7,8 @@ var COLORS = {
   white: '#FFFFFF',
 };
 
+var Theme = require('../Theme.js');
+
 function LevelSelectTopBar(opts) {
   this._safeTop = 0;
   this._topBarH = 52;
@@ -81,7 +83,7 @@ LevelSelectTopBar.prototype.render = function (ctx) {
 
   // 居中标题
   ctx.fillStyle = COLORS.textDark;
-  ctx.font = 'bold 24px sans-serif';
+  ctx.font = 'bold 24px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(this._title, this._screenW / 2, barCY);

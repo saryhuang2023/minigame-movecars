@@ -7,6 +7,7 @@ var SkinSystem = require('../game/SkinSystem.js');
 var GoldSystem = require('../game/GoldSystem.js');
 var databus = require('../databus.js');
 var PopupAnimator = require('./PopupAnimator.js');
+var Theme = require('./Theme.js');
 var { drawComposedPig, getComposedPigSize } = require('../render/PigRenderer.js');
 
 // ===== PopupAnimator =====
@@ -199,7 +200,7 @@ function _renderHeader(ctx, p) {
   ctx.fill();
 
   ctx.fillStyle = '#F59E0B';
-  ctx.font = 'bold 13px sans-serif';
+  ctx.font = 'bold 13px ' + Theme.font.family + '';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText('💰 ' + goldAmount, gbX + 8, gbY + gbH / 2);
@@ -208,7 +209,7 @@ function _renderHeader(ctx, p) {
   var cx = p.x + p.w / 2;
   var titleY = p.y + 14 + 14;   // 对齐金币徽章中心：p.y + 14 + gbH/2
   ctx.fillStyle = '#333';
-  ctx.font = 'bold 16px sans-serif';
+  ctx.font = 'bold 16px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('装扮', cx, titleY);
@@ -221,7 +222,7 @@ function _renderGrid(ctx, p, gridY) {
   if (skins.length === 0) {
     var cx = p.x + p.w / 2;
     ctx.fillStyle = '#999';
-    ctx.font = '13px sans-serif';
+    ctx.font = '13px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('皮肤加载中...', cx, gridY + 60);
@@ -308,7 +309,7 @@ function _renderCardPreview(ctx, x, y, skinId, unlocked) {
 
 function _renderCardLabel(ctx, x, y, skin) {
   var name = skin.name || '';
-  ctx.font = '10px sans-serif';
+  ctx.font = '10px ' + Theme.font.family + '';
   var textW = ctx.measureText(name).width;
   var labelW = Math.max(textW + 14, 36);
   var labelX = x + (CARD_W - labelW) / 2;
@@ -321,7 +322,7 @@ function _renderCardLabel(ctx, x, y, skin) {
 
   // 白色文字
   ctx.fillStyle = '#fff';
-  ctx.font = '10px sans-serif';
+  ctx.font = '10px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(name, labelX + labelW / 2, labelY + LABEL_H / 2);
@@ -340,7 +341,7 @@ function _renderCardButton(ctx, x, y, skin, owned, isEquipped, unlocked, index) 
     _roundRect(ctx, btnX, btnY, btnW, BTN_H, BTN_H / 2);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 11px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     btnText = '装备中';
@@ -351,7 +352,7 @@ function _renderCardButton(ctx, x, y, skin, owned, isEquipped, unlocked, index) 
     _roundRect(ctx, btnX, btnY, btnW, BTN_H, BTN_H / 2);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 11px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     btnText = '装备';
@@ -362,7 +363,7 @@ function _renderCardButton(ctx, x, y, skin, owned, isEquipped, unlocked, index) 
     _roundRect(ctx, btnX, btnY, btnW, BTN_H, BTN_H / 2);
     ctx.fill();
     ctx.fillStyle = '#999';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 11px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     btnText = '🔒 未解锁';
@@ -381,7 +382,7 @@ function _renderCardButton(ctx, x, y, skin, owned, isEquipped, unlocked, index) 
     ctx.fill();
 
     ctx.fillStyle = canAfford ? '#fff' : '#999';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 11px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     btnText = priceText;
@@ -408,7 +409,7 @@ function _renderPlaceholderCard(ctx, x, y, index) {
 
   // 标签
   var labelText = '敬请期待';
-  ctx.font = '10px sans-serif';
+  ctx.font = '10px ' + Theme.font.family + '';
   var textW = ctx.measureText(labelText).width;
   var labelW = textW + 16;
   var labelX = x + (CARD_W - labelW) / 2;
@@ -418,14 +419,14 @@ function _renderPlaceholderCard(ctx, x, y, index) {
   _roundRect(ctx, labelX, labelY, labelW, LABEL_H, LABEL_H / 2);
   ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.font = '10px sans-serif';
+  ctx.font = '10px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(labelText, labelX + labelW / 2, labelY + LABEL_H / 2);
 
   // 卡片内提示图标
   ctx.fillStyle = '#ccc';
-  ctx.font = '20px sans-serif';
+  ctx.font = '20px ' + Theme.font.family + '';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('🔒', x + CARD_W / 2, y + CARD_H / 2);

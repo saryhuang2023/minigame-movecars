@@ -8,7 +8,7 @@ const FLY_DURATION = 1500;   // 飞行阶段时长 ms
 const FLASH_DURATION = 800;  // 闪烁阶段时长 ms
 
 // 奖杯目标位置（与 CrownPigWidget 对齐）
-const TROPHY_SIZE = 36;
+const TROPHY_SIZE = 42;
 const TROPHY_TOP = 84;
 const TROPHY_RIGHT = 20;
 const TROPHY_IMG = 'assets/images/levels/leftStep_1.png';
@@ -179,7 +179,7 @@ class VictoryAnimation {
     var fx = t1 * t1 * startX + 2 * t1 * t * cpX + t * t * targetX;
     var fy = t1 * t1 * startY + 2 * t1 * t * cpY + t * t * targetY;
 
-    // 从 60 → 36 渐缩到目标尺寸
+    // 从 60 → 42 渐缩到目标尺寸
     var scale = 60 + (TROPHY_SIZE - 60) * t;
     ctx.drawImage(this._trophyImg, fx - scale / 2, fy - scale / 2, scale, scale);
   }

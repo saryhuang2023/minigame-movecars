@@ -76,7 +76,7 @@ const Theme = {
 
   // ========== 字体 ==========
   font: {
-    family: 'sans-serif',
+    family: 'GenSenRounded2TW',
     size: {
       xs: 10,
       sm: 12,

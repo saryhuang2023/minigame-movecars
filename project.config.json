@@ -52,7 +52,9 @@
   "simulatorPluginLibVersion": {},
   "packOptions": {
     "ignore": [],
-    "include": []
+    "include": [
+      { "type": "file", "value": "assets/font/GenSenRounded2TW-H-subset.otf" }
+    ]
   },
   "isGameTourist": false,
   "editorSetting": {}
