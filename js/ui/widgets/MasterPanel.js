@@ -92,9 +92,31 @@ MasterPanel.prototype.render = function (ctx) {
   ctx.fillStyle = '#000000';
 
   // ===== 左栏：关主 =====
+  // 头像（圆形裁剪，屏幕绝对定位 left:40 bottom:43 33×33）
+  if (this._master && this._avatarLoaded && this._avatarImg) {
+    var avatarSize = 33;
+    var avatarCenterX = 40 + avatarSize / 2;
+    var avatarCenterY = SCREEN_HEIGHT - 43 - avatarSize / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(avatarCenterX, avatarCenterY, avatarSize / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(this._avatarImg, avatarCenterX - avatarSize / 2, avatarCenterY - avatarSize / 2, avatarSize, avatarSize);
+    ctx.restore();
+    // 点击区域（供 PlayingEngine 外部使用）
+    this._avatarRect = {
+      x: avatarCenterX - avatarSize / 2,
+      y: avatarCenterY - avatarSize / 2,
+      w: avatarSize,
+      h: avatarSize,
+    };
+  } else {
+    this._avatarRect = null;
+  }
+
   // 关主标签
   ctx.font = '12px ' + Theme.font.family;
-  ctx.fillText('关主记录', CARD_X+14, CARD_Y+17);
+  ctx.fillText('关主记录', CARD_X + 14, CARD_Y + 17);
 
   // 关主步数（纯文字，无背景药丸）
   var stepsText = "暂无";

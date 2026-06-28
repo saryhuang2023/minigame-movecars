@@ -6,7 +6,7 @@ var UIComponent = require('./base/UIComponent.js');
 // 固定层级常量
 var LAYER = {
   BOARD_CARD: 0,    // 棋盘卡片背景
-  INFO: 1,          // 信息面板（关主、连击、小金猪）
+  INFO: 1,          // 信息面板（关主、奖杯）
   CONTROL: 2,       // 控制按钮（顶部栏、底部栏）
   OVERLAY: 3,       // 叠加层（提示方向指示器）
   MODAL: 4,         // 模态弹窗（结算、授权、Toast）

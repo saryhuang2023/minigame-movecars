@@ -17,7 +17,7 @@ const Theme = {
     pinkMid: '#FFFAFD',            // 极浅粉 — 面板渐变底
     pinkBorder: 'rgba(249,168,212,0.5)',  // 面板边框
 
-    gold: '#FFD700',               // 金色 — 小金猪/关主
+    gold: '#FFD700',               // 金色 — 奖杯/关主
     goldLight: '#FFF8E1',          // 浅金
 
     dark: '#0F172A',               // 深色文字

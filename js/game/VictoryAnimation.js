@@ -1,17 +1,22 @@
-// 通关飞行特效动画 — 小金猪飞入 + 关主头像飞入
+// 通关飞行特效动画 — 奖杯飞入 + 关主头像飞入
 // 自管理状态机和 Canvas 渲染，PlayingEngine 通过回调感知阶段完成
 
 const audio = require('../audio/AudioManager.js');
-const { drawPigIcon } = require('../render/PigIconRenderer.js');
 const Easing = require('../core/Easing.js');
 
 const FLY_DURATION = 1500;   // 飞行阶段时长 ms
 const FLASH_DURATION = 800;  // 闪烁阶段时长 ms
 
+// 奖杯目标位置（与 CrownPigWidget 对齐）
+const TROPHY_SIZE = 36;
+const TROPHY_TOP = 84;
+const TROPHY_RIGHT = 20;
+const TROPHY_IMG = 'assets/sceen/0/leftStep_1.png';
+
 class VictoryAnimation {
   /**
    * @param {Object} options
-   * @param {Function} options.onCrownDone - 小金猪动画完成回调
+   * @param {Function} options.onCrownDone - 奖杯动画完成回调
    * @param {Function} options.onMasterDone - 关主动画完成回调
    */
   constructor(options) {
@@ -22,7 +27,15 @@ class VictoryAnimation {
     this._boardCardX = 0;
     this._boardCardY = 0;
     this._boardCardW = 0;
+    this._screenW = 0;
     this._screenH = 0;
+
+    // 奖杯图片
+    this._trophyImg = wx.createImage();
+    this._trophyLoaded = false;
+    var self = this;
+    this._trophyImg.onload = function () { self._trophyLoaded = true; };
+    this._trophyImg.src = TROPHY_IMG;
 
     // Crown state
     this._crownPhase = null;   // null | 'flying' | 'flashing' | 'done'
@@ -43,10 +56,11 @@ class VictoryAnimation {
   // 布局
   // ------------------------------------------------------------------
 
-  setLayout(boardCardX, boardCardY, boardCardW, screenH) {
+  setLayout(boardCardX, boardCardY, boardCardW, screenW, screenH) {
     this._boardCardX = boardCardX;
     this._boardCardY = boardCardY;
     this._boardCardW = boardCardW;
+    this._screenW = screenW;
     this._screenH = screenH;
   }
 
@@ -63,7 +77,7 @@ class VictoryAnimation {
     this._masterAvatarImg = null;
   }
 
-  /** 小金猪飞行：起点 → 棋盘卡片右上角 */
+  /** 奖杯飞行：起点 → 棋盘卡片右上角 */
   startCrown(fromX, fromY) {
     this._crownPhase = 'flying';
     this._crownStart = Date.now();
@@ -101,10 +115,10 @@ class VictoryAnimation {
   // 状态查询
   // ------------------------------------------------------------------
 
-  /** 是否获得了小金猪（动画完成后变 true） */
+  /** 是否获得了奖杯（动画完成后变 true） */
   gotCrown() { return this._gotCrown; }
 
-  /** 小金猪动画是否已完成 */
+  /** 奖杯动画是否已完成 */
   isCrownDone() { return this._crownPhase === 'done'; }
 
   /** 关主动画是否已完成 */
@@ -147,15 +161,16 @@ class VictoryAnimation {
 
   _renderFlyingPig(ctx) {
     if (this._crownPhase !== 'flying') return;
+    if (!this._trophyLoaded) return;
 
     var t = Math.min((Date.now() - this._crownStart) / FLY_DURATION, 1);
     t = Easing.easeOutCubic(t);
 
     var startX = this._crownFromX;
     var startY = this._crownFromY;
-    // 目标：棋盘卡片右上角上方
-    var targetX = this._boardCardX + this._boardCardW - 36;
-    var targetY = this._boardCardY - 25;
+    // 目标：右上角奖杯中心位置（与 CrownPigWidget 对齐）
+    var targetX = this._screenW - TROPHY_SIZE / 2 - TROPHY_RIGHT;
+    var targetY = TROPHY_TOP + TROPHY_SIZE / 2;
 
     // 二次贝塞尔弧线
     var cpX = (startX + targetX) / 2;
@@ -164,9 +179,9 @@ class VictoryAnimation {
     var fx = t1 * t1 * startX + 2 * t1 * t * cpX + t * t * targetX;
     var fy = t1 * t1 * startY + 2 * t1 * t * cpY + t * t * targetY;
 
-    // 从 30 → 21 渐缩
-    var scale = 30 + (21 - 30) * t;
-    drawPigIcon(ctx, fx, fy, scale, true, 1);
+    // 从 60 → 36 渐缩到目标尺寸
+    var scale = 60 + (TROPHY_SIZE - 60) * t;
+    ctx.drawImage(this._trophyImg, fx - scale / 2, fy - scale / 2, scale, scale);
   }
 
   // ------------------------------------------------------------------
@@ -204,9 +219,9 @@ class VictoryAnimation {
 
     var startX = this._masterFromX;
     var startY = this._masterFromY;
-    // 目标：左下角关主徽章位置
-    var targetX = 35;
-    var targetY = this._screenH - 34;
+    // 目标：左下角关主头像中心（left:40 bottom:43, 33×33）
+    var targetX = 40 + 33 / 2;
+    var targetY = this._screenH - 43 - 33 / 2;
 
     var cpX = (startX + targetX) / 2;
     var cpY = Math.min(startY, targetY) - 80;
@@ -214,8 +229,8 @@ class VictoryAnimation {
     var fx = t1 * t1 * startX + 2 * t1 * t * cpX + t * t * targetX;
     var fy = t1 * t1 * startY + 2 * t1 * t * cpY + t * t * targetY;
 
-    // 从 60 → 36 渐缩
-    var scale = 60 + (36 - 60) * t;
+    // 从 60 → 33 渐缩到目标尺寸
+    var scale = 60 + (33 - 60) * t;
 
     ctx.save();
     ctx.beginPath();

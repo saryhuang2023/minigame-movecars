@@ -306,10 +306,7 @@ LevelSelectEngine.prototype._syncUIData = function () {
 
       // 皇冠状态
       var hasCrown = false;
-      var levelName = card.level ? card.level.name : null;
-      if (levelName) {
-        try { hasCrown = !!wx.getStorageSync('crown_' + levelName); } catch (e) {}
-      }
+      try { hasCrown = !!wx.getStorageSync('crown_' + card.globalIndex); } catch (e) {}
 
       this._levelCards[s][i].setCardData({
         x: card.x,

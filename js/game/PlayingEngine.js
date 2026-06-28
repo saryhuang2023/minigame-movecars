@@ -74,9 +74,9 @@ class PlayingEngine {
       }.bind(this),
     });
     this._masterAnimWaiting = false; // _checkMasterAfterCrown 未就绪时为 true（每帧轮询）
-    this._gotCrown = false;         // 小金猪是否已显示为金色（动画完成后才置 true）
-    this._earnedCrown = false;      // 本局是否达到了小金猪门槛（用于判断是否播动画）
-    this._hadCrownBefore = false;   // 本局开始前是否已拥有小金猪（已获得则跳过所有皇冠逻辑）
+    this._gotCrown = false;         // 奖杯是否已显示为激活状态（动画完成后才置 true）
+    this._earnedCrown = false;      // 本局是否达到了奖杯门槛（用于判断是否播动画）
+    this._hadCrownBefore = false;   // 本局开始前是否已拥有奖杯（已获得则跳过所有奖杯逻辑）
     this._showVictoryPanel = false; // 结算面板是否可见（通关后可能先隐藏播动画）
     this._victoryAnimStart = 0;     // 结算面板入场动画起始时间
     this._victoryAnimator = PopupAnimator.createPopupAnimator();
@@ -113,7 +113,7 @@ class PlayingEngine {
   }
 
   /**
-   * 进入关卡时统一重置所有运行时状态（仅依赖 this.levelName）。
+   * 进入关卡时统一重置所有运行时状态（依赖 this.levelName + databus.currentLevelIndex）。
    * 由 loadLevel() 内部调用，所有入口通过 startLevel → _loadAndStart → loadLevel 保证状态干净。
    */
   _resetPlayState() {
@@ -129,8 +129,8 @@ class PlayingEngine {
     this._lastFrameTime = 0;       // 防止切关卡时 dt 突增
     this._hasUsedRemove = false;
     this._pendingResume = false;    // 防御：每次重置关卡状态都清理恢复标志
-    // 小金猪状态
-    this._hadCrownBefore = !!wx.getStorageSync('crown_' + this.levelName);
+    // 奖杯状态
+    this._hadCrownBefore = !!wx.getStorageSync('crown_' + databus.currentLevelIndex);
     this._gotCrown = this._hadCrownBefore;
     this._earnedCrown = false;
     // 通关动画状态
@@ -176,7 +176,7 @@ class PlayingEngine {
       });
       this.ui.add(this._uiMasterPanel, UIManager.LAYER.INFO);
 
-      // Layer 1 — CrownPigWidget
+      // Layer 1 — 奖杯组件
       this._uiCrownPig = new CrownPigWidget({
         zIndex: UIManager.LAYER.INFO,
       });
@@ -282,11 +282,9 @@ class PlayingEngine {
       this._uiMasterPanel.setAvatar(avatarImg);
     }
 
-    // CrownPigWidget
+    // 奖杯组件
     this._uiCrownPig.setHidden(databus.returnState === 'editor');
     this._uiCrownPig.setData(this._crownSteps, this.steps, this._gotCrown);
-    this._uiCrownPig.setAnimPhase(this._victoryAnim.isActive() ? 'flying' : 'idle');
-    this._uiCrownPig.setCenter(this._boardCardX + this._boardCardW - 30, this._boardCardY - 25);
 
     // VictoryPopup
     this._uiVictoryPopup.setData({
@@ -880,7 +878,7 @@ class PlayingEngine {
     }
     // 清理存档：通关后杀进程恢复会出现"关卡已完成但仍有存档"的矛盾，这里清除掉
     try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
-    // 小金猪：试玩模式不写存储；已获得过则跳过，不再重复检查/写存储/播动画
+    // 奖杯：试玩模式不写存储；已获得过则跳过，不再重复检查/写存储/播动画
     if (isTrial) {
       this._earnedCrown = false;
       this._gotCrown = false;
@@ -889,16 +887,16 @@ class PlayingEngine {
       this._gotCrown = true;
       this._earnedCrown = false;
     } else if (this._crownSteps > 0 && this.steps <= this._crownSteps) {
-      wx.setStorageSync('crown_' + this.levelName, true);
+      wx.setStorageSync('crown_' + databus.currentLevelIndex, true);
       this._earnedCrown = true;
       this._gotCrown = false;  // 动画期间保持灰色
-      console.log('[小金猪] 获得！' + this.levelName + ' ' + this.steps + '/' + this._crownSteps + '步');
+      console.log('[奖杯] 获得！' + this.levelName + ' ' + this.steps + '/' + this._crownSteps + '步');
     } else {
       this._earnedCrown = false;
       this._gotCrown = false;
-      console.log('[小金猪] 未获得 ' + this.levelName + ' ' + this.steps + '/' + (this._crownSteps || '?') + '步');
+      console.log('[奖杯] 未获得 ' + this.levelName + ' ' + this.steps + '/' + (this._crownSteps || '?') + '步');
     }
-    // 金币奖励：试玩模式不触发；首次通关本关 → 计算奖励金额（独立于小金猪系统）
+    // 金币奖励：试玩模式不触发；首次通关本关 → 计算奖励金额（独立于奖杯系统）
     this._pendingGoldReward = false;
     this._goldAmount = 0;
     if (!isTrial && GoldSystem.isFirstGoldClear(this.levelName)) {
@@ -934,7 +932,7 @@ class PlayingEngine {
     try {
       var lastLevelIndex = wx.getStorageSync('lastLevelIndex');
       var info = wx.getStorageSync('userinfo_cache') || {};
-      // 收集已获得小金猪的关卡列表
+      // 收集已获得奖杯的关卡 ID 列表
       var crowns = [];
       try {
         var infoRes = wx.getStorageInfoSync();
@@ -944,7 +942,7 @@ class PlayingEngine {
             if (k.indexOf('crown_') === 0) {
               var v = wx.getStorageSync(k);
               if (v === true || v === 'true') {
-                crowns.push(k.replace('crown_', ''));
+                crowns.push(parseInt(k.replace('crown_', ''), 10));
               }
             }
           }
@@ -1122,7 +1120,7 @@ class PlayingEngine {
   // ========== 通关动画编排 ==========
 
   /**
-   * 小金猪动画完成后调用（onCrownDone 回调 → _gotCrown=true → 本方法）。
+   * 奖杯动画完成后调用（onCrownDone 回调 → _gotCrown=true → 本方法）。
    * 检查关主状态，决定启动关主飞行 / 等待 / 直接结算。
    */
   _checkMasterAfterCrown() {
@@ -1155,7 +1153,7 @@ class PlayingEngine {
   }
 
   /**
-   * 所有通关动画（小金猪+关主）播放完毕，显示结算面板。
+   * 所有通关动画（奖杯+关主）播放完毕，显示结算面板。
    */
   _finishVictorySequence() {
     this._showVictoryPanel = true;
@@ -1226,12 +1224,12 @@ class PlayingEngine {
     // 3. 关主卡片（UIManager）
     this._uiMasterPanel.render(ctx);
 
-    // 3.8 小金猪（UIManager）
+    // 3.8 奖杯（UIManager）
     this._uiCrownPig.render(ctx);
 
     // 3.9 通关飞行特效动画（VictoryAnimation 独立渲染组件）
     this._checkMasterAnimWaiting();
-    this._victoryAnim.setLayout(this._boardCardX, this._boardCardY, this._boardCardW, SCREEN_HEIGHT);
+    this._victoryAnim.setLayout(this._boardCardX, this._boardCardY, this._boardCardW, SCREEN_WIDTH, SCREEN_HEIGHT);
     this._victoryAnim.update();
     this._victoryAnim.render(ctx);
 

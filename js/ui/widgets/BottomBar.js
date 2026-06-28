@@ -120,9 +120,10 @@ BottomBar.prototype.getHitType = function (px, py) {
 BottomBar.prototype.render = function (ctx) {
   // ===== 提示/移除按钮（同位置互斥）=====
   var hintX = SCREEN_WIDTH - 20 - HINT_W;
-  var hintY = SCREEN_HEIGHT - 33 - HINT_H;
+  var hintY = SCREEN_HEIGHT - 30 - HINT_H;
 
-  var hintScale = this._buttonPress ? this._buttonPress.getScale('hint') : 1;
+  var witchBtn = this._hintActive?'erase':'hint';
+  var btnScale = this._buttonPress ? this._buttonPress.getScale(witchBtn) : 1;
   this.hintBtnRect = this.removeBtnRect = { x: hintX, y: hintY, w: HINT_W, h: HINT_H };
 
   ctx.save();
@@ -132,10 +133,10 @@ BottomBar.prototype.render = function (ctx) {
   ctx.font = '24px ' + Theme.font.family;
 
   // 缩放动画（以按钮中心为锚点）
-  if (hintScale !== 1) {
+  if (btnScale !== 1) {
     var hintCX = hintX + HINT_W / 2, hintCY = hintY + HINT_H / 2;
     ctx.translate(hintCX, hintCY);
-    ctx.scale(hintScale, hintScale);
+    ctx.scale(btnScale, btnScale);
     ctx.translate(-hintCX, -hintCY);
   }
 

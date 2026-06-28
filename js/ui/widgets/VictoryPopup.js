@@ -221,7 +221,7 @@ VictoryPopup.prototype.render = function (ctx) {
     nextY = nextY + 22;
   }
 
-  // 小金猪
+  // 奖杯
   if (hasCrown) {
     staggerIdx++;
     var crownAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
@@ -231,7 +231,7 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.font = 'bold 16px ' + Theme.font.family;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('\uD83D\uDC37 获得小金猪！', SCREEN_WIDTH / 2, nextY + 22);
+    ctx.fillText('\uD83C\uDFC6 获得奖杯！', SCREEN_WIDTH / 2, nextY + 22);
     ctx.restore();
     nextY = nextY + 22;
   }

@@ -85,7 +85,7 @@ TopBar.prototype.render = function (ctx) {
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(this.levelText, barW / 2, 29);
+    ctx.fillText(this.levelText, barW / 2, 87);
   }
 };
 

@@ -1009,6 +1009,9 @@ class EditorEngine {
 
     // 深拷贝当前关卡数据作为新关卡内容
     const copiedData = JSON.parse(JSON.stringify(this.levelList[this.currentLevelIdx].data));
+    // 复制关卡强制重置为「设计中」状态
+    copiedData.ready = 0;
+    copiedData.version = 0;
     this.levelList.push({ name, fileName, data: copiedData, isDirty: true, _version: 0 });
     this.currentLevelIdx = this.levelList.length - 1;
     this.loadLevelData(this.levelList[this.currentLevelIdx].data);
@@ -1148,39 +1151,68 @@ class EditorEngine {
     fs.writeFileSync(`${metaDir}/${name}.json`, JSON.stringify({ cloudId, version: version || 0 }), 'utf8');
   }
 
-  // 从云端下载所有关卡，全量覆盖本地文件（批量 gzip 打包，不依赖 this.levelList）
+  // 从云端下载关卡（增量同步：仅下载有变化的关卡）
+  // 客户端传入本地版本号映射，云函数只返回 version 大于本地的关卡
   async _pullCloudLevels() {
     try {
-      // ① 调用批量下载云函数（gzip 压缩 + base64 返回）
-      const res = await wx.cloud.callFunction({ name: 'batchDownloadLevels' });
-      const result = res.result;
-      if (!result || !result.ok || !result.count) return;
+      // ① 收集本地版本号映射（.meta 目录下的 {name}.json → version）
+      var fs = wx.getFileSystemManager();
+      var metaDir = `${wx.env.USER_DATA_PATH}/levels/.meta`;
+      var versions = {};
+      try {
+        var metaFiles = fs.readdirSync(metaDir);
+        for (var i = 0; i < metaFiles.length; i++) {
+          var fn = metaFiles[i];
+          if (!fn.endsWith('.json')) continue;
+          try {
+            var meta = JSON.parse(fs.readFileSync(`${metaDir}/${fn}`, 'utf8'));
+            var nm = fn.replace('.json', '');
+            versions[nm] = meta.version || 0;
+          } catch (e) { /* ignore corrupted meta */ }
+        }
+      } catch (e) { /* .meta dir may not exist yet */ }
 
-      // ② base64 → Uint8Array → pako.inflate → JSON（小游戏无 wx.base64ToArrayBuffer，用 atob 手动转换）
-      const binaryStr = atob(result.base64);
-      const compressed = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        compressed[i] = binaryStr.charCodeAt(i);
+      // ② 调用批量下载云函数（增量模式：传入 versions）
+      var res = await wx.cloud.callFunction({
+        name: 'batchDownloadLevels',
+        data: { versions: versions }
+      });
+      var result = res.result;
+      if (!result || !result.ok) return;
+
+      console.log('[Cloud] 增量同步: ' + result.count + ' 个云端关卡, ' +
+        result.changed + ' 个变更, ' + (result.skipped || 0) + ' 个跳过');
+
+      // 无变更则直接返回
+      if (!result.changed || !result.base64) return;
+
+      // ③ base64 → Uint8Array → pako.inflate → JSON
+      var binaryStr = atob(result.base64);
+      var compressed = new Uint8Array(binaryStr.length);
+      for (var j = 0; j < binaryStr.length; j++) {
+        compressed[j] = binaryStr.charCodeAt(j);
       }
-      const pako = require('../libs/pako_inflate.min');
-      const decompressed = pako.inflate(compressed, { to: 'string' });
-      const payload = JSON.parse(decompressed);
+      var pako = require('../libs/pako_inflate.min');
+      var decompressed = pako.inflate(compressed, { to: 'string' });
+      var payload = JSON.parse(decompressed);
 
-      console.log(`[Cloud] 批量下载完成: ${result.count} 个关卡, ${result.compressedSize}B → ${result.originalSize}B (${Math.round(result.compressedSize / result.originalSize * 100)}%)`);
+      if (result.compressedSize != null) {
+        console.log('[Cloud] 解压完成: ' + result.compressedSize + 'B → ' + result.originalSize + 'B (' +
+          Math.round(result.compressedSize / result.originalSize * 100) + '%)');
+      }
 
-      // ③ 逐关卡写入本地文件 + .meta
-      const fs = wx.getFileSystemManager();
-      const dir = `${wx.env.USER_DATA_PATH}/levels`;
+      // ④ 逐关卡写入本地文件 + .meta
+      var dir = `${wx.env.USER_DATA_PATH}/levels`;
       try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
 
-      for (const [name, info] of Object.entries(payload)) {
-        const fileName = name + '.json';
+      for (var entry of Object.entries(payload)) {
+        var name = entry[0];
+        var info = entry[1];
+        var fileName = name + '.json';
         info.data.version = info.version;
-        // crownSteps 双保险：优先用 info.data 内嵌值，否则用顶级字段
         if (info.data.crownSteps == null && info.crownSteps != null) {
           info.data.crownSteps = info.crownSteps;
         }
-        // 云端 published 状态映射到 ready 字段
         if (info.published === true) {
           info.data.ready = 1;
         } else if (info.data.ready === undefined) {

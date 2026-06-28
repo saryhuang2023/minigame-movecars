@@ -81,7 +81,7 @@ var SFX_EVENTS = {
     files: ['victory.mp3'],
     priority: PRIORITY.VICTORY,
   },
-  'rewards': {  // 获得奖励：小金猪、金主等
+  'rewards': {  // 获得奖励：奖杯、关主等
     files: ['rewards.mp3'],
     priority: PRIORITY.SFX,
   },

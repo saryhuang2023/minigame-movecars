@@ -1,7 +1,10 @@
 // 关卡选择 — 单个关卡卡片组件
 // 三态：locked（灰卡）、completed（白卡）、current（粉色描边白卡）
 
-var drawPigIcon = require('../../render/PigIconRenderer.js').drawPigIcon;
+// 奖章图片路径
+var IMG_ACTIVE = 'assets/sceen/0/leftStep_1.png';
+var IMG_INACTIVE = 'assets/sceen/0/leftStep_2.png';
+var MEDAL_SIZE = 16;
 
 // 卡片配色（与引擎内 C 常量同步）
 var CARD = {
@@ -27,6 +30,17 @@ function LevelCard(opts) {
   this._status = 'locked'; // 'locked' | 'completed' | 'current'
   this._hasCrown = false;
   this._pressScale = 1;
+
+  // 奖章图片
+  this._imgActive = wx.createImage();
+  this._imgActive.src = IMG_ACTIVE;
+  this._activeLoaded = false;
+  this._imgActive.onload = (function () { this._activeLoaded = true; }).bind(this);
+
+  this._imgInactive = wx.createImage();
+  this._imgInactive.src = IMG_INACTIVE;
+  this._inactiveLoaded = false;
+  this._imgInactive.onload = (function () { this._inactiveLoaded = true; }).bind(this);
 }
 
 /** 同步数据（引擎每帧调） */
@@ -70,9 +84,11 @@ LevelCard.prototype.render = function (ctx) {
   var isCurrent = this._status === 'current';
   _drawActive(ctx, x, y, w, h, r, labelNumber, isCurrent);
 
-  // 右上角小金猪（已获得皇冠）
-  if (this._hasCrown) {
-    drawPigIcon(ctx, x + w - 4, y + 4, 14, true);
+  // 右上角奖章
+  var medalImg = this._hasCrown ? this._imgActive : this._imgInactive;
+  var medalLoaded = this._hasCrown ? this._activeLoaded : this._inactiveLoaded;
+  if (medalLoaded && medalImg) {
+    ctx.drawImage(medalImg, x + w - MEDAL_SIZE - 2, y + 2, MEDAL_SIZE, MEDAL_SIZE);
   }
 
   ctx.restore();

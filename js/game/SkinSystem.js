@@ -30,7 +30,7 @@ var _onConfigUpdated = null;
 // 章节配置缓存（懒加载，读取后常驻）
 var _chaptersCache = null;
 
-// 小金猪计数缓存
+// 奖杯计数缓存
 var _goldenPigsCache = { count: -1, timestamp: 0 };
 var GOLDEN_PIGS_CACHE_TTL = 2000;
 
@@ -257,7 +257,7 @@ var SkinSystem = {
       if (lastLevelIndex < condition.levelReached) allPassed = false;
     }
 
-    // goldenPigs: 玩家已收集至少 N 个小金猪
+    // goldenPigs: 玩家已收集至少 N 个奖杯
     if (allPassed && condition.goldenPigs !== undefined) {
       var pigCount = this._countGoldenPigs();
       if (pigCount < condition.goldenPigs) allPassed = false;
@@ -285,7 +285,7 @@ var SkinSystem = {
     return _chaptersCache;
   },
 
-  /** 统计已获得的小金猪数量（短期缓存，2 秒 TTL） */
+  /** 统计已获得的奖杯数量（短期缓存，2 秒 TTL） */
   _countGoldenPigs: function () {
     var now = Date.now();
     if (_goldenPigsCache.count >= 0 && (now - _goldenPigsCache.timestamp) < GOLDEN_PIGS_CACHE_TTL) {
