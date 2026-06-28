@@ -548,9 +548,16 @@ class PlayingEngine {
         return; // 通关后屏蔽其他触控
       }
 
+      // 右上角奖杯（纯呼吸反馈，不触发功能）
+      if (_hitRect(t.x, t.y, { x: SCREEN_WIDTH - 71, y: 79, w: 60, h: 65 })) {
+        this._uiCrownPig.triggerBreathe();
+        return;
+      }
+
       // 顶部返回/设置按钮
       if (_hitRect(t.x, t.y, { x: PADDING, y: PADDING, w: 49, h: 47 })) {
         this._btnPress.press('settings');
+        this._btnPress.breathe('settings');
         audio.play('button_click');
         if (databus.returnState === 'editor') {
           databus.gameState = 'editor';
@@ -573,6 +580,8 @@ class PlayingEngine {
       var hitType = this._uiBottomBar.getHitType(t.x, t.y);
       if (hitType === 'hint') {
         this._btnPress.press('hint');
+        this._btnPress.breathe('hint');
+        this._btnPress.breathe('remove');
         var best = this._hint.show();
         if (best) {
           audio.play('hint_reveal');
@@ -583,15 +592,20 @@ class PlayingEngine {
       }
       if (hitType === 'remove') {
         this._btnPress.press('remove');
+        this._btnPress.breathe('remove');
+        this._btnPress.breathe('hint');
         this._removeHintedPig();
         return;
       }
 
-      // 关主头像（UIManager）
-      if (this._uiMasterPanel._avatarRect && _hitRect(t.x, t.y, this._uiMasterPanel._avatarRect)) {
-        var master = this._master.getMaster();
-        if (master && master.masterNickname) {
-          wx.showToast({ title: master.masterNickname, icon: 'none', duration: 2000 });
+      // 关主面板（整体可点，呼吸反馈；头像区域额外显示关主昵称）
+      if (_hitRect(t.x, t.y, { x: this._uiMasterPanel.x, y: this._uiMasterPanel.y, w: this._uiMasterPanel.w, h: this._uiMasterPanel.h })) {
+        this._uiMasterPanel.triggerBreathe();
+        if (this._uiMasterPanel._avatarRect && _hitRect(t.x, t.y, this._uiMasterPanel._avatarRect)) {
+          var master = this._master.getMaster();
+          if (master && master.masterNickname) {
+            wx.showToast({ title: master.masterNickname, icon: 'none', duration: 2000 });
+          }
         }
         return;  // 消费事件，不穿透到棋盘
       }
@@ -622,9 +636,11 @@ class PlayingEngine {
       audio.play('button_click');
       if (databus.returnState === 'editor') {
         this._btnPress.press('settings');
+        this._btnPress.breathe('settings');
         databus.gameState = 'editor';
       } else {
         this._btnPress.press('settings');
+        this._btnPress.breathe('settings');
         settingsPanel.open({
           title: '设置',
           buttons: [
@@ -641,6 +657,8 @@ class PlayingEngine {
         y >= this.hintBtn.y && y <= this.hintBtn.y + this.hintBtn.h) {
       audio.play('button_click');
       this._btnPress.press('hint');
+      this._btnPress.breathe('hint');
+      this._btnPress.breathe('remove');
       var best = this._hint.show();
       if (best) {
         audio.play('hint_reveal');
@@ -654,6 +672,8 @@ class PlayingEngine {
         y >= this._removeBtn.y && y <= this._removeBtn.y + this._removeBtn.h) {
       audio.play('button_click');
       this._btnPress.press('remove');
+      this._btnPress.breathe('remove');
+      this._btnPress.breathe('hint');
       this._removeHintedPig();
       return;
     }

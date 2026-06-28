@@ -48,6 +48,12 @@ function CrownPigWidget(opts) {
   this._hasUsedRemove = false;
   this._hidden = false;
 
+  // 呼吸动画
+  this._breatheStart = 0;
+  this._breatheActive = false;
+  this._BREATHE_DURATION = 800;
+  this._BREATHE_AMPLITUDE = 0.10;
+
   // 奖杯图片
   this._imgActive = wx.createImage();
   this._imgActive.src = IMG_ACTIVE;
@@ -77,6 +83,27 @@ CrownPigWidget.prototype.setHidden = function (hidden) {
   this._hidden = !!hidden;
 };
 
+/** 触发呼吸动画（单次缓慢呼吸，纯 UI 反馈） */
+CrownPigWidget.prototype.triggerBreathe = function () {
+  this._breatheStart = Date.now();
+  this._breatheActive = true;
+};
+
+/** 获取当前呼吸缩放值 */
+CrownPigWidget.prototype._getBreatheScale = function () {
+  if (!this._breatheActive) return 1;
+
+  var elapsed = Date.now() - this._breatheStart;
+  if (elapsed >= this._BREATHE_DURATION) {
+    this._breatheActive = false;
+    return 1;
+  }
+
+  var t = elapsed / this._BREATHE_DURATION;
+  var pulse = Math.abs(Math.sin(t * Math.PI));
+  return 1 + pulse * this._BREATHE_AMPLITUDE;
+};
+
 CrownPigWidget.prototype.render = function (ctx) {
   if (this._hidden) return;
 
@@ -88,6 +115,22 @@ CrownPigWidget.prototype.render = function (ctx) {
   var trophyY = TROPHY_TOP;
   var bgX = SCREEN_WIDTH - STEP_BG_W - STEP_BG_RIGHT;
   var bgY = STEP_BG_TOP;
+
+  // 呼吸动画缩放（围绕整体区域中心）
+  var breathScale = this._getBreatheScale();
+  var minX = Math.min(trophyX, bgX);
+  var maxX = Math.max(trophyX + TROPHY_SIZE, bgX + STEP_BG_W);
+  var minY = trophyY;
+  var maxY = bgY + STEP_BG_H;
+  var cx = (minX + maxX) / 2;
+  var cy = (minY + maxY) / 2;
+
+  ctx.save();
+  if (breathScale !== 1) {
+    ctx.translate(cx, cy);
+    ctx.scale(breathScale, breathScale);
+    ctx.translate(-cx, -cy);
+  }
 
   // === 奖杯图标 ===
   // 激活条件：总步数尚未超过规定步数（steps <= crownSteps）
@@ -186,6 +229,8 @@ CrownPigWidget.prototype.render = function (ctx) {
     text = '已获得';
   }
   ctx.fillText(text, bgX + STEP_BG_W / 2, bgY + STEP_BG_H / 2);
+
+  ctx.restore(); // 呼吸动画 restore
 };
 
 module.exports = CrownPigWidget;

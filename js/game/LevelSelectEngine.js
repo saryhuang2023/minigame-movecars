@@ -389,6 +389,7 @@ LevelSelectEngine.prototype._handleEvent = function (e) {
         t.y >= bb.y && t.y <= bb.y + bb.h) {
       audio.play('button_click');
       this._btnPress.press('back');
+      this._btnPress.breathe('back');
       databus.gameState = 'menu';
       return;
     }
@@ -407,6 +408,7 @@ LevelSelectEngine.prototype._hitTestCards = function (t) {
         if (this._getCardStatus(card.globalIndex) === 'locked') return;
         audio.play('button_click');
         this._btnPress.press('card_' + card.globalIndex);
+        this._btnPress.breathe('card_' + card.globalIndex);
         var lv = card.level;
         console.log('[LevelSelect] 点击卡片 globalIdx=' + card.globalIndex + ' name=' + lv.name);
         databus.currentLevel = { name: lv.name, data: null };

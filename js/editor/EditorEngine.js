@@ -226,6 +226,7 @@ class EditorEngine {
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
         audio.play('button_click');
         this._btnPress.press('hintbadge_' + b.pigId);
+        this._btnPress.breathe('hintbadge_' + b.pigId);
         this._toggleHintId(b.pigId);
         return;
       }
@@ -1775,6 +1776,7 @@ class EditorEngine {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         audio.play('button_click');
         this._btnPress.press(btn.id);
+        this._btnPress.breathe(btn.id);
         if (btn.action === 'play') this._checkDirtyAndDo(() => this._goToPlaying());
         if (btn.action === 'back') this._checkDirtyAndDo(() => this._goToMenu());
         return true;
@@ -2184,6 +2186,7 @@ class EditorEngine {
     for (const btn of this.levelBtns) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         this._btnPress.press(btn.id);
+        this._btnPress.breathe(btn.id);
         this._handleLevelAction(btn.action);
         return true;
       }
@@ -2193,6 +2196,7 @@ class EditorEngine {
       if (btn.onClick && x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         audio.play('button_click');
         this._btnPress.press(btn.id);
+        this._btnPress.breathe(btn.id);
         btn.onClick();
         return true;
       }
@@ -2317,12 +2321,14 @@ class EditorEngine {
       if (this.sheetPigCloseRect && this.hitRect(x, y, this.sheetPigCloseRect)) {
         audio.play('button_click');
         this._btnPress.press('sheet:close');
+        this._btnPress.breathe('sheet:close');
         this.showPigSheet = false;
         return true;
       }
       if (this.sheetPigDeleteRect && this.hitRect(x, y, this.sheetPigDeleteRect)) {
         audio.play('button_click');
         this._btnPress.press('sheet:delete');
+        this._btnPress.breathe('sheet:delete');
         this.deleteSelectedPig();
         return true;
       }
@@ -2720,6 +2726,7 @@ class EditorEngine {
     if (this.hitRect(x, y, this._confirmSaveRect)) {
       audio.play('button_click');
       this._btnPress.press('confirm:save');
+      this._btnPress.breathe('confirm:save');
       this.confirmDialog.onSave();
       this.confirmDialog = null;
       return true;
@@ -2727,6 +2734,7 @@ class EditorEngine {
     if (this.hitRect(x, y, this._confirmSkipRect)) {
       audio.play('button_click');
       this._btnPress.press('confirm:skip');
+      this._btnPress.breathe('confirm:skip');
       this.confirmDialog.onSkip();
       this.confirmDialog = null;
       return true;

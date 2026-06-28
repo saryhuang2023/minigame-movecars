@@ -107,6 +107,8 @@ var _toggleSfxDisplay = null;
 
 // 按钮点击压感动画
 var _btnPress = {};  // { btnKey: { startTime, phase: 'pressing'|'releasing' } }
+// 按钮呼吸动画
+var _btnBreathe = {}; // { btnKey: startTime }
 
 // 热区
 var _musicRect = null;
@@ -127,6 +129,11 @@ var SIZE_PRESETS = {
 var STAGGER_INTERVAL = 40;   // 底部按钮错开间隔 (ms)
 var BUTTON_PRESS_DURATION = 100;  // 按钮按压回弹时长
 var BUTTON_RELEASE_DURATION = 140;
+
+// 呼吸动画（点击后振荡）
+var BREATHE_DURATION = 1500;
+var BREATHE_CYCLES = 3;
+var BREATHE_AMPLITUDE = 0.06;
 
 // ===== 公开 API =====
 
@@ -156,6 +163,7 @@ function open(opts) {
 
   // 复位按钮压感
   _btnPress = {};
+  _btnBreathe = {};
 
   // 记录打开时间
   _openStartTime = Date.now();
@@ -170,6 +178,7 @@ function open(opts) {
 function close() {
   if (_animator.isClosed()) return;
   _btnPress = {};
+  _btnBreathe = {};
 
   _animator.close(function() {
     // 动画结束后清理布局数据
@@ -556,20 +565,39 @@ function _renderBottomIcons(ctx, isEntering) {
 
 function _getBtnPressScale(key, cx, cy) {
   var press = _btnPress[key];
-  if (!press) return 1;
-
-  var elapsed = Date.now() - press.startTime;
-  if (press.phase === 'pressing') {
-    var t = Math.min(elapsed / BUTTON_PRESS_DURATION, 1);
-    return 1 - 0.05 * Easing.easeOutCubic(t);
-  } else {
-    var t2 = Math.min(elapsed / BUTTON_RELEASE_DURATION, 1);
-    var s = 0.95 + 0.05 * Easing.easeOutBack(t2, 1.5);
-    if (t2 >= 1) {
-      delete _btnPress[key];
+  if (press) {
+    var elapsed = Date.now() - press.startTime;
+    if (press.phase === 'pressing') {
+      var t = Math.min(elapsed / BUTTON_PRESS_DURATION, 1);
+      return 1 - 0.05 * Easing.easeOutCubic(t);
+    } else {
+      var t2 = Math.min(elapsed / BUTTON_RELEASE_DURATION, 1);
+      var s = 0.95 + 0.05 * Easing.easeOutBack(t2, 1.5);
+      if (t2 >= 1) {
+        delete _btnPress[key];
+      }
+      return s;
     }
-    return s;
   }
+
+  // 无按压动画 → 检查呼吸
+  return _getBreatheScale(key);
+}
+
+function _getBreatheScale(key) {
+  var startTime = _btnBreathe[key];
+  if (!startTime) return 1;
+
+  var elapsed = Date.now() - startTime;
+  if (elapsed >= BREATHE_DURATION) {
+    delete _btnBreathe[key];
+    return 1;
+  }
+
+  var t = elapsed / BREATHE_DURATION;
+  var dampen = 1 - t;
+  var oscillation = Math.sin(t * BREATHE_CYCLES * Math.PI * 2);
+  return 1 + oscillation * BREATHE_AMPLITUDE * dampen;
 }
 
 function _startBtnPress(key) {
@@ -580,6 +608,10 @@ function _releaseBtnPress(key) {
   if (_btnPress[key]) {
     _btnPress[key] = { startTime: Date.now(), phase: 'releasing' };
   }
+}
+
+function _startBtnBreathe(key) {
+  _btnBreathe[key] = Date.now();
 }
 
 // ===== 触控处理 =====
@@ -593,6 +625,7 @@ function handleTouch(x, y, type) {
     if (_closeRect && x >= _closeRect.x && x <= _closeRect.x + _closeRect.w &&
         y >= _closeRect.y && y <= _closeRect.y + _closeRect.h) {
       _startBtnPress('close');
+      _startBtnBreathe('close');
       close();
       return true;
     }
@@ -621,6 +654,7 @@ function handleTouch(x, y, type) {
         var r = _btnRects[i];
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           _startBtnPress('btn_' + i);
+          _startBtnBreathe('btn_' + i);
           if (r.action) r.action();
           return true;
         }
