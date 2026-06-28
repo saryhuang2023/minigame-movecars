@@ -216,19 +216,20 @@ function render(ctx) {
   _updateToggleSliders();
 }
 
-// ===== 关闭按钮 =====
+// ===== 关闭按钮（win_cancel 图片，30×30）=====
 
 function _renderCloseBtn(ctx) {
   var p = _panel;
-  var closeD = 28;
-  var closeX = p.x + p.w - closeD - 14;
-  var closeY = p.y + 14;
-  var ccx = closeX + closeD / 2;
-  var ccy = closeY + closeD / 2;
+  var closeW = 30;
+  var closeH = 30;
+  var closeX = p.x + p.w - closeW;   // right: 0
+  var closeY = p.y + 63;              // top: 63
 
-  _closeRect = { x: closeX - 4, y: closeY - 4, w: closeD + 8, h: closeD + 8 };
+  _closeRect = { x: closeX - 4, y: closeY - 4, w: closeW + 8, h: closeH + 8 };
 
   // 按钮压感
+  var ccx = closeX + closeW / 2;
+  var ccy = closeY + closeH / 2;
   var pressScale = _getBtnPressScale('close', ccx, ccy);
 
   ctx.save();
@@ -236,28 +237,10 @@ function _renderCloseBtn(ctx) {
   ctx.scale(pressScale, pressScale);
   ctx.translate(-ccx, -ccy);
 
-  // 圆形背景
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.08)';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetY = 1;
-  ctx.beginPath();
-  ctx.arc(ccx, ccy, closeD / 2, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(241, 245, 249, 0.9)';
-  ctx.fill();
-  ctx.restore();
-
-  // ×
-  var crossR = 5;
-  ctx.strokeStyle = '#64748B';
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(ccx - crossR, ccy - crossR);
-  ctx.lineTo(ccx + crossR, ccy + crossR);
-  ctx.moveTo(ccx + crossR, ccy - crossR);
-  ctx.lineTo(ccx - crossR, ccy + crossR);
-  ctx.stroke();
+  var img = AssetPreloader.get('win_cancel');
+  if (img && AssetPreloader.isReady('win_cancel')) {
+    ctx.drawImage(img, closeX, closeY, closeW, closeH);
+  }
 
   ctx.restore();
 }

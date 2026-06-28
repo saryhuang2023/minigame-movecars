@@ -77,6 +77,7 @@ class GameEngine {
       btn_home: 'assets/images/common/btn_home.png',
       btn_continue: 'assets/images/common/btn_continue.png',
       btn_again: 'assets/images/common/btn_again.png',
+      win_cancel: 'assets/images/common/win_cancel.png',
     });
     AssetPreloader.preload();
 

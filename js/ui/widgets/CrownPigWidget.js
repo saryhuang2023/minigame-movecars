@@ -103,15 +103,18 @@ CrownPigWidget.prototype.render = function (ctx) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // === 未获得，展示剩余步数（纯展示效果，不影响奖杯激活判断）===
+  // === 步数文字 ===
   var text = '';
-  var remaining = this._crownSteps - this._steps;
   if (!this._gotCrown) {
-    if (remaining < 0) remaining = 0;
-
-    // 文字："剩N步"
-    text = '剩' + remaining + '步';
-  }else{ // 已获得，展示已获得
+    if (this._steps > this._crownSteps) {
+      // 步数已超 → 灰色奖杯 + "步数已超"
+      text = '步数已超';
+    } else {
+      var remaining = this._crownSteps - this._steps;
+      text = '剩' + remaining + '步';
+    }
+  } else {
+    // 已获得
     text = '已获得';
   }
   ctx.fillText(text, bgX + STEP_BG_W / 2, bgY + STEP_BG_H / 2);
