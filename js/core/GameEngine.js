@@ -84,44 +84,53 @@ class GameEngine {
     // 加载自定义字体
     var _loadFont = function() {
       if (typeof wx === 'undefined') { console.log('[Font] wx 不可用'); return; }
-      if (!wx.loadFont)          { console.log('[Font] wx.loadFont 不可用'); return; }
+      if (!wx.loadFont) { console.log('[Font] wx.loadFont 不可用'); return; }
       if (!wx.getFileSystemManager) { console.log('[Font] FileSystemManager 不可用'); return; }
 
-      var fs = wx.getFileSystemManager();
       var fontName = 'GenSenRounded2TW-H-subset.otf';
-      var codePath = 'assets/font/' + fontName;
-      var dataPath = wx.env.USER_DATA_PATH + '/' + fontName;
+      var srcPath = 'assets/font/' + fontName;
+      var dstPath = wx.env.USER_DATA_PATH + '/' + fontName;
+      var fs = wx.getFileSystemManager();
 
-      // 方案A：直接从代码包加载
-      console.log('[Font] 方案A: 从代码包加载', codePath);
+      // 检查缓存：USER_DATA_PATH 已有文件且大小匹配则直接加载
+      var needCopy = true;
       try {
-        var family = wx.loadFont(codePath);
-        if (family) { Theme.font.family = family; console.log('[Font] 方案A 成功:', family); return; }
-        console.log('[Font] 方案A 返回 null');
-      } catch (e1) { console.log('[Font] 方案A 异常:', e1.message || e1); }
+        var dstStat = fs.statSync(dstPath);
+        if (dstStat.size > 0) needCopy = false;
+      } catch (_) { /* 文件不存在，需要复制 */ }
 
-      // 方案B：复制到 USER_DATA_PATH 后加载
-      console.log('[Font] 方案B: 复制到 USER_DATA_PATH...');
-      try {
-        var fileExists = false;
-        try { fs.accessSync(codePath); fileExists = true; } catch (_) {}
-        console.log('[Font] 代码包文件存在:', fileExists);
-
-        if (fileExists) {
-          var data = fs.readFileSync(codePath);
-          console.log('[Font] 读取代码包成功, size:', data ? data.byteLength || data.length : 'null');
-          fs.writeFileSync(dataPath, data, 'binary');
-          console.log('[Font] 写入 USER_DATA_PATH 成功');
-
-          family = wx.loadFont(dataPath);
-          if (family) { Theme.font.family = family; console.log('[Font] 方案B 成功:', family); return; }
-          console.log('[Font] 方案B wx.loadFont 返回 null');
-        } else {
-          console.log('[Font] 代码包中找不到字体文件，packOptions.include 可能未生效');
+      if (needCopy) {
+        try {
+          var fontData = fs.readFileSync(srcPath);
+          fs.writeFileSync(dstPath, fontData, 'binary');
+          console.log('[Font] 已从代码包复制到 USER_DATA_PATH, size=' + (fontData ? fontData.byteLength || fontData.length : '?'));
+        } catch (e) {
+          console.log('[Font] 复制字体失败:', e.message || e);
+          // 兜底：尝试从代码包直接加载
+          try {
+            var f = wx.loadFont(srcPath);
+            if (f) { Theme.font.family = f; console.log('[Font] 代码包直接加载成功:', f); return; }
+          } catch (_) {}
+          console.log('[Font] 复制和直接加载均失败');
+          return;
         }
-      } catch (e2) { console.log('[Font] 方案B 异常:', e2.message || e2); }
+      }
 
-      console.log('[Font] 所有方案均失败，使用默认字体');
+      // 从 USER_DATA_PATH 加载
+      try {
+        var family = wx.loadFont(dstPath);
+        if (family) {
+          Theme.font.family = family;
+          console.log('[Font] 加载成功, family="' + family + '", path=' + dstPath);
+        } else {
+          // wx.loadFont 返回 null（可能已加载过），使用硬编码族名
+          Theme.font.family = 'GenSenRounded2TW';
+          console.log('[Font] wx.loadFont 返回 null, 使用硬编码族名 GenSenRounded2TW');
+        }
+      } catch (e) {
+        Theme.font.family = 'GenSenRounded2TW';
+        console.log('[Font] wx.loadFont 异常:', e.message || e, ', 使用硬编码族名');
+      }
     };
     _loadFont();
 

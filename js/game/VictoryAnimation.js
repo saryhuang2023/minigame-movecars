@@ -8,8 +8,8 @@ const FLY_DURATION = 1500;   // 飞行阶段时长 ms
 const FLASH_DURATION = 800;  // 闪烁阶段时长 ms
 
 // 奖杯目标位置（与 CrownPigWidget 对齐）
-const TROPHY_SIZE = 42;
-const TROPHY_TOP = 84;
+const TROPHY_SIZE = 44;
+const TROPHY_TOP = 79;
 const TROPHY_RIGHT = 20;
 const TROPHY_IMG = 'assets/images/levels/leftStep_1.png';
 

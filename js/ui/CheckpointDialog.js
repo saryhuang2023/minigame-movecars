@@ -135,7 +135,8 @@ function render(ctx) {
   ctx.fillText('发现存档', databus.screenWidth / 2, p.y + 46);
 
   // 5. 说明文字
-  var stepsText = '您上次玩到了第 ' + (_cpData ? _cpData.steps : '?') + ' 步，是否继续？';
+  var levelNum = _cpData && _cpData.levelName ? parseInt(_cpData.levelName, 10) : '?';
+  var stepsText = '您上次玩到了第 ' + levelNum + ' 关第 ' + (_cpData ? _cpData.steps : '?') + ' 步，是否继续？';
   ctx.fillStyle = '#64748B';
   ctx.font = '15px ' + Theme.font.family + '';
   ctx.textAlign = 'center';

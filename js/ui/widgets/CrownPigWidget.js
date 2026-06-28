@@ -6,19 +6,33 @@ var Theme = require('../Theme.js');
 var { SCREEN_WIDTH } = require('../../render.js');
 
 // 布局常量（相对屏幕右上角）
-var TROPHY_SIZE = 42;
-var TROPHY_TOP = 84;
+var TROPHY_SIZE = 44;
+var TROPHY_TOP = 79;
 var TROPHY_RIGHT = 20;
-var STEP_BG_W = 54;
+var STEP_BG_W = 60;
 var STEP_BG_H = 24;
 var STEP_BG_TOP = 120;
 var STEP_BG_RIGHT = 11;
+var STEP_BG_RADIUS = 12;
+
+// 圆角矩形路径（兼容微信小游戏 canvas，不用 ctx.roundRect）
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
 
 // 奖杯图片路径
 var IMG_ACTIVE = 'assets/images/levels/leftStep_1.png';
 var IMG_INACTIVE = 'assets/images/levels/leftStep_2.png';
-var IMG_STEP_BG = 'assets/images/levels/leftStep_num.png';
-
 function CrownPigWidget(opts) {
   UIComponent.call(this, {
     x: 0, y: 0,
@@ -43,11 +57,6 @@ function CrownPigWidget(opts) {
   this._imgInactive.src = IMG_INACTIVE;
   this._inactiveLoaded = false;
   this._imgInactive.onload = (function () { this._inactiveLoaded = true; }).bind(this);
-
-  this._imgStepBg = wx.createImage();
-  this._imgStepBg.src = IMG_STEP_BG;
-  this._bgLoaded = false;
-  this._imgStepBg.onload = (function () { this._bgLoaded = true; }).bind(this);
 }
 
 CrownPigWidget.prototype = Object.create(UIComponent.prototype);
@@ -81,6 +90,12 @@ CrownPigWidget.prototype.render = function (ctx) {
   // === 奖杯图标 ===
   // 激活条件：总步数尚未超过规定步数（steps <= crownSteps）
   // 超过后在下一帧变灰（steps > crownSteps）
+  // 奖杯 drop-shadow: 0px 4px 4px rgba(0,0,0,0.25)
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 4;
+
   if (this._steps <= this._crownSteps) {
     // 激活状态
     if (this._activeLoaded) {
@@ -93,10 +108,61 @@ CrownPigWidget.prototype.render = function (ctx) {
     }
   }
 
-  // 底框背景图
-  if (this._bgLoaded) {
-    ctx.drawImage(this._imgStepBg, bgX, bgY, STEP_BG_W, STEP_BG_H);
+  // 清除阴影，避免影响后续渲染
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+
+  // === 步数进度条 ===
+  var remaining = this._crownSteps - this._steps;
+  if (remaining < 0) remaining = 0;
+  var progressRatio = this._crownSteps > 0 ? remaining / this._crownSteps : 0;
+  var fillW = Math.floor(STEP_BG_W * progressRatio);
+
+  ctx.save();
+
+  // === 底框（圆角 12px，仅边框无填充）===
+  roundRect(ctx, bgX, bgY, STEP_BG_W, STEP_BG_H, STEP_BG_RADIUS);
+  ctx.strokeStyle = '#733C29';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // === 前置填充条（右对齐，从左往右缩短，移动端圆角）===
+  if (fillW > 0) {
+    var fillX = bgX + STEP_BG_W - fillW;  // 右对齐，左端 ← 移动
+    var fillRadius = Math.min(STEP_BG_RADIUS, Math.floor(fillW / 2));
+
+    // clip 到整个底框的圆角区域（右端从 clip 获得圆角）
+    roundRect(ctx, bgX, bgY, STEP_BG_W, STEP_BG_H, STEP_BG_RADIUS);
+    ctx.clip();
+
+    // 前置填充条底色（左端自带圆角）
+    if (fillRadius > 0) {
+      roundRect(ctx, fillX, bgY, fillW, STEP_BG_H, fillRadius);
+      ctx.fillStyle = '#FF9D9D';
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#FF9D9D';
+      ctx.fillRect(fillX, bgY, fillW, STEP_BG_H);
+    }
+
+    // 顶部 inner shadow（暗部渐变）
+    var topGrad = ctx.createLinearGradient(fillX, bgY, fillX, bgY + 6);
+    topGrad.addColorStop(0, 'rgba(103, 0, 0, 0.30)');
+    topGrad.addColorStop(1, 'rgba(103, 0, 0, 0)');
+    ctx.fillStyle = topGrad;
+    ctx.fillRect(fillX, bgY, fillW, 6);
+
+    // 底部 inner highlight（亮部渐变）
+    var btmGrad = ctx.createLinearGradient(fillX, bgY + STEP_BG_H - 4, fillX, bgY + STEP_BG_H);
+    btmGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    btmGrad.addColorStop(1, 'rgba(255, 255, 255, 0.25)');
+    ctx.fillStyle = btmGrad;
+    ctx.fillRect(fillX, bgY + STEP_BG_H - 4, fillW, 4);
   }
+
+  ctx.restore();
 
   ctx.font = '12px ' + Theme.font.family;
   ctx.fillStyle = '#733C29';
