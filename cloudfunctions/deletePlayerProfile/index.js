@@ -20,7 +20,31 @@ exports.main = async (event, context) => {
       .doc(exist.data[0]._id)
       .remove();
 
-    console.log('[deletePlayerProfile] 已删除 OPENID=' + OPENID);
+    console.log('[deletePlayerProfile] 已删除 players 记录 OPENID=' + OPENID);
+
+    // 同步清理 level_info 中该用户的关主记录
+    try {
+      const masterDocs = await db.collection('level_info')
+        .where({ masterUserId: OPENID })
+        .get();
+
+      if (masterDocs.data.length > 0) {
+        for (const doc of masterDocs.data) {
+          await db.collection('level_info').doc(doc._id).update({
+            data: {
+              masterUserId: db.command.remove(),
+              masterSteps: db.command.remove(),
+              masterAvatarUrl: db.command.remove(),
+              masterNickname: db.command.remove(),
+              updatedAt: new Date()
+            }
+          });
+        }
+        console.log('[deletePlayerProfile] 已清除 ' + masterDocs.data.length + ' 条关主记录 OPENID=' + OPENID);
+      }
+    } catch (e) {
+      console.warn('[deletePlayerProfile] 清理关主记录失败（非致命）:', e.message);
+    }
 
     return { code: 0, deleted: true, msg: 'ok' };
   } catch (err) {

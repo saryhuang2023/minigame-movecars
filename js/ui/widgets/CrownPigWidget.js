@@ -7,11 +7,11 @@ var { SCREEN_WIDTH } = require('../../render.js');
 
 // 布局常量（相对屏幕右上角）
 var TROPHY_SIZE = 44;
-var TROPHY_TOP = 79;
+var TROPHY_TOP = 70;
 var TROPHY_RIGHT = 20;
 var STEP_BG_W = 60;
 var STEP_BG_H = 24;
-var STEP_BG_TOP = 120;
+var STEP_BG_TOP = 115;
 var STEP_BG_RIGHT = 11;
 var STEP_BG_RADIUS = 12;
 
@@ -51,8 +51,8 @@ function CrownPigWidget(opts) {
   // 呼吸动画
   this._breatheStart = 0;
   this._breatheActive = false;
-  this._BREATHE_DURATION = 800;
-  this._BREATHE_AMPLITUDE = 0.10;
+  this._BREATHE_DURATION = 400;
+  this._BREATHE_AMPLITUDE = 0.13;
 
   // 奖杯图片
   this._imgActive = wx.createImage();

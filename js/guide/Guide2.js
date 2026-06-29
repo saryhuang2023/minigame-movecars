@@ -31,7 +31,7 @@ Guide2.prototype.constructor = Guide2;
 // 激活条件
 // ----------------------------------------------------------------
 Guide2.prototype.checkCondition = function (state, engine) {
-  if (state.levelName !== '0003' || state.idleTime <= 10) return false;
+  if (state.levelName !== '0003' || state.idleTime <= 5) return false;
 
   var pig20Exists = engine.gp.pigs.some(function (p) { return p.id === 20; });
   if (pig20Exists) {

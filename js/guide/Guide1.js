@@ -50,11 +50,11 @@ Guide1.prototype.checkCondition = function (state, engine) {
   this._loggedWrongLevel = false;
 
   // --- 空闲时间不足 ---
-  if (state.idleTime <= 10) {
+  if (state.idleTime <= 5) {
     // 每 3 秒打一次进度（避免刷屏）
     var now = Date.now();
     if (!this._lastIdleLogTs || now - this._lastIdleLogTs > 3000) {
-      console.log('[LOG] Guide1 checkCondition ✗ idleTime=' + state.idleTime.toFixed(1) + 's（需 >10s）pigs.length=' + engine.gp.pigs.length);
+      console.log('[LOG] Guide1 checkCondition ✗ idleTime=' + state.idleTime.toFixed(1) + 's（需 >5s）pigs.length=' + engine.gp.pigs.length);
       this._lastIdleLogTs = now;
     }
     return false;

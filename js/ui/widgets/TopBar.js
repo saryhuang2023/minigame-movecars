@@ -5,6 +5,7 @@ var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../Theme.js');
 var commonIcons = require('../commonIcons.js');
 var databus = require('../../databus.js');
+var { SCREEN_WIDTH } = require('../../render.js');
 
 // 颜色常量
 var DARK = Theme.colors.dark;
@@ -30,6 +31,12 @@ function TopBar(opts) {
   this.mode = opts.mode || 'normal';
   this._buttonPress = opts.buttonPress;
   this.onBack = opts.onBack || null;
+
+  // 徽章呼吸动画
+  this._breatheStart = 0;
+  this._breatheActive = false;
+  this._BREATHE_DURATION = 400;
+  this._BREATHE_AMPLITUDE = 0.13;
 }
 
 TopBar.prototype = Object.create(UIComponent.prototype);
@@ -41,6 +48,24 @@ TopBar.prototype.setLevelText = function (text) {
 
 TopBar.prototype.setMode = function (mode) {
   this.mode = mode;
+};
+
+/** 触发徽章呼吸动画 */
+TopBar.prototype.triggerBreathe = function () {
+  this._breatheStart = Date.now();
+  this._breatheActive = true;
+};
+
+/** 获取当前呼吸缩放值 */
+TopBar.prototype._getBreatheScale = function () {
+  if (!this._breatheActive) return 1;
+  var elapsed = Date.now() - this._breatheStart;
+  if (elapsed >= this._BREATHE_DURATION) {
+    this._breatheActive = false;
+    return 1;
+  }
+  var t = elapsed / this._BREATHE_DURATION;
+  return 1 + Math.abs(Math.sin(t * Math.PI)) * this._BREATHE_AMPLITUDE;
 };
 
 TopBar.prototype.render = function (ctx) {
@@ -79,13 +104,56 @@ TopBar.prototype.render = function (ctx) {
   }
   ctx.restore();
 
-  // === 关卡标题（居中），试玩时隐藏 ===
+  // === 关卡徽章（Figma：每字描边 + letter-spacing 4px，居中 + 呼吸缩放） ===
   if (this.mode !== 'trial') {
-    ctx.font = '32px ' + Theme.font.family;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.textAlign = 'center';
+    var badgeW = 80;
+    var badgeX = (SCREEN_WIDTH - badgeW) / 2;
+    var badgeY = 90;
+    var badgeH = 24;
+    var badgeCX = badgeX + badgeW / 2;
+    var badgeCY = badgeY + badgeH / 2;
+
+    var breathScale = this._getBreatheScale();
+
+    var chars = this.levelText.split('');
+    var fontSize = 24;
+    var letterSpacing = 4;
+    ctx.font = '400 ' + fontSize + 'px ' + Theme.font.family;
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(this.levelText, barW / 2, 87);
+    ctx.lineWidth = 1;
+    ctx.lineJoin = 'round';
+
+    // 计算总文本宽度（逐字测量）
+    var totalTextW = 0;
+    var charWidths = [];
+    for (var i = 0; i < chars.length; i++) {
+      var w = ctx.measureText(chars[i]).width;
+      charWidths.push(w);
+      totalTextW += w + (i < chars.length - 1 ? letterSpacing : 0);
+    }
+
+    // 水平居中
+    var baseCursorX = badgeX + (badgeW - totalTextW) / 2;
+
+    ctx.save();
+    if (breathScale !== 1) {
+      ctx.translate(badgeCX, badgeCY);
+      ctx.scale(breathScale, breathScale);
+      ctx.translate(-badgeCX, -badgeCY);
+    }
+
+    var cursorX = baseCursorX;
+    for (var i = 0; i < chars.length; i++) {
+      // 先画描边（黑色 1px），再画填充（白色），实现每字描边
+      ctx.strokeStyle = '#000000';
+      ctx.strokeText(chars[i], cursorX, badgeY);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(chars[i], cursorX, badgeY);
+      cursorX += charWidths[i] + letterSpacing;
+    }
+
+    ctx.restore();
   }
 };
 

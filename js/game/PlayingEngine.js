@@ -21,6 +21,7 @@ const MasterSystem = require('./MasterSystem.js');
 const HintSystem = require('./HintSystem.js');
 const VictoryAnimation = require('./VictoryAnimation.js');
 const CrownPigWidget = require('../ui/widgets/CrownPigWidget.js');
+const GoldWidget = require('../ui/widgets/GoldWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
 const GoldSystem = require('./GoldSystem.js');
 const SkinSystem = require('./SkinSystem.js');
@@ -207,6 +208,12 @@ class PlayingEngine {
       });
       this.ui.add(this._uiTopBar, UIManager.LAYER.CONTROL);
 
+      // Layer 2 — GoldWidget（金币余额显示）
+      this._uiGoldWidget = new GoldWidget({
+        zIndex: UIManager.LAYER.CONTROL,
+      });
+      this.ui.add(this._uiGoldWidget, UIManager.LAYER.CONTROL);
+
       // Layer 2 — BottomBar
       this._uiBottomBar = new BottomBar({
         zIndex: UIManager.LAYER.CONTROL,
@@ -250,6 +257,7 @@ class PlayingEngine {
       this._uiMasterPanel = null;
       this._uiCrownPig = null;
       this._uiTopBar = null;
+      this._uiGoldWidget = null;
       this._uiBottomBar = null;
       this._uiVictoryPopup = null;
       this._uiAuthDialog = null;
@@ -262,8 +270,11 @@ class PlayingEngine {
 
     // TopBar 位置 + 内容
     this._uiTopBar.setBounds(0, databus.safeTop, this._boardCardW, Theme.layout.topBarH);
-    this._uiTopBar.setLevelText('第 ' + (parseInt(this.levelName) || '1') + ' 关');
+    this._uiTopBar.setLevelText('第' + _toChineseNum(parseInt(this.levelName) || 1) + '关');
     this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
+
+    // GoldWidget
+    this._uiGoldWidget.setData(GoldSystem.getGold());
 
     // BottomBar
     this._uiBottomBar.setHintActive(this._hint.isActive());
@@ -556,9 +567,22 @@ class PlayingEngine {
         return; // 通关后屏蔽其他触控
       }
 
-      // 右上角奖杯（纯呼吸反馈，不触发功能）
-      if (_hitRect(t.x, t.y, { x: SCREEN_WIDTH - 71, y: 79, w: 60, h: 65 })) {
+      // 右上角奖杯（覆盖奖杯+步数整个区域）
+      if (_hitRect(t.x, t.y, { x: SCREEN_WIDTH - 78, y: 65, w: 73, h: 80 })) {
         this._uiCrownPig.triggerBreathe();
+        return;
+      }
+
+      // 左上角金币（覆盖金币+文字整个区域）
+      if (_hitRect(t.x, t.y, { x: 10, y: 78, w: 100, h: 50 })) {
+        this._uiGoldWidget.triggerBreathe();
+        return;
+      }
+
+      // 顶部关卡徽章（仅呼吸反馈，不触发功能）
+      var badgeX = (SCREEN_WIDTH - 80) / 2;
+      if (_hitRect(t.x, t.y, { x: badgeX, y: 86, w: 80, h: 32 })) {
+        this._uiTopBar.triggerBreathe();
         return;
       }
 
@@ -587,6 +611,7 @@ class PlayingEngine {
       // 底部提示按钮（UIManager）
       var hitType = this._uiBottomBar.getHitType(t.x, t.y);
       if (hitType === 'hint') {
+        audio.play('button_click');
         this._btnPress.press('hint');
         this._btnPress.breathe('hint');
         this._btnPress.breathe('remove');
@@ -1300,6 +1325,9 @@ class PlayingEngine {
     // 4. 顶栏（UIManager）
     this._uiTopBar.render(ctx);
 
+    // 4.5. 金币余额（UIManager）
+    this._uiGoldWidget.render(ctx);
+
     // 5. 底部栏（UIManager）
     this._uiBottomBar.render(ctx);
 
@@ -1494,6 +1522,32 @@ class PlayingEngine {
     this._hasUsedRemove = !!cp.hasUsedRemove;
     console.log('[LOG] 存档已恢复 steps=' + this.steps + ' pigs=' + this.gp.pigs.length + ' hasUsedRemove=' + this._hasUsedRemove);
   }
+}
+
+// 阿拉伯数字转中文数字（1~999）
+function _toChineseNum(n) {
+  if (n <= 0) return '零';
+  if (n > 999) return String(n);
+  var digits = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  if (n < 10) return digits[n];
+  if (n < 20) return '十' + (n === 10 ? '' : digits[n - 10]);
+  if (n < 100) {
+    var tens = Math.floor(n / 10);
+    var ones = n % 10;
+    return digits[tens] + '十' + (ones === 0 ? '' : digits[ones]);
+  }
+  // 100-999
+  var hundreds = Math.floor(n / 100);
+  var rest = n % 100;
+  var restStr = '';
+  if (rest === 0) {
+    restStr = '';
+  } else if (rest < 10) {
+    restStr = '零' + digits[rest];
+  } else {
+    restStr = _toChineseNum(rest);
+  }
+  return digits[hundreds] + '百' + restStr;
 }
 
 module.exports = PlayingEngine;
