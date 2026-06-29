@@ -71,7 +71,7 @@ class PigRenderer {
   }
 
   // ---- 猪身体尺寸 ----
-  get pigBodyWidth() { return this.e.scaledDiameter * 1.2; }
+  get pigBodyWidth() { return this.e.scaledDiameter * 1.4; }
   get pigBodyHalf()  { return this.pigBodyWidth / 2; }
 
   // ---- 拖拽中的显示角度（旋转追逐动画） ----
@@ -137,27 +137,25 @@ class PigRenderer {
       }
     }
 
-    const bodyH = this.pigBodyWidth;
-    const imgScale = bodyH / parts.height;
-    const drawH = bodyH;
-    const halfH = drawH / 2;
-    const halfLen = totalLen / 2;
+    const targetBodyH = this.pigBodyWidth;
 
-    // 三宫格切片：尾(左) / 中(拉伸) / 头(右)
+    // 三宫格切片：尾(左) / 中(拉伸) / 头(右) —— 在 bodyH 之前算，用于 clamp
     const srcW = parts.frameW;
     const tailSrcW = Math.round(srcW * TAIL_SLICE);
     const headSrcW = Math.round(srcW * HEAD_SLICE);
     const midSrcW = srcW - tailSrcW - headSrcW;
 
-    let tailDrawW = tailSrcW * imgScale;
-    let headDrawW = headSrcW * imgScale;
+    // 猪太短时缩窄身高，保证头尾完整显示、不被裁切
+    const maxBodyH = totalLen * parts.height / (tailSrcW + headSrcW);
+    const bodyH = Math.min(targetBodyH, maxBodyH);
 
-    // 如果猪太短，头尾等比缩小
-    if (tailDrawW + headDrawW > totalLen) {
-      const altScale = totalLen / (tailDrawW + headDrawW);
-      tailDrawW *= altScale;
-      headDrawW *= altScale;
-    }
+    const imgScale = bodyH / parts.height;
+    const drawH = bodyH;
+    const halfH = drawH / 2;
+    const halfLen = totalLen / 2;
+
+    const tailDrawW = tailSrcW * imgScale;
+    const headDrawW = headSrcW * imgScale;
     const midDrawW = totalLen - tailDrawW - headDrawW;
 
     // 尾（左端固定）

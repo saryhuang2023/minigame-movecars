@@ -1001,14 +1001,20 @@ class GameplayEngine {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 拖拽中头部占孔 → 红色外边框高亮
+    // 拖拽中头部占孔 → 红色填充高亮
     if (this.dragState && this.dragState.headHoleIdx >= 0) {
       const hh = this.holes[this.dragState.headHoleIdx];
       const hhx = this.boardOffsetX + hh.x, hhy = offY + hh.y;
+      // 半透明填充
       ctx.beginPath();
       ctx.arc(hhx, hhy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = '#FF3B30';
-      ctx.lineWidth = 2.5;
+      ctx.fillStyle = 'rgba(255, 81, 81, 0.3)';
+      ctx.fill();
+      // 描边
+      ctx.beginPath();
+      ctx.arc(hhx, hhy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(208, 67, 67, 0.3)';
+      ctx.lineWidth = 2;
       ctx.stroke();
     }
 
