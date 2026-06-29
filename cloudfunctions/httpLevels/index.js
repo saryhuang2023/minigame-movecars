@@ -53,6 +53,18 @@ exports.main = async (event, context) => {
       return jsonResponse({ code: 0, data: list, total: list.length });
     }
 
+    if (action === 'delete') {
+      if (!id) {
+        return jsonResponse({ code: -1, msg: '缺少关卡 ID' });
+      }
+      try {
+        await db.collection('levels').doc(id).remove();
+        return jsonResponse({ code: 0, msg: '已删除' });
+      } catch (e) {
+        return jsonResponse({ code: -1, msg: '删除失败: ' + e.message });
+      }
+    }
+
     if (action === 'download') {
       let doc = null;
       if (id) {
@@ -83,7 +95,8 @@ exports.main = async (event, context) => {
       actions: {
         list: '?action=list',
         download: '?action=download&id=xxx',
-        downloadByName: '?action=download&name=0001'
+        downloadByName: '?action=download&name=0001',
+        delete: '?action=delete&id=xxx'
       }
     });
 

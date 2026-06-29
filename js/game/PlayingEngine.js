@@ -242,7 +242,7 @@ class PlayingEngine {
       this._uiAuthDialog.setAnimator(this._authAnimator);
       this.ui.add(this._uiAuthDialog, UIManager.LAYER.MODAL);
 
-      // Layer 4 — GoldRewardPopup（通关后金币奖励，VictoryPopup 之上）
+      // Layer 4 — AuthDialog
     } catch (e) {
       // 初始化失败：清空所有引用，确保 render() 的 guard 能兜底
       console.error('[PlayingEngine] _setupUI 失败:', e);
@@ -342,32 +342,39 @@ class PlayingEngine {
       console.log('[Playing] ' + name + ' 已缓存，直接加载');
       self._loadAndStart(cached);
     } else {
-      // 首次加载：走云端 downloadLevel，失败则降级本地文件
-      console.log('[Playing] startLevel name=' + name + ' 从云端拉取...');
-      var TIMEOUT_MS = 5000;
-      var pullPromise = cloud.downloadLevel(null, name, true);
-      var timeoutPromise = new Promise(function(_, reject) {
-        setTimeout(function() { reject(new Error('timeout')); }, TIMEOUT_MS);
-      });
-
-      Promise.race([pullPromise, timeoutPromise])
-        .then(function(result) {
-          if (result && result.data) {
-            if (result.data.crownSteps == null && result.crownSteps != null) {
-              result.data.crownSteps = result.crownSteps;
-            }
-            self._cloudFetchedData.set(name, result.data);
-            console.log('[Cloud] 已发布关卡 ' + name + ' 拉取成功，使用云端配置');
-            self._loadAndStart(result.data);
-          } else {
-            console.log('[Cloud] 关卡 ' + name + ' 未发布，尝试本地文件');
-            self._loadAndStart(self._readLocalLevel(name));
-          }
-        })
-        .catch(function(err) {
-          console.log('[Cloud] 关卡拉取失败（' + (err && err.message) + '），尝试本地文件');
-          self._loadAndStart(self._readLocalLevel(name));
+      // 本地优先：先检查 assets/levels/ 是否存在，云端仅做增量补充
+      var localData = self._readLocalLevel(name);
+      if (localData) {
+        console.log('[Playing] ' + name + ' 使用本地关卡配置');
+        self._loadAndStart(localData);
+      } else {
+        // 本地无 → 尝试云端
+        console.log('[Playing] startLevel name=' + name + ' 本地无配置，尝试云端...');
+        var TIMEOUT_MS = 5000;
+        var pullPromise = cloud.downloadLevel(null, name, true);
+        var timeoutPromise = new Promise(function(_, reject) {
+          setTimeout(function() { reject(new Error('timeout')); }, TIMEOUT_MS);
         });
+
+        Promise.race([pullPromise, timeoutPromise])
+          .then(function(result) {
+            if (result && result.data) {
+              if (result.data.crownSteps == null && result.crownSteps != null) {
+                result.data.crownSteps = result.crownSteps;
+              }
+              self._cloudFetchedData.set(name, result.data);
+              console.log('[Cloud] 关卡 ' + name + ' 云端配置就绪');
+              self._loadAndStart(result.data);
+            } else {
+              console.warn('[Cloud] 关卡 ' + name + ' 未发布，本地也无配置');
+              self._loadAndStart(null);
+            }
+          })
+          .catch(function(err) {
+            console.warn('[Cloud] 关卡拉取失败（' + (err && err.message) + '），本地也无配置');
+            self._loadAndStart(null);
+          });
+      }
     }
 
     // 4. 音效、输入、关主系统（不依赖关卡数据）
@@ -923,8 +930,9 @@ class PlayingEngine {
     // 金币奖励：试玩模式不触发；首次通关本关 → 计算奖励金额（独立于奖杯系统）
     this._pendingGoldReward = false;
     this._goldAmount = 0;
-    if (!isTrial && GoldSystem.isFirstGoldClear(this.levelName)) {
-      var reward = GoldSystem.calculateReward(this.gp.pigs.length);
+    if (!isTrial && !GoldSystem.isSettled(this.levelName)) {
+      // flyingPigs 存放被推出棋盘的所有猪（pigs 在 push 前已 splice），用其长度作为奖励计算依据
+      var reward = GoldSystem.calculateReward(this.gp.flyingPigs.length);
       if (reward > 0) {
         this._goldAmount = reward;
         this._pendingGoldReward = true;
@@ -976,6 +984,7 @@ class PlayingEngine {
         lastLevelIndex: lastLevelIndex,
         crowns: crowns,
         gold: GoldSystem.getGold(),
+        goldClaimedLevels: GoldSystem.collectClaimHistory(),
         skins: SkinSystem.getCloudState(),
         avatarUrl: info.avatarUrl || '',
         nickname: info.nickName || ''
@@ -989,28 +998,62 @@ class PlayingEngine {
     }
   }
 
-  /** 继续按钮 — 有金币且未被双倍领取过 → 发放单倍金币；然后进入下一关 */
+  /** 继续按钮 — 服务器权威结算单倍金币，本地兜底；然后进入下一关 */
   _onContinueClick() {
     if (this._pendingGoldReward && !this._uiVictoryPopup._goldClaimed) {
-      console.log('[LOG] 领取金币: +' + this._goldAmount);
-      GoldSystem.addGold(this._goldAmount);
-      GoldSystem.markGoldClaimed(this.levelName);
+      var self = this;
+      var levelId = this.levelName;
+      var pigCount = self._goldAmount;  // 关卡原始猪数量（通关后 pigs 已清空，走 _goldAmount）
+      cloud.settleLevel(levelId, pigCount, false).then(function(res) {
+        if (res && res.code === 0 && res.claimed) {
+          GoldSystem.setGold(res.gold);
+          GoldSystem.markSettled(levelId);
+          console.log('[LOG] 服务器结算成功: +' + res.reward + ' 余额=' + res.gold);
+        } else {
+          console.warn('[LOG] settleLevel 返回非预期, 本地兜底: +' + self._goldAmount);
+          GoldSystem.addGold(self._goldAmount);
+          GoldSystem.markSettled(levelId);
+        }
+      }).catch(function(err) {
+        console.warn('[LOG] settleLevel 网络失败, 本地兜底: +' + self._goldAmount);
+        GoldSystem.addGold(self._goldAmount);
+        GoldSystem.markSettled(levelId);
+      });
       this._pendingGoldReward = false;
     }
     this._goNextLevel();
   }
 
-  /** 双倍金币 — 加金币→标记已领→按钮灰化，不关闭弹窗 */
+  /** 双倍金币 — 服务器权威结算双倍；本地兜底；不关闭弹窗 */
   _onDoubleGoldClick() {
+    var self = this;
     var amount = this._goldAmount;
-    console.log('[LOG] 双倍金币: +' + amount * 2);
-    GoldSystem.addGold(amount * 2);
-    GoldSystem.markGoldClaimed(this.levelName);
+    var levelId = this.levelName;
+    var pigCount = self._goldAmount;  // 关卡原始猪数量（通关后 pigs 已清空，走 _goldAmount）
+    console.log('[LOG] 双倍金币请求结算: +' + amount * 2);
+
+    // 服务器结算（fire-and-forget，本地兜底）
+    cloud.settleLevel(levelId, pigCount, true).then(function(res) {
+      if (res && res.code === 0 && res.claimed) {
+        GoldSystem.setGold(res.gold);
+        GoldSystem.markSettled(levelId);
+        self._goldAmount = res.reward;
+        console.log('[LOG] 双倍结算成功: +' + res.reward + ' 余额=' + res.gold);
+      } else {
+        console.warn('[LOG] settleLevel(double) 返回非预期, 本地兜底');
+        GoldSystem.addGold(amount * 2);
+        GoldSystem.markSettled(levelId);
+        self._goldAmount = amount * 2;
+      }
+    }).catch(function(err) {
+      console.warn('[LOG] settleLevel(double) 网络失败, 本地兜底: +' + amount * 2);
+      GoldSystem.addGold(amount * 2);
+      GoldSystem.markSettled(levelId);
+      self._goldAmount = amount * 2;
+    });
+
     audio.play('rewards');
-    // 引擎侧也翻倍，否则 _syncUIData 每帧会用旧值覆盖 VictoryPopup 的翻倍值
-    this._goldAmount = amount * 2;
-    // 不清除 _pendingGoldReward（会触发 _syncUIData 设 showGold=false 导致面板金币消失）
-    // 通知 UI 按钮灰化 + 金额翻倍显示
+    // 立即标记 UI 为已领取，防止重复点击
     if (this._uiVictoryPopup) {
       this._uiVictoryPopup.markGoldClaimed();
     }
@@ -1237,7 +1280,10 @@ class PlayingEngine {
     // 1. 棋盘主体
     this.gp.topBarH = this._boardCardY + CARD_PADDING;
     this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
-    this.gp.renderBoard(ctx, { hintPigId: this._hint.getTargetId() });
+    this.gp.renderBoard(ctx, {
+      hintPigId: this._hint.getTargetId(),
+      guidePigId: this._guide.getActiveGuidePigId()
+    });
 
     // 3. 关主卡片（UIManager）
     this._uiMasterPanel.render(ctx);

@@ -9,6 +9,8 @@
   "pigs": [
     {
       "angle": 270,
+      "hintAngle": 270,
+      "hintId": 30,
       "id": 94,
       "length": 60,
       "tail": 0
@@ -31,18 +33,24 @@
     },
     {
       "angle": 270,
+      "hintAngle": 270,
+      "hintId": 29,
       "id": 97,
       "length": 64,
       "tail": 4
     },
     {
       "angle": 270,
+      "hintAngle": 30.000000000000014,
+      "hintId": 27,
       "id": 98,
       "length": 128,
       "tail": 6
     },
     {
       "angle": 90,
+      "hintAngle": 29.99999999999996,
+      "hintId": 28,
       "id": 99,
       "length": 60,
       "tail": 10
@@ -57,14 +65,16 @@
     },
     {
       "angle": 330,
+      "hintAngle": 90,
+      "hintId": 24,
       "id": 101,
       "length": 133,
       "tail": 18
     },
     {
       "angle": 270,
-      "hintAngle": 331,
-      "hintId": 20,
+      "hintAngle": 330,
+      "hintId": 21,
       "id": 102,
       "length": 280,
       "tail": 42
@@ -72,7 +82,7 @@
     {
       "angle": 330,
       "hintAngle": 90,
-      "hintId": 22,
+      "hintId": 23,
       "id": 103,
       "length": 64,
       "tail": 28
@@ -87,7 +97,7 @@
     },
     {
       "angle": 270,
-      "hintAngle": 91,
+      "hintAngle": 90,
       "hintId": 10,
       "id": 105,
       "length": 61,
@@ -95,20 +105,24 @@
     },
     {
       "angle": 270,
-      "hintAngle": 89,
-      "hintId": 21,
+      "hintAngle": 90,
+      "hintId": 22,
       "id": 106,
       "length": 202,
       "tail": 24
     },
     {
       "angle": 90,
+      "hintAngle": 90,
+      "hintId": 25,
       "id": 107,
       "length": 58,
       "tail": 31
     },
     {
       "angle": 90,
+      "hintAngle": 90,
+      "hintId": 26,
       "id": 108,
       "length": 63,
       "tail": 52
@@ -131,20 +145,24 @@
     },
     {
       "angle": 90,
-      "hintAngle": 90,
-      "hintId": 23,
+      "hintAngle": 150.00000000000003,
+      "hintId": 32,
       "id": 111,
       "length": 61,
       "tail": 94
     },
     {
       "angle": 270,
+      "hintAngle": 240,
+      "hintId": 19,
       "id": 112,
       "length": 134,
       "tail": 90
     },
     {
       "angle": 270,
+      "hintAngle": 270,
+      "hintId": 33,
       "id": 113,
       "length": 64,
       "tail": 88
@@ -159,6 +177,8 @@
     },
     {
       "angle": 270,
+      "hintAngle": 209.99999999999997,
+      "hintId": 31,
       "id": 115,
       "length": 62,
       "tail": 84
@@ -173,7 +193,7 @@
     },
     {
       "angle": 270,
-      "hintAngle": 333,
+      "hintAngle": 330,
       "hintId": 8,
       "id": 117,
       "length": 64,
@@ -181,7 +201,7 @@
     },
     {
       "angle": 30.000000000000014,
-      "hintAngle": 1,
+      "hintAngle": 0,
       "hintId": 14,
       "id": 118,
       "length": 133,
@@ -197,7 +217,7 @@
     },
     {
       "angle": 270,
-      "hintAngle": 211,
+      "hintAngle": 209.99999999999997,
       "hintId": 11,
       "id": 121,
       "length": 136,
@@ -221,7 +241,7 @@
     },
     {
       "angle": 210.00000000000003,
-      "hintAngle": 91,
+      "hintAngle": 90,
       "hintId": 17,
       "id": 125,
       "length": 65,
@@ -245,13 +265,13 @@
     },
     {
       "angle": 270,
-      "hintAngle": 359,
-      "hintId": 19,
+      "hintAngle": 0,
+      "hintId": 20,
       "id": 124,
       "length": 227,
       "tail": 47
     }
   ],
   "ready": 1,
-  "version": 31
+  "version": 4
 }

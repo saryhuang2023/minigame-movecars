@@ -1,0 +1,9 @@
+{
+  "name": "deletePlayerProfile",
+  "version": "1.0.0",
+  "description": "删除云端玩家档案",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "latest"
+  }
+}

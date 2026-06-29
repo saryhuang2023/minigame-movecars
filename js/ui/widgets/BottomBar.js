@@ -162,7 +162,7 @@ function _drawLabel(ctx, text, x, y, spacing) {
 
 BottomBar.prototype.render = function (ctx) {
   // ===== 提示/移除按钮（同位置互斥）=====
-  var hintX = SCREEN_WIDTH - 20 - HINT_W;
+  var hintX = SCREEN_WIDTH - 15 - HINT_W;
   var hintY = SCREEN_HEIGHT - 30 - HINT_H;
 
   var witchBtn = this._hintActive ? 'remove' : 'hint';

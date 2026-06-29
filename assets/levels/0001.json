@@ -1,14 +1,11 @@
 {
   "board": {
-    "cols": 3,
-    "diameter": 50,
-    "hGap": 60,
-    "rows": 5,
-    "vGap": 20,
     "boardRate": 2.9,
     "boardWidth": 315,
-    "oddCols": 3
+    "oddCols": 3,
+    "rows": 5
   },
+  "crownSteps": 4,
   "pigs": [
     {
       "angle": 90,
@@ -21,7 +18,7 @@
     {
       "angle": 330,
       "hintAngle": 330,
-      "hintId": 1,
+      "hintId": 2,
       "id": 7,
       "length": 71,
       "tail": 7
@@ -37,13 +34,12 @@
     {
       "angle": 270,
       "hintAngle": 270,
-      "hintId": 2,
+      "hintId": 1,
       "id": 9,
       "length": 74,
       "tail": 20
     }
   ],
-  "ready": 0,
-  "version": 14,
-  "crownSteps": 4
+  "ready": 1,
+  "version": 20
 }

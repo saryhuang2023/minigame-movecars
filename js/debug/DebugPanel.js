@@ -3,6 +3,9 @@
 
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const BugReporter = require('./BugReporter.js');
+const cloud = require('../cloud.js');
+const GoldSystem = require('../game/GoldSystem.js');
+const SkinSystem = require('../game/SkinSystem.js');
 const Theme = require('../ui/Theme.js');
 
 // ========== 配置 ==========
@@ -444,10 +447,24 @@ class DebugPanel {
         action: function () { self._showLogs = true; self._logScroll = 0; }
       },
       {
-        label: '📋 复制报告',
+        label: '🗑️ 删除档案',
+        danger: true,
         action: function () {
-          var str = BugReporter.copyDiagnostic();
-          wx.showToast({ title: '已复制 ' + Math.min(str.length, 10000) + ' 字符', icon: 'success', duration: 1500 });
+          wx.showModal({
+            title: '确认删除云端档案？',
+            content: '将删除云端所有数据（金币、进度、皮肤），不可恢复。本地数据将被清空。',
+            success: function (modalRes) {
+              if (modalRes.confirm) {
+                cloud.deletePlayerProfile().then(function(delRes) {
+                  console.log('[DebugPanel] deletePlayerProfile:', delRes);
+                  try { wx.clearStorageSync(); } catch (e) { /* ignore */ }
+                  wx.showToast({ title: delRes && delRes.deleted ? '已删除' : '云端无记录', icon: 'success', duration: 1500 });
+                }).catch(function(err) {
+                  wx.showToast({ title: '删除失败: ' + (err && err.message || '未知'), icon: 'none', duration: 2000 });
+                });
+              }
+            }
+          });
         }
       },
       {

@@ -1,14 +1,11 @@
 {
   "board": {
-    "cols": 3,
-    "diameter": 50,
-    "hGap": 60,
-    "rows": 5,
-    "vGap": 20,
     "boardRate": 2.9,
     "boardWidth": 315,
-    "oddCols": 3
+    "oddCols": 3,
+    "rows": 5
   },
+  "crownSteps": 9,
   "pigs": [
     {
       "angle": 270,
@@ -68,6 +65,5 @@
     }
   ],
   "ready": 1,
-  "version": 11,
-  "crownSteps": 9
+  "version": 3
 }

@@ -151,4 +151,7 @@ Guide2.prototype.onDeactivate = function (engine) {
   this._completed = true;
 };
 
+/** 引导高亮猪 ID：pig(20) 真猪染色+换动作 */
+Guide2.prototype.getGuidePigId = function () { return 20; };
+
 module.exports = Guide2;

@@ -1,0 +1,9 @@
+{
+  "name": "settleLevel",
+  "version": "1.0.0",
+  "description": "服务器权威金币结算",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "latest"
+  }
+}

@@ -123,11 +123,22 @@ class GameEngine {
     // 章节配置改为按需懒加载（LevelSelectEngine 激活时才读）
     // 避免在启动路径上同步 I/O 阻塞首帧渲染
 
-    databus.gameState = 'menu';
-    this._hasLeftMenu = false;  // 离开过主菜单标志（防止异步恢复弹窗延迟弹出）
-    console.log('[GameEngine] 设置 gameState=menu');
+    // 菜单输入处理始终注册（自动进关卡路径也需要，以便后续返回菜单时能响应）
     this.setupMenuInput();
-    console.log('[GameEngine] 菜单输入注册完成');
+
+    // 同步检查：第1关未通关 → 跳过主菜单，直接进关卡
+    var li = wx.getStorageSync('lastLevelIndex');
+    var liNum = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : -1;
+    if (liNum <= 0) {
+      console.log('[GameEngine] 第1关未通关，跳过主菜单直接进关卡');
+      this._didAutoStart = true;
+      this._hasLeftMenu = true;
+      this.startLastLevel();
+    } else {
+      databus.gameState = 'menu';
+      this._hasLeftMenu = false;
+      console.log('[GameEngine] 设置 gameState=menu');
+    }
     this.loop();
     console.log('[GameEngine] 主循环已启动');
 
@@ -171,9 +182,14 @@ class GameEngine {
       if (crownMerged > 0) {
         console.log('[Cloud] 合并 crowns: ' + crownMerged + ' 条');
       }
-      // 合并金币：云端值 > 本地值则覆盖（换设备恢复）
+      // 金币：云端权威覆盖本地（不再取较大值，以服务器结算为准）
       if (typeof cloudData.gold === 'number') {
-        GoldSystem.mergeFromCloud(cloudData.gold);
+        GoldSystem.setGold(cloudData.gold);
+        console.log('[LOG] 云端金币同步: ' + cloudData.gold);
+      }
+      // 还原已领取金币的关卡记录
+      if (cloudData.goldClaimedLevels && Array.isArray(cloudData.goldClaimedLevels)) {
+        GoldSystem.restoreClaimHistory(cloudData.goldClaimedLevels);
       }
       // 合并皮肤数据（云端优先覆盖本地）
       if (cloudData.skins) {
@@ -243,7 +259,7 @@ class GameEngine {
     });
   }
 
-  // 纯新玩家自动开始游戏：进度第1关 + 从未自动进入过 → 进入关卡；否则留主菜单
+  // 第1关未通关 → 自动进入关卡；否则留主菜单
   // 杀进程恢复：存在有效存档 → 自动进入关卡
   _checkAutoStart() {
     // 入口日志：标记每次调用
@@ -271,17 +287,11 @@ class GameEngine {
     console.log('[LOG] 解析后 liNum=' + liNum + ' (<=0?' + (liNum <= 0) + ')');
 
     if (liNum <= 0) {
-      // 纯新玩家：检查是否已经自动进入过
-      var entered = wx.getStorageSync('has_auto_entered');
-      console.log('[LOG] has_auto_entered 原始值:', JSON.stringify(entered), '类型:', typeof entered, '布尔:', !!entered);
-      if (!entered) {
-        wx.setStorageSync('has_auto_entered', true);
-        console.log('[LOG] ✓ 首次登录+第1关，自动进入关卡！');
-        this.startLastLevel();
-        console.log('[LOG] ===== _checkAutoStart 结束（新玩家自动进入） =====');
-        return;
-      }
-      console.log('[LOG] ✗ has_auto_entered=true，已自动进入过');
+      // 第1关未通关 → 自动进入关卡
+      console.log('[LOG] ✓ 第1关未通关，自动进入关卡！');
+      this.startLastLevel();
+      console.log('[LOG] ===== _checkAutoStart 结束（自动进入） =====');
+      return;
     }
 
     // 杀进程恢复：检查是否有待恢复的存档

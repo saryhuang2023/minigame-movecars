@@ -1066,6 +1066,19 @@ class EditorEngine {
       this.showToast('关卡已发布，禁止删除');
       return;
     }
+    // 弹出确认对话框
+    const self = this;
+    this.confirmDialog = {
+      title: '删除关卡',
+      message: `确定删除"${entry.name}"吗？此操作不可恢复`,
+      buttonLabels: ['删除', '取消'],
+      buttonColors: ['#f44336', '#999'],
+      onSave: function() { self._doDeleteLevel(idx, entry); },
+      onSkip: function() {}
+    };
+  }
+
+  _doDeleteLevel(idx, entry) {
     try {
       const fs = wx.getFileSystemManager();
       fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/${entry.fileName}`);
@@ -1229,10 +1242,25 @@ class EditorEngine {
       var dir = `${wx.env.USER_DATA_PATH}/levels`;
       try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
 
+      var skippedLocal = 0;
       for (var entry of Object.entries(payload)) {
         var name = entry[0];
         var info = entry[1];
         var fileName = name + '.json';
+
+        // 云端仅做增量补充：本地已有关卡配置则跳过
+        var localExists = false;
+        try { fs.accessSync(`${dir}/${fileName}`); localExists = true; } catch (e) {}
+        if (!localExists) {
+          try { fs.accessSync('assets/levels/' + fileName); localExists = true; } catch (e) {}
+        }
+        if (localExists) {
+          skippedLocal++;
+          // 仍保存 .meta 以便版本追踪
+          this._saveCloudMeta(name, info._id, info.version);
+          continue;
+        }
+
         info.data.version = info.version;
         if (info.data.crownSteps == null && info.crownSteps != null) {
           info.data.crownSteps = info.crownSteps;
@@ -1244,6 +1272,9 @@ class EditorEngine {
         }
         fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(info.data, null, 2), 'utf8');
         this._saveCloudMeta(name, info._id, info.version);
+      }
+      if (skippedLocal > 0) {
+        console.log('[Cloud] 跳过 ' + skippedLocal + ' 个本地已有的关卡（云端仅做补充）');
       }
     } catch (e) {
       console.warn('[Cloud] 批量下载失败，回退到逐个下载:', e);
@@ -1263,13 +1294,26 @@ class EditorEngine {
 
     const minLevel = range.minLevel || 0;
     const maxLevel = range.maxLevel || 0;
+    var skippedLocal = 0;
     for (let lv = minLevel; lv <= maxLevel; lv++) {
       var name = String(lv).padStart(4, '0');
+      var fileName = name + '.json';
+
+      // 云端仅做增量补充：本地已有关卡配置则跳过
+      var localExists = false;
+      try { fs.accessSync(`${dir}/${fileName}`); localExists = true; } catch (e) {}
+      if (!localExists) {
+        try { fs.accessSync('assets/levels/' + fileName); localExists = true; } catch (e) {}
+      }
+      if (localExists) {
+        skippedLocal++;
+        continue;
+      }
+
       try {
         const full = await cloud.downloadLevel(null, name, false);
         if (full && full.data) {
           const cloudVersion = (full.version != null) ? full.version : (full._version || 1);
-          const fileName = name + '.json';
           full.data.version = cloudVersion;
           // crownSteps 双保险：优先用 full.data 内嵌值，否则用顶级字段
           if (full.data.crownSteps == null && full.crownSteps != null) {
@@ -1287,6 +1331,9 @@ class EditorEngine {
       } catch (e) {
         console.warn(`[Cloud] 下载 ${name} 失败:`, e);
       }
+    }
+    if (skippedLocal > 0) {
+      console.log('[Cloud] Fallback 跳过 ' + skippedLocal + ' 个本地已有的关卡（云端仅做补充）');
     }
   }
 
@@ -2724,17 +2771,19 @@ class EditorEngine {
       skipLabel = d.buttonLabels[1];
     }
 
-    // 保存按钮 — 绿色
-    ctx.fillStyle = '#4CAF50';
+    // 保存按钮
+    var saveColor = (d.buttonColors && d.buttonColors[0]) ? d.buttonColors[0] : '#4CAF50';
+    ctx.fillStyle = saveColor;
     roundRect(ctx, btnBaseX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 14px ' + Theme.font.family + '';
     ctx.fillText(saveLabel, btnBaseX + btnW / 2, btnY + btnH / 2);
 
-    // 跳过按钮 — 灰色
+    // 跳过按钮
+    var skipColor = (d.buttonColors && d.buttonColors[1]) ? d.buttonColors[1] : '#999';
     const skipX = btnBaseX + btnW + gap;
-    ctx.fillStyle = '#999';
+    ctx.fillStyle = skipColor;
     roundRect(ctx, skipX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.fillStyle = '#fff';

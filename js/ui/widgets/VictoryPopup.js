@@ -118,6 +118,12 @@ function VictoryPopup(opts) {
   this._GOLD_BTN_BREATHE_DURATION = 600;   // ms
   this._GOLD_BTN_BREATHE_PULSES = 3;       // 3 次脉冲
   this._GOLD_BTN_BREATHE_AMPLITUDE = 0.06; // 最大缩放 6%
+
+  // 金币数字弹出动画（点击 X2 后两次呼吸脉冲）
+  this._goldNumPopStart = 0;
+  this._goldNumPopActive = false;
+  this._GOLD_NUM_POP_DURATION = 1400;      // ms 总时长（2 次呼吸）
+  this._GOLD_NUM_POP_PEAK = 2.2;           // 第一次呼吸峰值
 }
 
 VictoryPopup.prototype = Object.create(UIComponent.prototype);
@@ -170,6 +176,7 @@ VictoryPopup.prototype.markGoldClaimed = function () {
   this._goldClaimed = true;
   this._goldAmount *= 2;
   this.triggerGoldBtnBreathe();
+  this.triggerGoldNumPop();
 };
 
 /** 触发双倍按钮呼吸动画 */
@@ -189,6 +196,30 @@ VictoryPopup.prototype._getGoldBtnBreatheScale = function () {
   var t = elapsed / this._GOLD_BTN_BREATHE_DURATION;
   var pulse = Math.abs(Math.sin(t * this._GOLD_BTN_BREATHE_PULSES * Math.PI));
   return 1 + pulse * this._GOLD_BTN_BREATHE_AMPLITUDE;
+};
+
+/** 触发金币数字弹出动画 */
+VictoryPopup.prototype.triggerGoldNumPop = function () {
+  this._goldNumPopStart = Date.now();
+  this._goldNumPopActive = true;
+};
+
+/** 获取金币数字呼吸缩放值 — 2 次正弦脉冲 + 指数衰减 */
+VictoryPopup.prototype._getGoldNumPopScale = function () {
+  if (!this._goldNumPopActive) return 1;
+  var elapsed = Date.now() - this._goldNumPopStart;
+  if (elapsed >= this._GOLD_NUM_POP_DURATION) {
+    this._goldNumPopActive = false;
+    return 1;
+  }
+  var t = elapsed / this._GOLD_NUM_POP_DURATION;
+  var PEAK = this._GOLD_NUM_POP_PEAK;
+  // sin²(2π·t)——1 个完整正弦周期，平方后得到 2 个正向峰
+  //   t=0→0→t=0.25→1→t=0.5→0→t=0.75→1→t=1→0
+  var breath = Math.sin(t * 2 * Math.PI);
+  // 指数衰减包络：第一次呼吸 ~74%，第二次 ~41%
+  var decay = Math.exp(-t * 1.2);
+  return 1 + (PEAK - 1) * breath * breath * decay;
 };
 
 VictoryPopup.prototype.render = function (ctx) {
@@ -234,8 +265,8 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.drawImage(AssetPreloader.get('victory_bg'), px, py, pw, ph);
   }
 
-  // === 双倍金币按钮（有金币时才显示）===
-  if (showGold) {
+  // === 双倍金币按钮（有金币且未领取时才显示）===
+  if (showGold && !this._goldClaimed) {
     var goldBtnW = 208, goldBtnH = 54;
     var goldBtnX = px + (pw - goldBtnW) / 2 - 0.5;
     var goldBtnY = py + ph + 12;  // 面板底部下方 12px
@@ -315,6 +346,8 @@ VictoryPopup.prototype.render = function (ctx) {
     if (breatheScale !== 1) {
       ctx.restore();
     }
+  } else {
+    this._doubleGoldBtn = null;
   }
 
   // === 元素错开动画 ===
@@ -353,13 +386,25 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.save();
     ctx.globalAlpha = anim.alpha;
     ctx.fillStyle = color;
-    var rl = 6, rr = 24;  // 左圆角 6px, 右圆角 24px
+    // CSS border-radius: 6px 24px 24px 6px
+    // Canvas 不自动钳位 → 手动 clamp：28px 高元素，24→14
+    var rl = Math.min(6, badgeH / 2);
+    var rr = Math.min(24, badgeH / 2);
     ctx.beginPath();
+    // 从上边左上角开始，顺时针绘制
     ctx.moveTo(x + rl, y);
-    ctx.arcTo(x + badgeW, y, x + badgeW, y + rr, rr);
-    ctx.arcTo(x + badgeW, y + badgeH, x + badgeW - rr, y + badgeH, rr);
-    ctx.arcTo(x, y + badgeH, x, y + badgeH - rl, rl);
-    ctx.arcTo(x, y, x + rl, y, rl);
+    // 上边 → 右上角
+    ctx.lineTo(x + badgeW - rr, y);
+    ctx.arc(x + badgeW - rr, y + rr, rr, -Math.PI / 2, 0);
+    // 右边 → 右下角
+    ctx.lineTo(x + badgeW, y + badgeH - rr);
+    ctx.arc(x + badgeW - rr, y + badgeH - rr, rr, 0, Math.PI / 2);
+    // 下边 → 左下角
+    ctx.lineTo(x + rl, y + badgeH);
+    ctx.arc(x + rl, y + badgeH - rl, rl, Math.PI / 2, Math.PI);
+    // 左边 → 左上角
+    ctx.lineTo(x, y + rl);
+    ctx.arc(x + rl, y + rl, rl, Math.PI, -Math.PI / 2);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -452,35 +497,34 @@ VictoryPopup.prototype.render = function (ctx) {
   var myStepsAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawDataText(myStepsAnim, this._steps + '步', py + 214);
 
-  // 获得金币数据（top: 258px）
+  // 获得金币数据（top: 258px）— 带弹出动画
   staggerIdx++;
   var myGoldAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
-  _drawDataText(myGoldAnim, '+' + (this._goldAmount || 0) + '币', py + 258);
-
-  var nextY = py + 100;
-
-  // 金币奖励（嵌在面板内，不单独弹窗）
-  if (showGold) {
-    staggerIdx++;
-    var goldAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
-    ctx.save();
-    ctx.globalAlpha = goldAnim.alpha;
-
-    var goldTextY = nextY + 26;
-    // 金币文字
-    var goldFontSize = this._goldClaimed ? 24 : 20;
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold ' + goldFontSize + 'px ' + Theme.font.family;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    var goldLabel = this._goldClaimed
-      ? '💰 +' + this._goldAmount + ' ✓'
-      : '💰 +' + this._goldAmount;
-    ctx.fillText(goldLabel, SCREEN_WIDTH / 2, goldTextY);
-
-    ctx.restore();
-    nextY = goldTextY + 8;
+  var goldPopScale = this._getGoldNumPopScale();
+  ctx.save();
+  ctx.globalAlpha = myGoldAnim.alpha;
+  if (goldPopScale !== 1) {
+    // 以文本左边缘为锚点放大，保持对齐
+    var goldTextX = dataX;
+    var goldTextY = py + 258 + 6;
+    ctx.translate(goldTextX, goldTextY);
+    ctx.scale(goldPopScale, goldPopScale);
+    ctx.translate(-goldTextX, -goldTextY);
   }
+  // 金币呼吸中 → 金橙色 bold（颜色随呼吸强度渐变）；结束后 → 普通黑色
+  var isBreathing = this._goldClaimed && this._goldNumPopActive;
+  if (isBreathing) {
+    var intensity = Math.min(1, Math.max(0, (goldPopScale - 1) / 0.5));
+    ctx.fillStyle = 'rgb(255,' + Math.round(80 + 100 * intensity) + ',0)';
+    ctx.font = 'bold 16px ' + Theme.font.family;
+  } else {
+    ctx.fillStyle = '#000000';
+    ctx.font = '13px ' + Theme.font.family;
+  }
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('+' + (this._goldAmount || 0) + '币', dataX, py + 258 + 6);
+  ctx.restore();
 
   // === 按钮（位置固定，样式同设置面板）===
   var CONT_BTN_W = 160;
@@ -548,12 +592,15 @@ VictoryPopup.prototype.render = function (ctx) {
     this._exitBtn = null;
 
   } else if (rState === 'menu') {
-    // ── 无金币 menu：单个继续按钮 ──
+    // ── 无金币 menu：继续 + 重玩 ──
     this._exitBtn = null;
-    this._restartBtn = null;
     this._doubleGoldBtn = null;
     staggerIdx++;
-    var contAnim2 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+    var restAnim3 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+    this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
+    _renderReplayBtn(restAnim3);
+    staggerIdx++;
+    var contAnim2 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 40);
     this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
     _renderContinueBtn(contAnim2);
   } else if (rState === 'levelSelect') {

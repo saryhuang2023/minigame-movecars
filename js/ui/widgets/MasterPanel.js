@@ -14,7 +14,7 @@ var MASTER_BG = 'assets/images/levels/master_bg.png';
 // 卡片尺寸（由背景图决定）
 var CARD_W = 190;
 var CARD_H = 92;
-var CARD_X = 17;
+var CARD_X = 15;
 var CARD_Y = SCREEN_HEIGHT - CARD_H - 22;
 
 /**

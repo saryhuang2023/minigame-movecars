@@ -48,6 +48,13 @@ class BaseGuide {
    * @param {PlayingEngine} engine
    */
   onDeactivate(engine) {}
+
+  /**
+   * 返回引导需要高亮染色的猪 ID（null = 无需高亮）。
+   * Guide1 返回 11、Guide2 返回 20，子类按需重写。
+   * @returns {number|null}
+   */
+  getGuidePigId() { return null; }
 }
 
 module.exports = BaseGuide;

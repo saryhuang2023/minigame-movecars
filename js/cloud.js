@@ -221,6 +221,25 @@ async function downloadCloudFile(relativePath) {
   }
 }
 
+/**
+ * 关卡金币结算（服务器权威）
+ * @param {string} levelId 关卡名（如 "0001"）
+ * @param {number} pigCount 该关卡小猪数量
+ * @param {boolean} double 是否双倍
+ * @returns {Promise<{code, gold, reward, claimed}>}
+ */
+async function settleLevel(levelId, pigCount, double) {
+  return callFunction('settleLevel', { levelId, pigCount, double });
+}
+
+/**
+ * 删除云端玩家档案（含金币、进度、皮肤等）
+ * @returns {Promise<{code, deleted}>}
+ */
+async function deletePlayerProfile() {
+  return callFunction('deletePlayerProfile');
+}
+
 module.exports = {
   initCloud,
   callFunction,
@@ -234,5 +253,7 @@ module.exports = {
   getLevelInfo,
   claimLevelMaster,
   getOpenId,
-  downloadCloudFile
+  downloadCloudFile,
+  settleLevel,
+  deletePlayerProfile
 };

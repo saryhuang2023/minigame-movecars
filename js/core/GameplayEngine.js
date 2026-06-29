@@ -1023,16 +1023,17 @@ class GameplayEngine {
         this.dragState.pigId === pig.id || pig.id === this.dragState.pendingId
       );
 
-      // 被撞/被提示 → 播放受击动画；拖拽中保持 RUN
+      // 被撞/被提示/引导高亮 → 播放受击动画；拖拽中保持 RUN
       var isHinted = options.hintPigId != null && options.hintPigId === pig.id && !isDragPig;
+      var isGuideHighlight = options.guidePigId != null && options.guidePigId === pig.id && !isDragPig;
       var flashAlpha = this._getFlashOverlayAlpha(pig.id);
-      var drawAnim = (isHinted || flashAlpha > 0) ? AnimType.HINT : undefined;
+      var drawAnim = (isHinted || isGuideHighlight || flashAlpha > 0) ? AnimType.HINT : undefined;
 
-      // Tint 优先级：碰撞闪红 > 提示粉色 > 拖拽/选中金色
+      // Tint 优先级：碰撞闪红 > 提示粉色/引导粉色 > 拖拽/选中金色
       var tint = null;
       if (flashAlpha > 0) {
         tint = { color: '#C45A5A', alpha: 0.60 * flashAlpha };
-      } else if (isHinted) {
+      } else if (isHinted || isGuideHighlight) {
         tint = { color: '#E88DA0', alpha: 0.50 };
       } else if (isDragPig || (this.selectedPigId != null && this.selectedPigId === pig.id)) {
         tint = { color: '#C9A343', alpha: 0.38 };
@@ -1055,7 +1056,7 @@ class GameplayEngine {
         const savedAngle = pig.angle;
         pig.angle = g.hintAngle != null ? g.hintAngle : pig.angle;
         // 前 10% 淡入，后 90% 保持 70% 透明度（不淡出，循环时自然从头淡入）
-        ctx.globalAlpha = 0.70;
+        ctx.globalAlpha = 0.50;
         pr.draw(ctx, pig, g.currentDx, g.currentDy, AnimType.ESCAPE);
         ctx.globalAlpha = 1;
         pig.angle = savedAngle;
