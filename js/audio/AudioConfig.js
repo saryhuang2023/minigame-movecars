@@ -71,7 +71,7 @@ var SFX_EVENTS = {
   // ── P0 核心 ──
   'collide': {  // 被撞声音
     files: ['collide_duang.mp3'],
-    files: ['collide_2.mp3'],
+    //files: ['collide_2.mp3'],
     priority: PRIORITY.SFX,
   },
   'escape': {  // 小猪逃脱

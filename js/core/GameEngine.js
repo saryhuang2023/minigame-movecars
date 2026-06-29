@@ -20,7 +20,7 @@ const LevelSelectEngine = require('../game/LevelSelectEngine.js');
 const PlayingEngine = require('../game/PlayingEngine.js');
 const BugReporter = require('../debug/BugReporter.js');
 const DebugPanel = require('../debug/DebugPanel.js');
-const { drawComposedPig, getComposedPigSize } = require('../render/PigRenderer.js');
+const PigRenderer = require('../render/PigRenderer.js');
 
 class GameEngine {
   constructor() {
@@ -57,10 +57,13 @@ class GameEngine {
 
     // 菜单按钮
     this.menuButtons = [];
-    this._titleTapCount = 0; // 标题连击计数，满 5 次显示编辑器入口
-    this._titleLongPressTimer = null;  // 标题长按计时器（模拟器弹 debug 面板用）
     this._pressedBtnIdx = -1;   // 当前被按下的按钮索引（用于按压动画）
     this._pressedBtnTime = 0;   // 按钮按下时间
+
+    // 左下角快速 5 连击解锁编辑器入口 + DebugPanel
+    this._cornerTapCount = 0;
+    this._cornerTapTimer = null;
+    this._editorUnlocked = false;
 
     // 皮肤系统初始化（三层加载：本地打包 → 本地缓存 → 云端热更新）
     SkinSystem.loadConfig(function () {
@@ -517,14 +520,7 @@ class GameEngine {
     // 设置图标
     ctx.drawImage(commonIcons.setting, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
 
-    // 标签文字
-    ctx.fillStyle = C.textMuted;
-    ctx.font = 'bold 11px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('设置', cx, cy + iconSize / 2 + 6);
-
-    return { x: x, y: y, w: iconSize, h: iconSize + 22 };
+    return { x: x, y: y, w: iconSize, h: iconSize };
   }
 
   /**
@@ -664,13 +660,6 @@ class GameEngine {
 
   setupMenuInput() {
     var self = this;
-    // 标题区域命中检测（复用）
-    function _inTitleArea(t) {
-      var tx = self._titleHitX, ty = self._titleHitY;
-      var tw = self._titleHitW || 120, th = self._titleHitH || 120;
-      return tx !== undefined && t.x >= tx && t.x <= tx + tw && t.y >= ty && t.y <= ty + th;
-    }
-
     this.input.on('menu', (e) => {
       // 面板打开时，所有触控事件（touchstart/move/end）由面板处理
       if (ShopPanel.isOpen()) {
@@ -694,28 +683,29 @@ class GameEngine {
           return;
         }
 
-        var inTitle = _inTitleArea(t);
-
-        // 标题连击检测（5 次解锁编辑器入口 — 点击猪鼻Logo区域）
-        if (inTitle && this._titleTapCount < 5) {
-          this._titleTapCount++;
-          if (this._titleTapCount >= 5) {
+        // 左下角 100x100 快速 5 连击 → 解锁后门按钮（编辑 + 调试）
+        var cornerW = 100;
+        var cornerH = 100;
+        var cornerX = 0;
+        var cornerY = SCREEN_HEIGHT - cornerH;
+        if (t.x >= cornerX && t.x <= cornerX + cornerW &&
+            t.y >= cornerY && t.y <= cornerY + cornerH) {
+          this._cornerTapCount++;
+          if (this._cornerTapTimer) clearTimeout(this._cornerTapTimer);
+          this._cornerTapTimer = setTimeout(function () {
+            self._cornerTapCount = 0;
+          }, 1500);  // 1.5 秒内连击，否则重置
+          if (this._cornerTapCount >= 5 && !this._editorUnlocked) {
+            this._editorUnlocked = true;
+            this._cornerTapCount = 0;
+            clearTimeout(this._cornerTapTimer);
             wx.showToast({ title: '编辑器已解锁', icon: 'none', duration: 1200 });
           }
+          return;  // 角落点击不触发按钮
         }
 
-        // 标题长按 2 秒 → 弹出调试面板（模拟器友好：不需要三指）
-        if (inTitle) {
-          this._cancelTitleLongPress();
-          this._titleLongPressTimer = setTimeout(function () {
-            self._titleLongPressTimer = null;
-            DebugPanel.toggle();
-          }, 2000);
-        }
-
-        // 按钮点击（标题区域不触发按钮）
-        if (!inTitle) {
-          for (var i = 0; i < this.menuButtons.length; i++) {
+        // 按钮点击
+        for (var i = 0; i < this.menuButtons.length; i++) {
             var btn = this.menuButtons[i];
             if (t.x >= btn.x && t.x <= btn.x + btn.w &&
                 t.y >= btn.y && t.y <= btn.y + btn.h) {
@@ -727,25 +717,15 @@ class GameEngine {
               return;
             }
           }
-        }
       }
 
-      // 手抬起 → 取消长按；移动仅当手指离开标题区域时才取消（真机电容屏有微抖动，不打断区域内长按）
+      // 手抬起
       if (e.type === 'touchend') {
-        this._cancelTitleLongPress();
-      } else if (e.type === 'touchmove' && e.touches[0]) {
-        if (!_inTitleArea(e.touches[0])) {
-          this._cancelTitleLongPress();
-        }
+        // 取消按钮按压
+      } else if (e.type === 'touchmove') {
+        // 移动中
       }
     });
-  }
-
-  _cancelTitleLongPress() {
-    if (this._titleLongPressTimer) {
-      clearTimeout(this._titleLongPressTimer);
-      this._titleLongPressTimer = null;
-    }
   }
 
   renderMenu() {
@@ -758,40 +738,37 @@ class GameEngine {
     var mainScale = this._pressedBtnIdx === 0 ? pressScale : 1;
     var secScale  = this._pressedBtnIdx === 1 ? pressScale : 1;
     var arenaScale = this._pressedBtnIdx === 2 ? pressScale : 1;
-    var shareScale = this._pressedBtnIdx === 3 ? pressScale : 1;
-    var setScale   = this._pressedBtnIdx === 4 ? pressScale : 1;
-    var editScale  = this._pressedBtnIdx === 5 ? pressScale : 1;
+    var setScale   = this._pressedBtnIdx === 3 ? pressScale : 1;
+    var editScale  = this._pressedBtnIdx === 4 ? pressScale : 1;
+    var debugScale = this._pressedBtnIdx === 5 ? pressScale : 1;
 
-    // ===== 猪鼻子 Logo =====
-    var logoSize = 72;
-    var logoY = safeTop + 46;
-    this.drawPigNoseLogo(cx, logoY, logoSize);
+    // ===== Frame A（对齐参考，不可见）=====
+    var frameA_Y = safeTop;
 
-    // 记录标题碰撞区域（用于5连击解锁编辑器）
-    this._titleHitX = cx - logoSize / 2;
-    this._titleHitY = logoY - logoSize / 2;
-    this._titleHitW = logoSize;
-    this._titleHitH = logoSize;
+    // ===== 设置按钮（Frame A 内，left: 16px, top: 6px）=====
+    var setIconSize = 42;
+    var setBtnX = 16;
+    var setBtnY = frameA_Y + 6;
+    var setBtnCX = setBtnX + setIconSize / 2;
+    var setBtnCY = setBtnY + setIconSize / 2;
+    ctx.save();
+    ctx.translate(setBtnCX, setBtnCY);
+    ctx.scale(setScale, setScale);
+    ctx.translate(-setBtnCX, -setBtnCY);
+    var setArea = this._drawSettingsBtn(setBtnX, setBtnY, setIconSize);
+    ctx.restore();
 
-    // ===== 游戏标题 + 副标题 =====
-    var titleY = logoY + logoSize / 2 + 28;
-    ctx.fillStyle = C.textDark;
-    ctx.font = 'bold 34px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('猪了个猪呀', cx, titleY);
-
-    ctx.fillStyle = C.textMuted;
-    ctx.font = '14px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('推一推，消除烦恼', cx, titleY + 22);
+    // ===== 主界面中央 idle 小猪（目标宽度 = 屏幕 2/3）=====
+    var pigCX = SCREEN_WIDTH / 2;
+    var pigCY = SCREEN_HEIGHT / 2;
+    var pigTargetW = SCREEN_WIDTH * 2 / 3;
+    PigRenderer.drawMenuIdlePig(ctx, pigCX, pigCY, pigTargetW);
 
     // ===== 主按钮：开始游戏（黏土拟态） =====
     var btnW = SCREEN_WIDTH - 64; // 两侧各留32px
     var btnH = 64;
     var btnX = (SCREEN_WIDTH - btnW) / 2;
-    var mainBtnY = titleY + 56;
+    var mainBtnY = SCREEN_HEIGHT - 74 - btnH;
     var mainBtnCX = btnX + btnW / 2;
     var mainBtnCY = mainBtnY + btnH / 2;
 
@@ -810,9 +787,9 @@ class GameEngine {
     ctx.fillText('🎮 开始游戏', cx, mainBtnY + btnH / 2);
     ctx.restore();
 
-    // ===== 次按钮：关卡选择 =====
+    // ===== 次按钮：关卡选择（开始游戏上方 100px）=====
     var secBtnH = 52;
-    var secBtnY = mainBtnY + btnH + 12;
+    var secBtnY = mainBtnY - secBtnH - 50;
     var secBtnCX = btnX + btnW / 2;
     var secBtnCY = secBtnY + secBtnH / 2;
 
@@ -829,9 +806,9 @@ class GameEngine {
     ctx.fillText('📋 关卡选择', cx, secBtnY + secBtnH / 2);
     ctx.restore();
 
-    // ===== 次按钮：装扮（金色边框） =====
+    // ===== 次按钮：装扮（关卡选择上方 20px，金色边框）=====
     var arenaBtnH = 52;
-    var arenaBtnY = secBtnY + secBtnH + 12;
+    var arenaBtnY = secBtnY - arenaBtnH - 20;
     var arenaBtnCX = btnX + btnW / 2;
     var arenaBtnCY = arenaBtnY + arenaBtnH / 2;
 
@@ -854,78 +831,48 @@ class GameEngine {
     ctx.fillText('🎨 装扮', cx, arenaBtnY + arenaBtnH / 2);
     ctx.restore();
 
-    // ===== 统计卡片 =====
-    var cardY = arenaBtnY + arenaBtnH + 14;
-    var cardH = 70;
-    this.drawScoreCard(btnX, cardY, btnW, cardH, 22);
-
-    // 左边：最高分
-    var leftCX = btnX + btnW * 0.28;
-    ctx.fillStyle = C.textMuted;
-    ctx.font = 'bold 13px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🏆 最高分', leftCX, cardY + 21);
-    ctx.fillStyle = C.textDark;
-    ctx.font = 'bold 28px ' + Theme.font.family + '';
-    ctx.fillText('128', leftCX, cardY + 49);
-
-    // 分隔线
-    var dividerX = btnX + btnW * 0.5;
-    ctx.strokeStyle = C.borderLight;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(dividerX, cardY + 14);
-    ctx.lineTo(dividerX, cardY + cardH - 14);
-    ctx.stroke();
-
-    // 右边：已通关
-    var clearedCount = wx.getStorageSync('lastLevelIndex') || 0;
-    var rightCX = btnX + btnW * 0.72;
-    ctx.fillStyle = C.textMuted;
-    ctx.font = 'bold 13px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🎯 已通关', rightCX, cardY + 21);
-    ctx.fillStyle = C.accent;
-    ctx.font = 'bold 28px ' + Theme.font.family + '';
-    ctx.fillText(`${clearedCount} 关`, rightCX, cardY + 49);
-
-    // ===== 底部图标行：分享 + 设置 + 编辑（隐藏入口） =====
-    var iconSize = 48;
-    var bottomY = SCREEN_HEIGHT - iconSize - 56;
-
-    var shareCX = cx - iconSize - 24 + iconSize / 2;
-    var shareCY = bottomY + iconSize / 2;
-    ctx.save();
-    ctx.translate(shareCX, shareCY);
-    ctx.scale(shareScale, shareScale);
-    ctx.translate(-shareCX, -shareCY);
-    var shareArea = this.drawIconBtn(cx - iconSize - 24, bottomY, iconSize, '📤', '分享');
-    ctx.restore();
-
-    // 设置 — 使用矢量齿轮图标
-    var setX = cx + 24;
-    var setCX = setX + iconSize / 2;
-    var setCY = bottomY + iconSize / 2;
-    ctx.save();
-    ctx.translate(setCX, setCY);
-    ctx.scale(setScale, setScale);
-    ctx.translate(-setCX, -setCY);
-    var setArea = this._drawSettingsBtn(setX, bottomY, iconSize);
-    ctx.restore();
-
-    // 编辑器入口 — 屏幕右下角，连击标题 5 次后显示
+    // ===== 后门按钮（右下角，5 连击解锁后显示）=====
     var editArea = null;
-    if (this._titleTapCount >= 5) {
-      var editBtnX = SCREEN_WIDTH - iconSize - 20;
-      var editBtnCX = editBtnX + iconSize / 2;
+    var debugArea = null;
+    if (this._editorUnlocked) {
+      var dbgBtnW = 76;
+      var dbgBtnH = 34;
+      var dbgGap = 8;
+      var dbgPadding = 12;
+      // 编辑在左，调试在右
+      var debugBtnX = SCREEN_WIDTH - dbgPadding - dbgBtnW;
+      var debugBtnY = SCREEN_HEIGHT - dbgPadding - dbgBtnH;
+      var editBtnX = debugBtnX - dbgGap - dbgBtnW;
+      var editBtnY = debugBtnY;
+
+      // 编辑按钮（粉色文字，secondary 风格）
       ctx.save();
-      ctx.translate(editBtnCX, shareCY);
+      ctx.translate(editBtnX + dbgBtnW / 2, editBtnY + dbgBtnH / 2);
       ctx.scale(editScale, editScale);
-      ctx.translate(-editBtnCX, -shareCY);
-      editArea = this.drawIconBtn(editBtnX, bottomY, iconSize, '🔧', '编辑');
+      ctx.translate(-(editBtnX + dbgBtnW / 2), -(editBtnY + dbgBtnH / 2));
+      this.drawClaySecondary(editBtnX, editBtnY, dbgBtnW, dbgBtnH, 10);
+      ctx.fillStyle = C.primary;
+      ctx.font = 'bold 12px ' + Theme.font.family;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✏️ 编辑', editBtnX + dbgBtnW / 2, editBtnY + dbgBtnH / 2);
       ctx.restore();
+
+      // 调试按钮（灰色文字，secondary 风格）
+      ctx.save();
+      ctx.translate(debugBtnX + dbgBtnW / 2, debugBtnY + dbgBtnH / 2);
+      ctx.scale(debugScale, debugScale);
+      ctx.translate(-(debugBtnX + dbgBtnW / 2), -(debugBtnY + dbgBtnH / 2));
+      this.drawClaySecondary(debugBtnX, debugBtnY, dbgBtnW, dbgBtnH, 10);
+      ctx.fillStyle = '#6B7280';
+      ctx.font = 'bold 12px ' + Theme.font.family;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🔧 调试', debugBtnX + dbgBtnW / 2, debugBtnY + dbgBtnH / 2);
+      ctx.restore();
+
+      editArea = { x: editBtnX, y: editBtnY, w: dbgBtnW, h: dbgBtnH };
+      debugArea = { x: debugBtnX, y: debugBtnY, w: dbgBtnW, h: dbgBtnH };
     }
 
     // ===== 注册按钮碰撞区域 =====
@@ -934,19 +881,22 @@ class GameEngine {
       { x: btnX, y: mainBtnY, w: btnW, h: btnH, action: function() { self.startLastLevel(); } },
       { x: btnX, y: secBtnY, w: btnW, h: secBtnH, action: function() { self._hasLeftMenu = true; databus.gameState = 'levelSelect'; } },
       { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH, action: function() { ShopPanel.open(); } },
-      { x: shareArea.x, y: shareArea.y, w: shareArea.w, h: shareArea.h,
-        action: function() { wx.shareAppMessage({ title: '猪了个猪呀，快来一起推猪猪！' }); }
-      },
       { x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
         action: function() { settingsPanel.open({ title: '设置' }); }
       }
     ];
 
-    // 编辑器按钮碰撞区域
+    // 后门按钮（右下角，5 连击解锁后附加）
     if (editArea) {
       this.menuButtons.push({
         x: editArea.x, y: editArea.y, w: editArea.w, h: editArea.h,
         action: function() { self._hasLeftMenu = true; databus.gameState = 'editor'; }
+      });
+    }
+    if (debugArea) {
+      this.menuButtons.push({
+        x: debugArea.x, y: debugArea.y, w: debugArea.w, h: debugArea.h,
+        action: function() { DebugPanel.toggle(); }
       });
     }
 
@@ -1009,11 +959,7 @@ class GameEngine {
 
     // 激活新状态（menu 的输入在 setupMenuInput 已注册）
     switch (curr) {
-      case 'menu':
-        // 未解锁时重置连击计数（已解锁则保持，入口不再隐藏）
-        if (this._titleTapCount < 5) this._titleTapCount = 0;
-        audio.playMusic('menu');
-        break;
+      case 'menu':       audio.playMusic('menu'); break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;
       case 'levelSelect': this.levelSelect.activate(); audio.playMusic('levelSelect'); break;
       case 'playing':     this.playing.activate(); audio.playMusic('playing'); break;

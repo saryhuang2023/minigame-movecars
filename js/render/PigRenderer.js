@@ -551,6 +551,50 @@ function drawComposedPig(ctx, x, y, scale = 1) {
   return (tailSrcW + midSrcW * 2 + headSrcW) * scale;
 }
 
+// ---- 主界面循环播放 idle 猪 ----
+var _menuPigState = { frame: 0, lastAdvance: 0 };
+
+function drawMenuIdlePig(ctx, x, y, targetWidth) {
+  targetWidth = targetWidth || 250;
+  var parts = _loadPigParts();
+  if (!parts.allLoaded) return 0;
+
+  var now = Date.now();
+  if (now - _menuPigState.lastAdvance >= IDLE_FRAME_INTERVAL) {
+    _menuPigState.frame = (_menuPigState.frame + 1) % IDLE_FRAME_COUNT;
+    _menuPigState.lastAdvance = now;
+  }
+
+  var frameImg = parts.idleFrameImgs[_menuPigState.frame];
+  if (!frameImg) frameImg = parts.frameImg;
+  if (!frameImg) return 0;
+
+  var srcW = parts.frameW;
+  var srcH = parts.height;
+  var tailSrcW = Math.round(srcW * TAIL_SLICE);
+  var headSrcW = Math.round(srcW * HEAD_SLICE);
+  var midSrcW = srcW - tailSrcW - headSrcW;
+
+  // 基于实际加载的像素尺寸计算缩放比，确保猪宽度严格等于 targetWidth
+  var baseW = tailSrcW + midSrcW * 2 + headSrcW;
+  var scale = targetWidth / baseW;
+
+  var tw = tailSrcW * scale;
+  var mw = midSrcW * 2 * scale;
+  var hw = headSrcW * scale;
+  var drawH = srcH * scale;
+  var totalW = (tailSrcW + midSrcW * 2 + headSrcW) * scale;
+
+  var dx = x - totalW / 2;
+  var dy = y - drawH / 2;
+
+  ctx.drawImage(frameImg, 0, 0, tailSrcW, srcH, dx, dy, tw, drawH);
+  ctx.drawImage(frameImg, tailSrcW, 0, midSrcW, srcH, dx + tw, dy, mw, drawH);
+  ctx.drawImage(frameImg, tailSrcW + midSrcW, 0, headSrcW, srcH, dx + tw + mw, dy, hw, drawH);
+
+  return totalW;
+}
+
 // 模块加载时立即触发猪图片预加载，避免首帧渲染时图片未就绪出现黄色 fallback 矩形
 _loadPigParts();
 _loadRunParts();
@@ -565,3 +609,4 @@ module.exports.PIG_STROKE = PIG_STROKE;
 module.exports.SELECTED_COLOR = SELECTED_COLOR;
 module.exports.drawComposedPig = drawComposedPig;
 module.exports.getComposedPigSize = getComposedPigSize;
+module.exports.drawMenuIdlePig = drawMenuIdlePig;
