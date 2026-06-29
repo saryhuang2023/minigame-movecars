@@ -9,6 +9,9 @@ const audio = require('../audio/AudioManager.js');
 const Easing = require('./Easing.js');
 const SceneDefaults = require('../game/SceneDefaults.js');
 
+// 棋盘到屏幕边缘的最小距离（像素）
+const BOARD_MARGIN = 15;
+
 // ========== 常量 ==========
 // 孔位颜色从场景配置获取
 const BC = SceneDefaults.boardColors;
@@ -124,10 +127,18 @@ class GameplayEngine {
   // 棋盘居中对齐
   // ============================================================
   recenterBoard() {
+    // 如果棋盘宽度超过可用宽度，自动缩窄（关卡数据可能过宽）
+    const maxBoardW = SCREEN_WIDTH - BOARD_MARGIN * 2;
+    if (this.boardWidth > maxBoardW) {
+      this.boardWidth = maxBoardW;
+      this.recomputeBoard();  // 重算孔位，确保棋盘不溢出
+    }
+
     const visualW = this.boardWidth;               // 完整列总宽 = boardWidth
     const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
+    const availW = SCREEN_WIDTH - BOARD_MARGIN * 2;      // 左右各留 BOARD_MARGIN
     const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
-    this.boardOffsetX = Math.max(0, Math.round((SCREEN_WIDTH - visualW) / 2));
+    this.boardOffsetX = BOARD_MARGIN + Math.max(0, Math.round((availW - visualW) / 2));
     this.boardOffsetY = Math.max(0, Math.round((availH - visualH) / 2));
   }
   rebuildOccupancy() {
@@ -1092,5 +1103,6 @@ class GameplayEngine {
 }
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
 GameplayEngine.HEAD_ZONE_MULT = HEAD_ZONE_MULT;
+GameplayEngine.BOARD_MARGIN = BOARD_MARGIN;
 
 module.exports = GameplayEngine;

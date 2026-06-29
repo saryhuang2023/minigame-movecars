@@ -2505,7 +2505,7 @@ class EditorEngine {
 
     // Row 2: boardWidth（棋盘总宽）
     bx = 12;
-    bx = this._drawCompactStepper(bx, boardY2, stepperH, '宽', this.gp.boardWidth, 100, 600,
+    bx = this._drawCompactStepper(bx, boardY2, stepperH, '宽', this.gp.boardWidth, 100, SCREEN_WIDTH - GameplayEngine.BOARD_MARGIN * 2,
       (v) => {
         this.gp.boardWidth = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
