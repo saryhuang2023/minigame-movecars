@@ -70,11 +70,24 @@ var PRIORITY = {
 var SFX_EVENTS = {
   // ── P0 核心 ──
   'collide': {  // 被撞声音
+    files: ['collide_duang.mp3'],
     files: ['collide_2.mp3'],
     priority: PRIORITY.SFX,
   },
   'escape': {  // 小猪逃脱
     files: ['escape_2.mp3'],
+    priority: PRIORITY.SFX,
+  },
+  'coin_fly': {  // 金币从边缘弹出开始飞行
+    files: ['coin_fly.mp3'],
+    priority: PRIORITY.SFX,
+  },
+  'coin_get': {  // 金币飞到金币区
+    files: ['coin_get.mp3'],
+    priority: PRIORITY.SFX,
+  },
+  'coin_roll': {  // 结算金币数字翻滚
+    files: ['coin_roll.mp3'],
     priority: PRIORITY.SFX,
   },
   'victory': {  //通关

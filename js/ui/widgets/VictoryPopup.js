@@ -5,6 +5,7 @@ var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../Theme.js');
 var Easing = require('../../core/Easing.js');
 var AssetPreloader = require('../AssetPreloader.js');
+var audio = require('../../audio/AudioManager.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 // ===== 继续按钮手绘（复用 SettingsPanel 的 3 层 Figma 设计，参数化宽度）=====
@@ -119,11 +120,15 @@ function VictoryPopup(opts) {
   this._GOLD_BTN_BREATHE_PULSES = 3;       // 3 次脉冲
   this._GOLD_BTN_BREATHE_AMPLITUDE = 0.06; // 最大缩放 6%
 
-  // 金币数字弹出动画（点击 X2 后两次呼吸脉冲）
-  this._goldNumPopStart = 0;
-  this._goldNumPopActive = false;
-  this._GOLD_NUM_POP_DURATION = 1400;      // ms 总时长（2 次呼吸）
-  this._GOLD_NUM_POP_PEAK = 2.2;           // 第一次呼吸峰值
+  // 金币数字翻滚动画（结算时从 0 滚到目标值，双倍时从旧值滚到新值）
+  this._goldRollStart = 0;
+  this._goldRollFrom = 0;
+  this._goldRollTo = 0;
+  this._goldRolling = false;
+  this._goldRollTriggered = false;  // 一次性标记（只自动触第一次）
+  this._goldRollSoundLast = 0;
+  this._GOLD_ROLL_DURATION = 500;        // ms
+  this._GOLD_ROLL_SOUND_INTERVAL = 100;  // ms 循环播放 coin_roll
 }
 
 VictoryPopup.prototype = Object.create(UIComponent.prototype);
@@ -136,7 +141,10 @@ VictoryPopup.prototype.setAnimator = function (animator) {
 VictoryPopup.prototype.setData = function (data) {
   this._steps = data.steps || 0;
   this._returnState = data.returnState || 'menu';
-  this._goldAmount = data.goldAmount || 0;
+  // 双倍金币已领取 → _goldAmount 由 markGoldClaimed 管理，防止 _syncUIData 回写旧值打断翻滚
+  if (!this._goldClaimed) {
+    this._goldAmount = data.goldAmount || 0;
+  }
   this._showGold = !!data.showGold;
   this._masterSteps = data.masterSteps != null ? data.masterSteps : null;
   this._masterNickname = data.masterNickname || null;
@@ -147,9 +155,11 @@ VictoryPopup.prototype.open = function () {
   this._closing = false;
   this._goldClaimed = false;
   this._goldBtnBreatheActive = false;
+  this._goldRolling = false;
+  this._goldRollTriggered = false;
+  this._animStart = Date.now();
   if (this._animator) {
     this._animator.open();
-    this._animStart = Date.now();
   }
 };
 
@@ -171,12 +181,13 @@ VictoryPopup.prototype.isClosing = function () {
   return this._closing;
 };
 
-/** 标记双倍金币已领取 — 按钮灰化，金额翻倍显示，触发呼吸动画 */
+/** 标记双倍金币已领取 — 按钮灰化，金额翻倍，触发翻滚动画 */
 VictoryPopup.prototype.markGoldClaimed = function () {
+  var oldGold = this._goldAmount;
   this._goldClaimed = true;
   this._goldAmount *= 2;
   this.triggerGoldBtnBreathe();
-  this.triggerGoldNumPop();
+  this.startGoldRoll(oldGold, this._goldAmount);
 };
 
 /** 触发双倍按钮呼吸动画 */
@@ -198,28 +209,29 @@ VictoryPopup.prototype._getGoldBtnBreatheScale = function () {
   return 1 + pulse * this._GOLD_BTN_BREATHE_AMPLITUDE;
 };
 
-/** 触发金币数字弹出动画 */
-VictoryPopup.prototype.triggerGoldNumPop = function () {
-  this._goldNumPopStart = Date.now();
-  this._goldNumPopActive = true;
+/** 启动金币数字翻滚：从 from 滚到 to（500ms easeOutBack） */
+VictoryPopup.prototype.startGoldRoll = function (from, to) {
+  if (from >= to) return;
+  this._goldRollStart = Date.now();
+  this._goldRollFrom = from;
+  this._goldRollTo = to;
+  this._goldRolling = true;
+  this._goldRollTriggered = true;
+  this._goldRollSoundLast = 0;
 };
 
-/** 获取金币数字呼吸缩放值 — 2 次正弦脉冲 + 指数衰减 */
-VictoryPopup.prototype._getGoldNumPopScale = function () {
-  if (!this._goldNumPopActive) return 1;
-  var elapsed = Date.now() - this._goldNumPopStart;
-  if (elapsed >= this._GOLD_NUM_POP_DURATION) {
-    this._goldNumPopActive = false;
-    return 1;
+/** 获取当前翻滚中的显示数字（easeOutBack 插值） */
+VictoryPopup.prototype._getRollDisplayGold = function () {
+  if (!this._goldRolling) return this._goldAmount;
+  var elapsed = Date.now() - this._goldRollStart;
+  if (elapsed >= this._GOLD_ROLL_DURATION) {
+    this._goldRolling = false;
+    return this._goldRollTo;
   }
-  var t = elapsed / this._GOLD_NUM_POP_DURATION;
-  var PEAK = this._GOLD_NUM_POP_PEAK;
-  // sin²(2π·t)——1 个完整正弦周期，平方后得到 2 个正向峰
-  //   t=0→0→t=0.25→1→t=0.5→0→t=0.75→1→t=1→0
-  var breath = Math.sin(t * 2 * Math.PI);
-  // 指数衰减包络：第一次呼吸 ~74%，第二次 ~41%
-  var decay = Math.exp(-t * 1.2);
-  return 1 + (PEAK - 1) * breath * breath * decay;
+  var t = elapsed / this._GOLD_ROLL_DURATION;
+  var eased = Easing.easeOutBack(t, 1.70158);
+  var val = this._goldRollFrom + (this._goldRollTo - this._goldRollFrom) * eased;
+  return Math.round(val);
 };
 
 VictoryPopup.prototype.render = function (ctx) {
@@ -227,6 +239,15 @@ VictoryPopup.prototype.render = function (ctx) {
   if (!this._animator) return;
 
   var state = this._animator.update();
+
+  // 首帧 / 新一轮弹窗：从共享 animator 同步打开时间，并重置单次状态
+  var openStartTime = this._animator.getOpenStartTime();
+  if (openStartTime > 0 && this._animStart !== openStartTime) {
+    this._animStart = openStartTime;
+    this._goldClaimed = false;
+    this._goldRollTriggered = false;
+    this._goldRolling = false;
+  }
 
   // 若正在关闭且动画结束
   if (this._closing && this._animator.isClosed()) {
@@ -497,33 +518,27 @@ VictoryPopup.prototype.render = function (ctx) {
   var myStepsAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawDataText(myStepsAnim, this._steps + '步', py + 214);
 
-  // 获得金币数据（top: 258px）— 带弹出动画
+  // 获得金币数据（top: 258px）— 双击双倍时翻滚，否则静态 +N
   staggerIdx++;
   var myGoldAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
-  var goldPopScale = this._getGoldNumPopScale();
+
+  // 双倍翻滚中循环播放 coin_roll 音效
+  if (this._goldRolling) {
+    var rollElapsed = Date.now() - this._goldRollStart;
+    if (rollElapsed - this._goldRollSoundLast >= this._GOLD_ROLL_SOUND_INTERVAL) {
+      audio.play('coin_roll');
+      this._goldRollSoundLast = rollElapsed;
+    }
+  }
+
+  var displayGold = this._getRollDisplayGold();
   ctx.save();
   ctx.globalAlpha = myGoldAnim.alpha;
-  if (goldPopScale !== 1) {
-    // 以文本左边缘为锚点放大，保持对齐
-    var goldTextX = dataX;
-    var goldTextY = py + 258 + 6;
-    ctx.translate(goldTextX, goldTextY);
-    ctx.scale(goldPopScale, goldPopScale);
-    ctx.translate(-goldTextX, -goldTextY);
-  }
-  // 金币呼吸中 → 金橙色 bold（颜色随呼吸强度渐变）；结束后 → 普通黑色
-  var isBreathing = this._goldClaimed && this._goldNumPopActive;
-  if (isBreathing) {
-    var intensity = Math.min(1, Math.max(0, (goldPopScale - 1) / 0.5));
-    ctx.fillStyle = 'rgb(255,' + Math.round(80 + 100 * intensity) + ',0)';
-    ctx.font = 'bold 16px ' + Theme.font.family;
-  } else {
-    ctx.fillStyle = '#000000';
-    ctx.font = '13px ' + Theme.font.family;
-  }
+  ctx.fillStyle = '#000000';
+  ctx.font = '13px ' + Theme.font.family;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText('+' + (this._goldAmount || 0) + '币', dataX, py + 258 + 6);
+  ctx.fillText('+' + displayGold + '币', dataX, py + 258 + 6);
   ctx.restore();
 
   // === 按钮（位置固定，样式同设置面板）===

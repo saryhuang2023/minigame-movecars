@@ -126,11 +126,12 @@ function createPopupAnimator() {
   function isAnimating()  { return _phase === 'opening' || _phase === 'closing'; }
   function getPhase()     { return _phase; }
   function getOpenDur()   { return _openDuration; }
+  function getOpenStartTime() { return _openStartTime; }
 
   return {
     open: open, close: close, update: update,
     isOpen: isOpen, isClosed: isClosed, isAnimating: isAnimating, getPhase: getPhase,
-    getOpenDur: getOpenDur,
+    getOpenDur: getOpenDur, getOpenStartTime: getOpenStartTime,
   };
 }
 

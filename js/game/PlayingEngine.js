@@ -20,6 +20,7 @@ const AuthDialog = require('../ui/widgets/AuthDialog.js');
 const MasterSystem = require('./MasterSystem.js');
 const HintSystem = require('./HintSystem.js');
 const VictoryAnimation = require('./VictoryAnimation.js');
+const CoinFlyEffect = require('../effects/CoinFlyEffect.js');
 const CrownPigWidget = require('../ui/widgets/CrownPigWidget.js');
 const GoldWidget = require('../ui/widgets/GoldWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
@@ -102,6 +103,10 @@ class PlayingEngine {
     // 金币奖励
     this._pendingGoldReward = false; // 是否有待领取的金币奖励
     this._goldAmount = 0;           // 本次通关奖励金币数
+    this._levelAccumulatedGold = 0;  // 本关实时累积金币（猪退出+1，异步递增仅用于 UI 实时显示）
+    this._totalPigsInLevel = 0;      // 本关原始猪数量（loadLevel 时快照，结算用，不受 setTimeout 时序影响）
+    this._coinFlyEffect = new CoinFlyEffect();  // 金币磁吸飞行动画
+    this._coinsSettling = false;      // 方案D：等待金币飞完再弹窗
 
     // 场景背景图
     this._sceneBgImg = wx.createImage();
@@ -146,6 +151,10 @@ class PlayingEngine {
     // 金币奖励状态
     this._pendingGoldReward = false;
     this._goldAmount = 0;
+    this._levelAccumulatedGold = 0;
+    this._totalPigsInLevel = 0;
+    this._coinFlyEffect = new CoinFlyEffect();  // 重置飞行中动画
+    this._coinsSettling = false;      // 方案D：重置等待状态
     // 试玩逃脱序列记录（供编辑器提示数据自动生成）
     this._trialEscapeSequence = [];
     this._trialUsedRemove = false;
@@ -273,8 +282,8 @@ class PlayingEngine {
     this._uiTopBar.setLevelText('第' + _toChineseNum(parseInt(this.levelName) || 1) + '关');
     this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
 
-    // GoldWidget
-    this._uiGoldWidget.setData(GoldSystem.getGold());
+    // GoldWidget — 显示余额+本关累积（实时增长）
+    this._uiGoldWidget.setData(GoldSystem.getGold() + this._levelAccumulatedGold);
 
     // BottomBar
     this._uiBottomBar.setHintActive(this._hint.isActive());
@@ -338,6 +347,11 @@ class PlayingEngine {
 
     // 2. 搭建 UI（棋盘空白，玩家可见框架）
     this._setupUI();
+
+    // 2.5 重置金币浮动文字
+    if (this._uiGoldWidget) {
+      this._uiGoldWidget._floatTexts = [];
+    }
 
     // 3. 解析关卡数据
     this._loading = true;
@@ -484,6 +498,7 @@ class PlayingEngine {
       hintId: p.hintId != null ? p.hintId : null,
       hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
     }));
+    this._totalPigsInLevel = this.gp.pigs.length;  // 快照原始猪数量，结算奖励用（不受 setTimeout 异步时序影响）
     this.gp.dragState = null;
     this.gp.flashingPigs = {};
     this.gp.animations = [];
@@ -864,6 +879,61 @@ class PlayingEngine {
       this._hint.onPigExited(pigId);
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
 
+      // 金币磁吸飞行：非试玩模式，每推出一只猪 → 等猪飞到屏幕边缘后再从边缘弹出金币
+      if (databus.returnState !== 'editor' && this._uiGoldWidget) {
+        var tailHole = this.gp.holes[pig.tailIndex];
+        if (tailHole) {
+          var tailSX = this.gp.boardOffsetX + tailHole.x;
+          var tailSY = this.gp.topBarH + this.gp.boardOffsetY + tailHole.y;
+          var pushDirX = result.dirX;
+          var pushDirY = result.dirY;
+
+          // 沿推离方向，找到尾孔到屏幕边界的交点（金币从边缘弹出）
+          var edgeX = tailSX, edgeY = tailSY, tMin = Infinity, t;
+
+          // 右边界
+          if (pushDirX > 0.001) {
+            t = (SCREEN_WIDTH - tailSX) / pushDirX;
+            if (t > 0 && t < tMin) { tMin = t; edgeX = SCREEN_WIDTH; edgeY = tailSY + t * pushDirY; }
+          }
+          // 左边界
+          if (pushDirX < -0.001) {
+            t = -tailSX / pushDirX;
+            if (t > 0 && t < tMin) { tMin = t; edgeX = 0; edgeY = tailSY + t * pushDirY; }
+          }
+          // 下边界
+          if (pushDirY > 0.001) {
+            t = (SCREEN_HEIGHT - tailSY) / pushDirY;
+            if (t > 0 && t < tMin) { tMin = t; edgeY = SCREEN_HEIGHT; edgeX = tailSX + t * pushDirX; }
+          }
+          // 上边界
+          if (pushDirY < -0.001) {
+            t = -tailSY / pushDirY;
+            if (t > 0 && t < tMin) { tMin = t; edgeY = 0; edgeX = tailSX + t * pushDirX; }
+          }
+
+          // 金币区硬币中心（GoldWidget 在 (0,0)，COIN_X=16 COIN_SIZE=32）
+          var goldCX = 16 + 16;  // = 32
+          var goldCY = 90 + 16;  // = 106
+
+          // 猪飞出动画用 easeOutCubic：猪在动画前半段就覆盖了大部分距离
+          // 计算猪尾部到达屏幕边缘的实际时间（而非动画总时长）
+          var distToEdge = tMin;  // 像素距离（dirX/dirY 是单位向量）
+          var totalDist = result.totalDist;
+          var ratio = Math.max(0, Math.min(1, distToEdge / totalDist));
+          // easeOutCubic: eased = 1 - (1-p)^3，反解 p 得猪到边缘的进度
+          var p = 1 - Math.pow(1 - ratio, 1 / 3);
+          var pigFlyDuration = totalDist / ESCAPE_SPEED * 1000;  // 动画总时长
+          var delay = p * pigFlyDuration + 40;  // +40ms 微缓冲确保猪已出屏
+          var self = this;
+          setTimeout(function () {
+            audio.play('coin_fly');
+            self._coinFlyEffect.trigger(edgeX, edgeY, goldCX, goldCY);
+            self._levelAccumulatedGold++;
+          }, delay);
+        }
+      }
+
       // 试玩模式：记录逃脱序列（供编辑器提示数据自动生成）
       if (databus.returnState === 'editor') {
         this._trialEscapeSequence.push({ pigId: pigId, angle: pig.angle });
@@ -889,20 +959,21 @@ class PlayingEngine {
             }
           });
         } else {
-          setTimeout(() => {
-            if (this._earnedCrown) {
-              this._victoryAnim.startCrown(this._boardCardX + this._boardCardW / 2, this._boardCardY + this._boardCardH / 2);
-            } else {
-              this._checkMasterAfterCrown();
-            }
-          }, 1000);
+          // 方案D：等所有金币飞到后再弹窗，保持延续性
+          if (this._coinFlyEffect && this._coinFlyEffect.isActive()) {
+            this._coinsSettling = true;  // 等待金币飞完
+          } else {
+            // 没有飞行中的金币（如用移除按钮通关），直接庆祝→结算
+            this._settleCoinsAndStartVictory();
+          }
         }
       }
-      // 动画结束后清理渲染层
+      // 猪飞出屏幕后清理（动画结束时猪已离开屏幕，无需继续渲染）
+      var animDuration = result.totalDist / ESCAPE_SPEED * 1000;
       setTimeout(() => {
         this.gp.flyingPigs = this.gp.flyingPigs.filter(p => p.id !== pigId);
         this.gp.animations = this.gp.animations.filter(a => a.pigId !== pigId);
-      }, 6500);
+      }, animDuration + 200);
     } else if (result.collidedPigId !== undefined) {
       if (!opts.silentBlock) {
         this.gp.triggerCollisionEffect(result.collidedPigId);
@@ -956,12 +1027,12 @@ class PlayingEngine {
     this._pendingGoldReward = false;
     this._goldAmount = 0;
     if (!isTrial && !GoldSystem.isSettled(this.levelName)) {
-      // flyingPigs 存放被推出棋盘的所有猪（pigs 在 push 前已 splice），用其长度作为奖励计算依据
-      var reward = GoldSystem.calculateReward(this.gp.flyingPigs.length);
+      // 用关卡原始猪数量作为奖励依据（等价于每推出一只猪 +1，但不受 setTimeout 异步时序影响）
+      var reward = GoldSystem.calculateReward(this._totalPigsInLevel);
       if (reward > 0) {
         this._goldAmount = reward;
         this._pendingGoldReward = true;
-        console.log('[LOG] 首次通关金币奖励: level=' + this.levelName + ' amount=' + reward);
+        console.log('[LOG] 首次通关金币奖励: level=' + this.levelName + ' amount=' + reward + ' totalPigs=' + this._totalPigsInLevel);
       }
     }
     // 尝试夺关主（试玩模式/用过移除则跳过）
@@ -1030,6 +1101,7 @@ class PlayingEngine {
       var levelId = this.levelName;
       var pigCount = self._goldAmount;  // 关卡原始猪数量（通关后 pigs 已清空，走 _goldAmount）
       cloud.settleLevel(levelId, pigCount, false).then(function(res) {
+        self._levelAccumulatedGold = 0;  // 清零累积，防止 GoldWidget 双加（与入账同帧原子执行）
         if (res && res.code === 0 && res.claimed) {
           GoldSystem.setGold(res.gold);
           GoldSystem.markSettled(levelId);
@@ -1040,6 +1112,7 @@ class PlayingEngine {
           GoldSystem.markSettled(levelId);
         }
       }).catch(function(err) {
+        self._levelAccumulatedGold = 0;
         console.warn('[LOG] settleLevel 网络失败, 本地兜底: +' + self._goldAmount);
         GoldSystem.addGold(self._goldAmount);
         GoldSystem.markSettled(levelId);
@@ -1059,6 +1132,7 @@ class PlayingEngine {
 
     // 服务器结算（fire-and-forget，本地兜底）
     cloud.settleLevel(levelId, pigCount, true).then(function(res) {
+      self._levelAccumulatedGold = 0;
       if (res && res.code === 0 && res.claimed) {
         GoldSystem.setGold(res.gold);
         GoldSystem.markSettled(levelId);
@@ -1071,6 +1145,7 @@ class PlayingEngine {
         self._goldAmount = amount * 2;
       }
     }).catch(function(err) {
+      self._levelAccumulatedGold = 0;
       console.warn('[LOG] settleLevel(double) 网络失败, 本地兜底: +' + amount * 2);
       GoldSystem.addGold(amount * 2);
       GoldSystem.markSettled(levelId);
@@ -1245,6 +1320,30 @@ class PlayingEngine {
   }
 
   /**
+   * 方案D：金币全部到齐 → 庆祝 → 启动通关动画序列
+   * 由 render 中 _coinsSettling 检查，或 no-coin 场景直接调用
+   */
+  _settleCoinsAndStartVictory() {
+    this._coinsSettling = false;
+    // 满额庆祝
+    if (this._uiGoldWidget) {
+      this._uiGoldWidget.celebrate();
+    }
+    var self = this;
+    // 庆祝动画播 600ms 后启动通关序列
+    setTimeout(function () {
+      if (self._earnedCrown) {
+        self._victoryAnim.startCrown(
+          self._boardCardX + self._boardCardW / 2,
+          self._boardCardY + self._boardCardH / 2
+        );
+      } else {
+        self._checkMasterAfterCrown();
+      }
+    }, 600);
+  }
+
+  /**
    * 所有通关动画（奖杯+关主）播放完毕，显示结算面板。
    */
   _finishVictorySequence() {
@@ -1322,11 +1421,34 @@ class PlayingEngine {
     this._victoryAnim.update();
     this._victoryAnim.render(ctx);
 
+    // 方案D：等所有金币飞到再启动通关动画序列
+    if (this._coinsSettling && !this._coinFlyEffect.isActive()) {
+      this._settleCoinsAndStartVictory();
+    }
+
+    // 3.95 金币磁吸飞行动画（推猪时触发，飞向金币区）
+    var coinArrived = this._coinFlyEffect.update();
+    this._coinFlyEffect.render(ctx);
+    // 金币到达 → 播放音效 + 触发 GoldWidget 呼吸 + "+1" 浮字
+    if (coinArrived > 0 && this._uiGoldWidget) {
+      audio.play('coin_get');
+      for (var ca = 0; ca < coinArrived; ca++) {
+        this._uiGoldWidget.triggerBreathe();
+        this._uiGoldWidget.addFloatText();
+      }
+    }
+    // 磁吸光晕：飞行中金币越靠近目标光晕越强
+    if (this._uiGoldWidget) {
+      this._uiGoldWidget.setMagnetGlow(this._coinFlyEffect.getNearestProgress());
+    }
+
     // 4. 顶栏（UIManager）
     this._uiTopBar.render(ctx);
 
-    // 4.5. 金币余额（UIManager）
-    this._uiGoldWidget.render(ctx);
+    // 4.5. 金币余额（非通关时正常渲染；通关结算时浮于遮罩之上，保持延续性）
+    if (!this._showVictoryPanel) {
+      this._uiGoldWidget.render(ctx);
+    }
 
     // 5. 底部栏（UIManager）
     this._uiBottomBar.render(ctx);
@@ -1334,6 +1456,8 @@ class PlayingEngine {
     // 6. 通关弹窗（UIManager）
     if (this._victory && this._showVictoryPanel) {
       this._uiVictoryPopup.render(ctx);
+      // 方案D：金币区浮于遮罩之上，全程可见，保持结算延续性
+      this._uiGoldWidget.render(ctx);
     }
 
     // 7. 关主授权对话框（UIManager）
