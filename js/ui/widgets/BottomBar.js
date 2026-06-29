@@ -4,6 +4,7 @@
 
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../Theme.js');
+var AssetPreloader = require('../AssetPreloader.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 var { roundRect } = require('../../render/PigRenderer.js');
 
@@ -95,14 +96,6 @@ function BottomBar(opts) {
   // 按钮点击区域（供外部 hitTest 查询）
   this.hintBtnRect = null;
   this.removeBtnRect = null;
-
-  var self = this;
-
-  // 广告图标（仍用图片）
-  this._adIconImg = wx.createImage();
-  this._adIconLoaded = false;
-  this._adIconImg.onload = function () { self._adIconLoaded = true; };
-  this._adIconImg.src = AD_ICON;
 }
 
 BottomBar.prototype = Object.create(UIComponent.prototype);
@@ -201,8 +194,8 @@ BottomBar.prototype.render = function (ctx) {
   }
 
   // 广告图标
-  if (this._adIconLoaded) {
-    ctx.drawImage(this._adIconImg, hintX + 22, hintY + 15, AD_ICON_W, AD_ICON_H);
+  if (AssetPreloader.isReady('ad_icon')) {
+    ctx.drawImage(AssetPreloader.get('ad_icon'), hintX + 22, hintY + 15, AD_ICON_W, AD_ICON_H);
   }
 
   // 文字

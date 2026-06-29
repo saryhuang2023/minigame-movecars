@@ -77,6 +77,12 @@ class GameEngine {
       btn_home: 'assets/images/common/btn_home.png',
       btn_again: 'assets/images/common/btn_again.png',
       win_cancel: 'assets/images/common/win_cancel.png',
+      // 结算面板
+      victory_bg: 'assets/images/levels/victory_bg.png',
+      coin: 'assets/images/common/coin.png',
+      leftStep: 'assets/images/levels/leftStep_1.png',
+      master_hat: 'assets/images/levels/master_hat.png',
+      ad_icon: 'assets/images/levels/ad_icon.png',
     });
     AssetPreloader.preload();
 

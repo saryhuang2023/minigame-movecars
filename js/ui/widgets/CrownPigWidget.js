@@ -141,7 +141,7 @@ CrownPigWidget.prototype.render = function (ctx) {
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 4;
 
-  if (this._hasUsedRemove || this._steps > this._crownSteps) {
+  if (!this._gotCrown && (this._hasUsedRemove || this._steps > this._crownSteps)) {
     // 未激活状态（使用过移除 或 步数已超）
     if (this._inactiveLoaded) {
       ctx.drawImage(this._imgInactive, trophyX, trophyY, TROPHY_SIZE, TROPHY_SIZE);
@@ -160,10 +160,18 @@ CrownPigWidget.prototype.render = function (ctx) {
   ctx.shadowOffsetY = 0;
 
   // === 步数进度条 ===
-  var remaining = this._hasUsedRemove ? 0 : (this._crownSteps - this._steps);
-  if (remaining < 0) remaining = 0;
-  var progressRatio = this._crownSteps > 0 ? remaining / this._crownSteps : 0;
-  var fillW = Math.floor(STEP_BG_W * progressRatio);
+  var remaining;
+  var fillW;
+  if (this._gotCrown) {
+    // 已获得奖杯：进度条已走完（空）
+    remaining = 0;
+    fillW = 0;
+  } else {
+    remaining = this._hasUsedRemove ? 0 : (this._crownSteps - this._steps);
+    if (remaining < 0) remaining = 0;
+    var progressRatio = this._crownSteps > 0 ? remaining / this._crownSteps : 0;
+    fillW = Math.floor(STEP_BG_W * progressRatio);
+  }
 
   ctx.save();
 
@@ -209,6 +217,7 @@ CrownPigWidget.prototype.render = function (ctx) {
 
   ctx.restore();
 
+
   ctx.font = '12px ' + Theme.font.family;
   ctx.fillStyle = '#733C29';
   ctx.textAlign = 'center';
@@ -217,7 +226,7 @@ CrownPigWidget.prototype.render = function (ctx) {
   // === 步数文字 ===
   var text = '';
   if (this._hasUsedRemove) {
-    text = '移除无效';
+    text = '本关不计';
   } else if (!this._gotCrown) {
     if (this._steps > this._crownSteps) {
       text = '步数已超';

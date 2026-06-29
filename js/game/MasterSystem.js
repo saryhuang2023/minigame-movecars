@@ -93,6 +93,8 @@ MasterSystem.prototype.updateMyRecord = function (steps) {
  * @param {Function} [params.onClaimNotGranted] 服务器拒绝 / 错误回调（清理授权按钮）
  */
 MasterSystem.prototype.tryClaim = function (params) {
+  // 关主信息尚未拉回 → 不判定夺位（避免 currentMin=9999 误判通关即夺位）
+  if (this._masterLoading) return;
   var steps = params.steps;
   if (params.hasUsedRemove || params.isTrialMode) return;
 

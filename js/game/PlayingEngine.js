@@ -288,13 +288,14 @@ class PlayingEngine {
     this._uiCrownPig.setData(this._crownSteps, this.steps, this._gotCrown, this._hasUsedRemove);
 
     // VictoryPopup
+    var master = this._master.getMaster();
     this._uiVictoryPopup.setData({
       steps: this.steps,
-      isNewMaster: this._master.isNewMaster(),
-      hasCrown: this._earnedCrown,
       returnState: databus.returnState || 'menu',
       goldAmount: this._goldAmount,
       showGold: this._pendingGoldReward,
+      masterSteps: master ? master.masterSteps : null,
+      masterNickname: master ? master.masterNickname : null,
     });
     this._uiVictoryPopup.visible = this._victory && this._showVictoryPanel;
 
