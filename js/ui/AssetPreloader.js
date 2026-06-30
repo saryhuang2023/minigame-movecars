@@ -85,10 +85,21 @@ function isAllReady() {
   return _pending <= 0;
 }
 
+/**
+ * 外部注入已加载的图片（供 LoadingManager 等使用）
+ * @param {string} key — 与 register 相同的 key
+ * @param {Image} img — 已加载完成的 Image 对象
+ */
+function set(key, img) {
+  _images[key] = img;
+  _ready[key] = true;
+}
+
 module.exports = {
   register: register,
   preload: preload,
   get: get,
+  set: set,
   isReady: isReady,
   isAllReady: isAllReady,
 };

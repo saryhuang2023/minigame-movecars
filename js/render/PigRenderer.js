@@ -594,11 +594,81 @@ function drawMenuIdlePig(ctx, x, y, targetWidth) {
   return totalW;
 }
 
-// 模块加载时立即触发猪图片预加载，避免首帧渲染时图片未就绪出现黄色 fallback 矩形
-_loadPigParts();
-_loadRunParts();
-_loadEscapeParts();
-_loadHintParts();
+// ============================================================
+// === 显式预加载 API（由 LoadingManager 调用） ===
+// ============================================================
+
+/**
+ * 预加载 idle 序列帧（11 帧）
+ * 调用 _loadPigParts() 触发异步加载，轮询 _idleLoaded 计数
+ * @param {Function} onProgress - (loaded, total) 每帧就绪时回调
+ */
+function preloadIdle(onProgress) {
+  var parts = _loadPigParts(); // 启动加载（首帧开始，2~11 异步排队）
+  if (parts.idleAllLoaded) {
+    // 已经全部就绪（首次调用过后再调）
+    if (onProgress) onProgress(IDLE_FRAME_COUNT, IDLE_FRAME_COUNT);
+    return;
+  }
+
+  var lastCount = parts._idleLoaded;
+  if (onProgress) onProgress(lastCount, IDLE_FRAME_COUNT);
+
+  var timer = setInterval(function () {
+    if (parts._idleLoaded !== lastCount) {
+      lastCount = parts._idleLoaded;
+      if (onProgress) onProgress(lastCount, IDLE_FRAME_COUNT);
+    }
+    if (parts.idleAllLoaded) {
+      clearInterval(timer);
+    }
+  }, 100);
+}
+
+/**
+ * 预加载 run + escape + hint 动画帧（共 24 帧）
+ * @param {Function} onProgress - (loaded, total)
+ */
+function preloadAllAnims(onProgress) {
+  var runParts = _loadRunParts();
+  var escParts = _loadEscapeParts();
+  var hintParts = _loadHintParts();
+  var total = RUN_FRAME_COUNT + ESCAPE_FRAME_COUNT + HINT_FRAME_COUNT;
+  var allDone = runParts.idleAllLoaded && escParts.idleAllLoaded && hintParts.idleAllLoaded;
+
+  if (allDone) {
+    if (onProgress) onProgress(total, total);
+    return;
+  }
+
+  var lastCount = runParts._idleLoaded + escParts._idleLoaded + hintParts._idleLoaded;
+  if (onProgress) onProgress(lastCount, total);
+
+  var timer = setInterval(function () {
+    var nowCount = runParts._idleLoaded + escParts._idleLoaded + hintParts._idleLoaded;
+    if (nowCount !== lastCount) {
+      lastCount = nowCount;
+      if (onProgress) onProgress(nowCount, total);
+    }
+    if (runParts.idleAllLoaded && escParts.idleAllLoaded && hintParts.idleAllLoaded) {
+      clearInterval(timer);
+    }
+  }, 100);
+}
+
+/** 获取 idle 帧已加载数（供 LoadingManager 查询） */
+function getIdleLoadedCount() {
+  var parts = _loadPigParts();
+  return parts._idleLoaded;
+}
+
+/** 获取非 idle 动画帧已加载总数 */
+function getAllAnimLoadedCount() {
+  var runParts = _loadRunParts();
+  var escParts = _loadEscapeParts();
+  var hintParts = _loadHintParts();
+  return runParts._idleLoaded + escParts._idleLoaded + hintParts._idleLoaded;
+}
 
 module.exports.PigRenderer = PigRenderer;
 module.exports.AnimType = AnimType;
@@ -609,3 +679,7 @@ module.exports.SELECTED_COLOR = SELECTED_COLOR;
 module.exports.drawComposedPig = drawComposedPig;
 module.exports.getComposedPigSize = getComposedPigSize;
 module.exports.drawMenuIdlePig = drawMenuIdlePig;
+module.exports.preloadIdle = preloadIdle;
+module.exports.preloadAllAnims = preloadAllAnims;
+module.exports.getIdleLoadedCount = getIdleLoadedCount;
+module.exports.getAllAnimLoadedCount = getAllAnimLoadedCount;

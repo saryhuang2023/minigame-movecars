@@ -59,7 +59,15 @@ var SkinSystem = {
   // ---- 配置加载（三层：本地打包 → 本地缓存 → 云端热更新）----
 
   /**
-   * 加载皮肤配置
+   * 纯同步加载本地打包配置（不拉云端，不注册回调）
+   * 供 GameEngine 构造函数尽早同步加载，LoadingManager Phase3 再调用 loadConfig 拉云端
+   */
+  loadLocalSync: function () {
+    this._loadLocalConfigSync();
+  },
+
+  /**
+   * 完整加载：本地同步 + 云端异步
    * 1. 同步读取本地打包的 assets/skins/skinConfig.json（阻塞，保证立即可用）
    * 2. 异步拉取云端 data/skins/skinConfig.json（fire-and-forget，不阻塞启动）
    * 3. 云端版本号 > 缓存版本号 → 写入 USER_DATA_PATH 缓存 + 触发回调
@@ -105,11 +113,13 @@ var SkinSystem = {
         if (cachedVersion > _configVersion) {
           self._loadCachedConfig();
         }
+        self._fireConfigUpdated();
         return;
       }
 
       // 版本号比较：云端必须严格大于缓存才更新
       if (cloudConfig.version <= cachedVersion) {
+        self._fireConfigUpdated();
         return;
       }
 
@@ -122,19 +132,14 @@ var SkinSystem = {
       self._applyConfig(cloudConfig);
 
       // 触发回调（如 ShopPanel 已打开则刷新）
-      if (typeof _onConfigUpdated === 'function') {
-        try {
-          _onConfigUpdated();
-        } catch (e) {
-          console.warn('[LOG] SkinSystem onConfigUpdated 回调异常:', e);
-        }
-      }
+      self._fireConfigUpdated();
     } catch (e) {
       // 默默失败，不提示用户
       console.warn('[LOG] SkinSystem 云端配置拉取异常:', (e && e.message) || String(e));
       if (cachedVersion > _configVersion) {
         self._loadCachedConfig();
       }
+      self._fireConfigUpdated();
     }
   },
 
@@ -145,6 +150,19 @@ var SkinSystem = {
     _skinsConfig = config.skins.slice().sort(function (a, b) {
       return (a.sortOrder || 0) - (b.sortOrder || 0);
     });
+  },
+
+  /** 安全触发配置更新回调（LoadingManager Phase3 计数用） */
+  _fireConfigUpdated: function () {
+    if (typeof _onConfigUpdated === 'function') {
+      var cb = _onConfigUpdated;
+      _onConfigUpdated = null; // 防重入
+      try {
+        cb();
+      } catch (e) {
+        console.warn('[LOG] SkinSystem onConfigUpdated 回调异常:', e);
+      }
+    }
   },
 
   /** 读取缓存的版本号 */

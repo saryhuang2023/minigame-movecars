@@ -161,7 +161,7 @@ MasterPanel.prototype.render = function (ctx) {
 
   // 关主步数（纯文字，无背景药丸）
   var stepsText = "暂无";
-  if (this._master) {
+  if (this._master && this._master.masterSteps) {
     stepsText = '' + this._master.masterSteps + '步';
   }
   ctx.font = '11px ' + Theme.font.family;

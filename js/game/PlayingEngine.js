@@ -931,7 +931,7 @@ class PlayingEngine {
           setTimeout(function () {
             audio.play('coin_fly');
             self._coinFlyEffect.trigger(edgeX, edgeY, goldCX, goldCY);
-            self._levelAccumulatedGold++;
+            // 不在此处 _levelAccumulatedGold++，等 CoinFlyEffect.update() 返回 arrived 时再 +1
           }, delay);
         }
       }
@@ -1533,6 +1533,8 @@ class PlayingEngine {
     if (coinArrived > 0 && this._uiGoldWidget) {
       audio.play('coin_get');
       for (var ca = 0; ca < coinArrived; ca++) {
+        this._levelAccumulatedGold++;
+        this._uiGoldWidget.setData(GoldSystem.getGold() + this._levelAccumulatedGold);
         this._uiGoldWidget.triggerBreathe();
         this._uiGoldWidget.addFloatText();
       }

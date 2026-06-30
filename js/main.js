@@ -14,10 +14,7 @@ try {
   console.log('[LOG] main.js — after setCloudPrefix: CLOUD_PREFIX=' + AudioConfig.CLOUD_PREFIX + ' isCloudEnabled=' + AudioConfig.isCloudEnabled());
   var audio = require('./audio/AudioManager.js');
   console.log('[Main] AudioManager 加载完成');
-  // 启动后台下载音频文件（不阻塞启动）
-  audio.init(function(progress) {
-    // 静默下载，仅在控制台输出
-  });
+  // (audio.init 已移至 LoadingManager Phase2，此处不再调用)
 
   console.log('[Main] 开始加载 GameEngine...');
   var GameEngine = require('./core/GameEngine.js');
