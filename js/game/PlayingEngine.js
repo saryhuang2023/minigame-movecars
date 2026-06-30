@@ -76,6 +76,7 @@ class PlayingEngine {
       }.bind(this),
     });
     this._masterAnimWaiting = false; // _checkMasterAfterCrown 未就绪时为 true（每帧轮询）
+    this._masterAnimWaitStart = 0;   // 等待开始时间戳，超时 5s 兜底
     this._gotCrown = false;         // 奖杯是否已显示为激活状态（动画完成后才置 true）
     this._earnedCrown = false;      // 本局是否达到了奖杯门槛（用于判断是否播动画）
     this._hadCrownBefore = false;   // 本局开始前是否已拥有奖杯（已获得则跳过所有奖杯逻辑）
@@ -103,6 +104,7 @@ class PlayingEngine {
     // 金币奖励
     this._pendingGoldReward = false; // 是否有待领取的金币奖励
     this._goldAmount = 0;           // 本次通关奖励金币数
+    this._stepBonusRemaining = 0;    // 步数奖励金币数（奖杯剩余步数）
     this._levelAccumulatedGold = 0;  // 本关实时累积金币（猪退出+1，异步递增仅用于 UI 实时显示）
     this._totalPigsInLevel = 0;      // 本关原始猪数量（loadLevel 时快照，结算用，不受 setTimeout 时序影响）
     this._coinFlyEffect = new CoinFlyEffect();  // 金币磁吸飞行动画
@@ -142,6 +144,7 @@ class PlayingEngine {
     // 通关动画状态
     this._victoryAnim.reset();
     this._masterAnimWaiting = false;
+    this._masterAnimWaitStart = 0;
     // 授权/对话框状态
     this._showAuthDialog = false;
     this._authAnimator.close();  // 立即关闭（无动画）
@@ -151,6 +154,7 @@ class PlayingEngine {
     // 金币奖励状态
     this._pendingGoldReward = false;
     this._goldAmount = 0;
+    this._stepBonusRemaining = 0;
     this._levelAccumulatedGold = 0;
     this._totalPigsInLevel = 0;
     this._coinFlyEffect = new CoinFlyEffect();  // 重置飞行中动画
@@ -975,7 +979,6 @@ class PlayingEngine {
     } else if (result.collidedPigId !== undefined) {
       if (!opts.silentBlock) {
         this.gp.triggerCollisionEffect(result.collidedPigId);
-        audio.play('collide');
       }
     }
   }
@@ -1024,13 +1027,21 @@ class PlayingEngine {
     // 金币奖励：试玩模式不触发；首次通关本关 → 计算奖励金额（独立于奖杯系统）
     this._pendingGoldReward = false;
     this._goldAmount = 0;
+    this._stepBonusRemaining = 0;
     if (!isTrial && !GoldSystem.isSettled(this.levelName)) {
       // 用关卡原始猪数量作为奖励依据（等价于每推出一只猪 +1，但不受 setTimeout 异步时序影响）
       var reward = GoldSystem.calculateReward(this._totalPigsInLevel);
+      // 步数奖励：拿到奖杯时，剩余步数 = 金币（服务器权威，客户端本地也计算保证算法一致）
+      if (this._earnedCrown) {
+        var stepBonus = Math.max(0, this._crownSteps - this.steps);
+        if (stepBonus > 0) {
+          this._stepBonusRemaining = stepBonus;
+          reward += stepBonus;
+        }
+      }
       if (reward > 0) {
         this._goldAmount = reward;
         this._pendingGoldReward = true;
-        console.log('[LOG] 首次通关金币奖励: level=' + this.levelName + ' amount=' + reward + ' totalPigs=' + this._totalPigsInLevel);
       }
     }
     // 尝试夺关主（试玩模式/用过移除则跳过）
@@ -1043,6 +1054,7 @@ class PlayingEngine {
         onNewMaster: (function () {
           if (this._victory && this._victoryAnim.isCrownDone() && !this._masterAnimWaiting) {
             this._masterAnimWaiting = true;
+            this._masterAnimWaitStart = Date.now();
           }
         }).bind(this),
         onClaimNotGranted: this._destroyAuthBtn.bind(this),
@@ -1097,8 +1109,9 @@ class PlayingEngine {
     if (this._pendingGoldReward && !this._uiVictoryPopup._goldClaimed) {
       var self = this;
       var levelId = this.levelName;
-      var pigCount = self._goldAmount;  // 关卡原始猪数量（通关后 pigs 已清空，走 _goldAmount）
-      cloud.settleLevel(levelId, pigCount, false).then(function(res) {
+      var pigCount = self._totalPigsInLevel;  // 本关原始猪数量（仅猪的部分）
+      var stepBonus = self._stepBonusRemaining || 0;
+      cloud.settleLevel(levelId, pigCount, stepBonus, false).then(function(res) {
         self._levelAccumulatedGold = 0;  // 清零累积，防止 GoldWidget 双加（与入账同帧原子执行）
         if (res && res.code === 0 && res.claimed) {
           GoldSystem.setGold(res.gold);
@@ -1125,11 +1138,12 @@ class PlayingEngine {
     var self = this;
     var amount = this._goldAmount;
     var levelId = this.levelName;
-    var pigCount = self._goldAmount;  // 关卡原始猪数量（通关后 pigs 已清空，走 _goldAmount）
+    var pigCount = self._totalPigsInLevel;  // 本关原始猪数量（仅猪的部分）
+    var stepBonus = self._stepBonusRemaining || 0;
     console.log('[LOG] 双倍金币请求结算: +' + amount * 2);
 
     // 服务器结算（fire-and-forget，本地兜底）
-    cloud.settleLevel(levelId, pigCount, true).then(function(res) {
+    cloud.settleLevel(levelId, pigCount, stepBonus, true).then(function(res) {
       self._levelAccumulatedGold = 0;
       if (res && res.code === 0 && res.claimed) {
         GoldSystem.setGold(res.gold);
@@ -1151,7 +1165,9 @@ class PlayingEngine {
     });
 
     audio.play('rewards');
-    // 立即标记 UI 为已领取，防止重复点击
+    // 立即本地加金币（左上角计数器同步更新），不等待网络回调
+    GoldSystem.addGold(amount);
+    // 标记 UI 为已领取，防止重复点击，启动翻滚动画
     if (this._uiVictoryPopup) {
       this._uiVictoryPopup.markGoldClaimed();
     }
@@ -1295,6 +1311,7 @@ class PlayingEngine {
     } else if (this._master.isNewMaster() || this._master.isClaimPending()) {
       // 关主确认但头像未加载，或判定请求仍在进行 → 进入等待
       this._masterAnimWaiting = true;
+      this._masterAnimWaitStart = Date.now();
     } else {
       this._finishVictorySequence();
     }
@@ -1306,6 +1323,14 @@ class PlayingEngine {
    */
   _checkMasterAnimWaiting() {
     if (!this._masterAnimWaiting) return;
+
+    // 兜底超时：5 秒后仍未就绪 → 跳过关主动画直接结算
+    if (Date.now() - this._masterAnimWaitStart > 5000) {
+      this._masterAnimWaiting = false;
+      this._finishVictorySequence();
+      return;
+    }
+
     var claimDone = !this._master.isClaimPending();
     var master = this._master.getMaster();
     if (this._master.isNewMaster() && master && master.avatarImg) {
@@ -1330,7 +1355,10 @@ class PlayingEngine {
     var self = this;
     // 庆祝动画播 600ms 后启动通关序列
     setTimeout(function () {
-      if (self._earnedCrown) {
+      // 步数奖励：有剩余步数且拿到奖杯 → 先播步数金币动画，再播奖杯
+      if (self._stepBonusRemaining > 0) {
+        self._startStepBonusTicker(self._stepBonusRemaining);
+      } else if (self._earnedCrown) {
         self._victoryAnim.startCrown(
           self._boardCardX + self._boardCardW / 2,
           self._boardCardY + self._boardCardH / 2
@@ -1339,6 +1367,52 @@ class PlayingEngine {
         self._checkMasterAfterCrown();
       }
     }, 600);
+  }
+
+  /**
+   * 步数金币飞行 ticker：1秒内均匀递减，每 tick 驱动：
+   *   数字 -1 → 进度条 -1格 → 触发一枚金币磁吸飞行
+   * ticker 完成 → startCrown() 奖杯动画
+   */
+  _startStepBonusTicker(remaining) {
+    // 启动 CrownPigWidget 步数奖励动画（纯视觉效果）
+    if (this._uiCrownPig) {
+      this._uiCrownPig.startStepBonusAnim(remaining);
+    }
+    var self = this;
+    var totalTicks = remaining;
+    var interval = Math.floor(1000 / totalTicks);
+    var ticked = 0;
+    // 步数底框中心 → 金币图标中心（右→左）
+    var fromX = SCREEN_WIDTH - 41;  // CrownPigWidget step bg centerX
+    var fromY = 127;                // CrownPigWidget step bg centerY
+    var toX = 32;                   // GoldWidget coin centerX
+    var toY = 106;                  // GoldWidget coin centerY
+
+    var ticker = setInterval(function () {
+      ticked++;
+      var newRemaining = remaining - ticked;
+
+      // 触发金币磁吸飞行（与猪推出飞行共用 CoinFlyEffect + render 到达处理）
+      self._coinFlyEffect.trigger(fromX, fromY, toX, toY);
+
+      // 更新 CrownPigWidget 进度条和文字
+      if (self._uiCrownPig) {
+        self._uiCrownPig.setStepBonusRemaining(newRemaining);
+      }
+
+      if (ticked >= totalTicks) {
+        clearInterval(ticker);
+        // 结束步数动画，启动奖杯
+        if (self._uiCrownPig) {
+          self._uiCrownPig.endStepBonusAnim();
+        }
+        self._victoryAnim.startCrown(
+          self._boardCardX + self._boardCardW / 2,
+          self._boardCardY + self._boardCardH / 2
+        );
+      }
+    }, interval);
   }
 
   /**

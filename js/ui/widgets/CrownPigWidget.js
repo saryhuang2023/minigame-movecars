@@ -48,6 +48,10 @@ function CrownPigWidget(opts) {
   this._hasUsedRemove = false;
   this._hidden = false;
 
+  // 步数奖励动画（纯视觉效果，不修改 _steps）
+  this._bonusAnimActive = false;
+  this._bonusAnimRemaining = 0;
+
   // 呼吸动画
   this._breatheStart = 0;
   this._breatheActive = false;
@@ -102,6 +106,23 @@ CrownPigWidget.prototype._getBreatheScale = function () {
   var t = elapsed / this._BREATHE_DURATION;
   var pulse = Math.abs(Math.sin(t * Math.PI));
   return 1 + pulse * this._BREATHE_AMPLITUDE;
+};
+
+/** 启动步数奖励动画（纯表现层，不修改 _steps 数据） */
+CrownPigWidget.prototype.startStepBonusAnim = function (remaining) {
+  this._bonusAnimActive = true;
+  this._bonusAnimRemaining = remaining;
+};
+
+/** tick 递减步数奖励剩余值 */
+CrownPigWidget.prototype.setStepBonusRemaining = function (remaining) {
+  this._bonusAnimRemaining = remaining;
+};
+
+/** 结束步数奖励动画 */
+CrownPigWidget.prototype.endStepBonusAnim = function () {
+  this._bonusAnimActive = false;
+  this._bonusAnimRemaining = 0;
 };
 
 CrownPigWidget.prototype.render = function (ctx) {
@@ -162,7 +183,11 @@ CrownPigWidget.prototype.render = function (ctx) {
   // === 步数进度条 ===
   var remaining;
   var fillW;
-  if (this._gotCrown) {
+  if (this._bonusAnimActive) {
+    // 步数奖励动画中：用临时递减值驱动进度条（不修改 _steps）
+    remaining = this._bonusAnimRemaining;
+    fillW = this._crownSteps > 0 ? Math.floor(STEP_BG_W * remaining / this._crownSteps) : 0;
+  } else if (this._gotCrown) {
     // 已获得奖杯：进度条已走完（空）
     remaining = 0;
     fillW = 0;
@@ -225,7 +250,9 @@ CrownPigWidget.prototype.render = function (ctx) {
 
   // === 步数文字 ===
   var text = '';
-  if (this._hasUsedRemove) {
+  if (this._bonusAnimActive) {
+    text = '剩' + this._bonusAnimRemaining + '步';
+  } else if (this._hasUsedRemove) {
     text = '本关不计';
   } else if (!this._gotCrown) {
     if (this._steps > this._crownSteps) {

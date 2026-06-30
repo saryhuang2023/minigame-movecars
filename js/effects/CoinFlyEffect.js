@@ -7,7 +7,7 @@ var Easing = require('../core/Easing.js');
 // ---- 动画参数 ----
 var FLY_DURATION = 1000;      // 飞行总时长 ms（放慢让轨迹可见）
 var ARC_HEIGHT = 80;          // 贝塞尔弧线高度 px（配合慢速，弧度降低以保持自然）
-var COIN_SIZE = 24;           // 飞行中金币基准大小
+var COIN_SIZE = 32;           // 飞行中金币基准大小
 var TRAIL_COUNT = 3;          // 拖尾残影数量
 var TRAIL_SPACING_MS = 35;    // 残影间距 ms
 var POP_PEAK_SCALE = 1.35;    // 弹出峰值缩放

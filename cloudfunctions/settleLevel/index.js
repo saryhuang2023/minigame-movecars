@@ -5,7 +5,7 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
 exports.main = async (event, context) => {
-  const { levelId, pigCount, double } = event;
+  const { levelId, pigCount, stepBonus, double } = event;
   const { OPENID } = cloud.getWXContext();
 
   if (!levelId || pigCount == null) {
@@ -36,8 +36,8 @@ exports.main = async (event, context) => {
       };
     }
 
-    // 计算奖励
-    var reward = Math.max(0, parseInt(pigCount, 10) || 0);
+    // 计算奖励 = 猪数量 + 步数奖励
+    var reward = Math.max(0, parseInt(pigCount, 10) || 0) + Math.max(0, parseInt(stepBonus, 10) || 0);
     if (double) {
       reward *= 2;
     }
@@ -59,6 +59,7 @@ exports.main = async (event, context) => {
     console.log('[settleLevel] OPENID=' + OPENID +
       ' levelId=' + levelId +
       ' pigCount=' + pigCount +
+      ' stepBonus=' + (stepBonus || 0) +
       ' double=' + double +
       ' reward=' + reward +
       ' gold=' + player.gold + '→' + newGold);
