@@ -1531,22 +1531,19 @@ class PlayingEngine {
       entrancePigAlpha: pigAlpha,
     });
 
-    // 3.9 通关飞行特效动画（VictoryAnimation 独立渲染组件，始终渲染）
+    // 2. 通关飞行特效动画（VictoryAnimation）
+    //    更新状态（不在这里 render，render 在 UI 分支里、面板之后调）
     this._checkMasterAnimWaiting();
     this._victoryAnim.setLayout(this._boardCardX, this._boardCardY, this._boardCardW, SCREEN_WIDTH, SCREEN_HEIGHT);
     this._victoryAnim.update();
-    this._victoryAnim.render(ctx);
-
-    // 方案D：等所有金币飞到再启动通关动画序列（始终检查）
-    if (this._coinsSettling && !this._coinFlyEffect.isActive()) {
-      this._settleCoinsAndStartVictory();
-    }
 
     // ---- UI 渲染（受入场动画控制）----
     if (!entranceActive) {
       // 动画结束：正常渲染所有 UI
-      // 3. 关主卡片（UIManager）
+      // 3. 关主卡片（先渲染，作为底层）
       this._uiMasterPanel.render(ctx);
+      // 3.5 通关飞行特效（后渲染，浮在面板之上）
+      this._victoryAnim.render(ctx);
       // 3.8 奖杯（UIManager）
       this._uiCrownPig.render(ctx);
       // 4. 顶栏（UIManager）
@@ -1629,6 +1626,10 @@ class PlayingEngine {
     // 磁吸光晕：飞行中金币越靠近目标光晕越强
     if (this._uiGoldWidget) {
       this._uiGoldWidget.setMagnetGlow(this._coinFlyEffect.getNearestProgress());
+    }
+    // 方案D：等待金币飞完 → 启动通关动画（修复：_coinsSettling 检查丢失）
+    if (this._coinsSettling && !this._coinFlyEffect.isActive()) {
+      this._settleCoinsAndStartVictory();
     }
   }
 
