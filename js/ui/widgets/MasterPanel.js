@@ -58,7 +58,7 @@ function MasterPanel(opts) {
   this._breatheStart = 0;
   this._breatheActive = false;
   this._BREATHE_DURATION = 400;   // 单次呼吸时长 ms
-  this._BREATHE_AMPLITUDE = 0.13; // 比普通按钮(0.06)更大
+  this._BREATHE_AMPLITUDE = 0.26; // 比普通按钮(0.06)更大
   this._BREATHE_PULSES = 1;
 }
 

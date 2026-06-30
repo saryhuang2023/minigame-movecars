@@ -52,7 +52,7 @@ function CrownPigWidget(opts) {
   this._breatheStart = 0;
   this._breatheActive = false;
   this._BREATHE_DURATION = 400;
-  this._BREATHE_AMPLITUDE = 0.13;
+  this._BREATHE_AMPLITUDE = 0.26;
 
   // 奖杯图片
   this._imgActive = wx.createImage();

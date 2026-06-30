@@ -42,10 +42,12 @@ function _ensureInit() {
  * @returns {Promise}
  */
 function init(onProgress) {
-  if (_initPromise) return _initPromise;
+  console.log('[LOG] AudioManager.init() called, _initPromise=' + (!!_initPromise) + ' _initialized=' + _initialized);
+  if (_initPromise) { console.log('[LOG] AudioManager.init() — already initialized, skipping'); return _initPromise; }
 
   _ensureInit();
 
+  console.log('[LOG] AudioManager.init() — calling loader.startDownload(), isCloudEnabled=' + config.isCloudEnabled() + ' wx.cloud=' + !!wx.cloud + ' prefix=' + config.CLOUD_PREFIX);
   _initPromise = loader.startDownload(function (progress, loaded, total) {
     if (onProgress) onProgress(progress);
     console.log('[Audio] download progress:', Math.round(progress * 100) + '%', loaded + '/' + total);

@@ -11,6 +11,7 @@ try {
   console.log('[Main] 开始加载音频系统...');
   var AudioConfig = require('./audio/AudioConfig.js');
   AudioConfig.setCloudPrefix('cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/audio/sfx/escape_1.mp3');
+  console.log('[LOG] main.js — after setCloudPrefix: CLOUD_PREFIX=' + AudioConfig.CLOUD_PREFIX + ' isCloudEnabled=' + AudioConfig.isCloudEnabled());
   var audio = require('./audio/AudioManager.js');
   console.log('[Main] AudioManager 加载完成');
   // 启动后台下载音频文件（不阻塞启动）

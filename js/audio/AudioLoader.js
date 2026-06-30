@@ -118,9 +118,11 @@ function _checkAllLocal() {
 function _downloadOne(filename) {
   return new Promise(function (resolve) {
     var info = _files[filename];
+    console.log('[LOG] _downloadOne(' + filename + ') entry — info.loaded=' + info.loaded + ' info?' + !!info);
     if (info.loaded) { resolve(); return; }
 
     // 云存储未配置，标记为"已放弃"（loaded=true, resolvedPath=null）
+    console.log('[LOG] _downloadOne(' + filename + ') — check: isCloudEnabled=' + config.isCloudEnabled() + ' wx.cloud=' + !!wx.cloud + ' localPkgPath=' + (info.localPkgPath || 'UNDEFINED'));
     if (!config.isCloudEnabled() || !wx.cloud) {
       console.log('[AudioLoader] cloud disabled, skip:', filename);
       info.loaded = true;
@@ -131,23 +133,29 @@ function _downloadOne(filename) {
     }
 
     var fileID = config.CLOUD_PREFIX + (info.localPkgPath.indexOf('music') >= 0 ? 'music/' : 'sfx/') + filename;
+    console.log('[LOG] _downloadOne(' + filename + ') — fileID=' + fileID + ' 即将调用 wx.cloud.downloadFile');
     console.log('[AudioLoader] downloading:', fileID);
 
     wx.cloud.downloadFile({
       fileID: fileID,
       success: function (res) {
+        console.log('[LOG] _downloadOne(' + filename + ') SUCCESS callback, statusCode=' + res.statusCode + ' tempFilePath=' + (res.tempFilePath ? 'YES' : 'NO'));
         if (res.statusCode === 200 && res.tempFilePath) {
+          // 云下载返回的 tempFilePath 是 http://tmp/ 格式，FileSystemManager 读不了
+          // 但作为 InnerAudioContext.src 完全可用。直接用它，不经过 readFileSync。
+          info.loaded = true;
+          info.resolvedPath = res.tempFilePath;
+          info.source = 'cloud';
+          console.log('[AudioLoader] ✓ cloud :', filename, '(session)');
+
+          // 尝试复制到本地缓存（持久化），失败不阻塞
           try {
-            var data = _fs.readFileSync(res.tempFilePath);
-            _fs.writeFileSync(info.cachePath, data);
-            info.loaded = true;
+            _fs.saveFileSync(res.tempFilePath, info.cachePath);
             info.resolvedPath = info.cachePath;
-            info.source = 'cloud';
-            var sizeKB = (data.length / 1024).toFixed(1);
-            console.log('[AudioLoader] ✓ cloud :', filename, '(' + sizeKB + 'KB) →', info.cachePath);
+            console.log('[AudioLoader] ✓ cached :', filename);
           } catch (e) {
-            console.warn('[AudioLoader] ✗ write err :', filename, e.message);
-            info.loaded = true;
+            // 模拟器 saveFileSync 也可能失败，无所谓——本次会话 temp 路径可用
+            console.log('[LOG] _downloadOne(' + filename + ') — saveFile failed, will re-download next session');
           }
         } else {
           console.warn('[AudioLoader] ✗ cloud HTTP', res.statusCode || 'no tempFilePath', ':', filename);
@@ -158,6 +166,7 @@ function _downloadOne(filename) {
         resolve();
       },
       fail: function (err) {
+        console.log('[LOG] _downloadOne(' + filename + ') FAIL callback fired, errMsg=' + (err.errMsg || err.message || JSON.stringify(err)));
         console.warn('[AudioLoader] ✗ download :', filename, '—', err.errMsg);
         // 不标记 loaded — 保持可重试；下次 _resolveFile 如果缓存里有了就能捡起来
         _loadedCount++;
@@ -182,7 +191,9 @@ function _notifyProgress() {
  * @returns {Promise<string|null>} 云版本号，或 null（跳过检查）
  */
 function _checkVersionAndSync() {
+  console.log('[LOG] _checkVersionAndSync() — isCloudEnabled=' + config.isCloudEnabled() + ' wx.cloud=' + !!wx.cloud + ' prefix=' + (config.CLOUD_PREFIX || '(empty)'));
   if (!config.isCloudEnabled() || !wx.cloud) {
+    console.log('[LOG] _checkVersionAndSync() — SKIPPED: isCloudEnabled=' + config.isCloudEnabled() + ' wx.cloud=' + !!wx.cloud);
     return Promise.resolve(null);
   }
 
@@ -285,7 +296,8 @@ function _rmdirRecursive(dirPath) {
  * @returns {Promise} 完成
  */
 function startDownload(onProgress) {
-  if (_downloading) return Promise.resolve();
+  console.log('[LOG] AudioLoader.startDownload() — _downloading=' + _downloading + ' isCloudEnabled=' + config.isCloudEnabled());
+  if (_downloading) { console.log('[LOG] AudioLoader.startDownload() — already downloading, skipping'); return Promise.resolve(); }
   _downloading = true;
   _onProgress = onProgress || null;
 
@@ -294,6 +306,7 @@ function startDownload(onProgress) {
 
   // ── 版本检测：云端更新 → 清缓存重拉 ──
   return _checkVersionAndSync().then(function (newVersion) {
+    console.log('[LOG] AudioLoader — _checkVersionAndSync resolved, newVersion=' + newVersion + ' isCloudEnabled=' + config.isCloudEnabled());
     _pendingVersion = newVersion;
 
     // 第一轮：检查所有本地来源
@@ -302,22 +315,27 @@ function startDownload(onProgress) {
     // 第二轮：云存储下载剩余文件
     var names = Object.keys(_files);
     var pending = names.filter(function (f) { return !_files[f].loaded; });
+    console.log('[LOG] AudioLoader — after _checkAllLocal: total=' + names.length + ' loaded=' + _loadedCount + ' pending=' + pending.length);
 
     if (pending.length > 0 && !config.isCloudEnabled()) {
       console.log('[AudioLoader]', pending.length, 'files not found. Upload audio to cloud storage, then call AudioConfig.setCloudPrefix(fileID).');
     }
 
     if (pending.length === 0 || !config.isCloudEnabled()) {
+      console.log('[LOG] AudioLoader — skipping cloud download: pending=' + pending.length + ' isCloudEnabled=' + config.isCloudEnabled());
       _downloading = false;
       _saveVersion();
       return Promise.resolve();
     }
 
+    console.log('[LOG] AudioLoader — PROCEEDING to cloud download, pending=' + pending.length + ' CONCURRENCY=4');
     console.log('[AudioLoader] ▸ downloading', pending.length, 'from cloud...');
     var CONCURRENCY = 4;
     function downloadBatch() {
+      console.log('[LOG] downloadBatch() — pending.length=' + pending.length);
       if (pending.length === 0) return Promise.resolve();
       var batch = pending.splice(0, CONCURRENCY);
+      console.log('[LOG] downloadBatch() — batch=[' + batch.join(',') + ']');
       return Promise.all(batch.map(_downloadOne)).then(downloadBatch);
     }
 
@@ -327,6 +345,9 @@ function startDownload(onProgress) {
       var summary = _getSummary();
       console.log('[AudioLoader] done:', summary);
     });
+  }).catch(function(err) {
+    console.error('[LOG] AudioLoader — FATAL error in download chain:', err && err.message || err);
+    _downloading = false;
   });
 }
 

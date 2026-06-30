@@ -104,16 +104,8 @@ var SFX_EVENTS = {
   },
 
   // ── P1 增强 ──
-  'drag_start': {
-    files: ['drag_start.mp3'],
-    priority: PRIORITY.ACTION,
-  },
   'hint_reveal': {  // 提示的声音
     files: ['hint_reveal.mp3'],
-    priority: PRIORITY.ACTION,
-  },
-  'level_start': {
-    files: ['level_start.mp3'],
     priority: PRIORITY.ACTION,
   },
 

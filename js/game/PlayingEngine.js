@@ -403,7 +403,6 @@ class PlayingEngine {
     }
 
     // 4. 音效、输入、关主系统（不依赖关卡数据）
-    audio.play('level_start');
     this.input.on('playing', function(e) { self.handleEvent(e); });
     this._master.loadUserInfo();
     this._master.fetchMyOpenId();
@@ -748,7 +747,6 @@ class PlayingEngine {
     if (hit) {
       const pig = this.gp.pigs.find(p => p.id === hit.id);
       if (pig) {
-        audio.play('drag_start');
         this.gp.dragState = {
           type: 'rotate',
           pigId: pig.id,
@@ -1426,22 +1424,6 @@ class PlayingEngine {
       this._settleCoinsAndStartVictory();
     }
 
-    // 3.95 金币磁吸飞行动画（推猪时触发，飞向金币区）
-    var coinArrived = this._coinFlyEffect.update();
-    this._coinFlyEffect.render(ctx);
-    // 金币到达 → 播放音效 + 触发 GoldWidget 呼吸 + "+1" 浮字
-    if (coinArrived > 0 && this._uiGoldWidget) {
-      audio.play('coin_get');
-      for (var ca = 0; ca < coinArrived; ca++) {
-        this._uiGoldWidget.triggerBreathe();
-        this._uiGoldWidget.addFloatText();
-      }
-    }
-    // 磁吸光晕：飞行中金币越靠近目标光晕越强
-    if (this._uiGoldWidget) {
-      this._uiGoldWidget.setMagnetGlow(this._coinFlyEffect.getNearestProgress());
-    }
-
     // 4. 顶栏（UIManager）
     this._uiTopBar.render(ctx);
 
@@ -1467,6 +1449,22 @@ class PlayingEngine {
 
     // 8. 设置面板（保持原有）
     settingsPanel.render(ctx);
+
+    // 9. 金币磁吸飞行动画（推猪时触发，飞向金币区）—— 最高层级，不被任何 UI 遮挡
+    var coinArrived = this._coinFlyEffect.update();
+    this._coinFlyEffect.render(ctx);
+    // 金币到达 → 播放音效 + 触发 GoldWidget 呼吸 + "+1" 浮字
+    if (coinArrived > 0 && this._uiGoldWidget) {
+      audio.play('coin_get');
+      for (var ca = 0; ca < coinArrived; ca++) {
+        this._uiGoldWidget.triggerBreathe();
+        this._uiGoldWidget.addFloatText();
+      }
+    }
+    // 磁吸光晕：飞行中金币越靠近目标光晕越强
+    if (this._uiGoldWidget) {
+      this._uiGoldWidget.setMagnetGlow(this._coinFlyEffect.getNearestProgress());
+    }
   }
 
   // ============================================================
