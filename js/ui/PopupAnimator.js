@@ -1,8 +1,8 @@
 // 推猪消除 — 通用弹窗动画器
-// Scale-based spring pop-in / pop-out，供所有弹窗复用
+// Scale-based easeOutCubic pop-in / pop-out，供所有弹窗复用
 //
-// 打开：0.15 → overshoot → 1.0（弹簧弹出）
-// 关闭：1.0 → 微放大(弹一下) → 0.12（反弹缩回）
+// 打开：0.6 → 1.0（easeOutCubic 渐显+放大，无弹跳）
+// 关闭：1.0 → 0.3（easeInCubic 加速缩小+淡出）
 //
 // 用法：
 //   var anim = createPopupAnimator();
@@ -19,18 +19,10 @@ var Easing = require('../core/Easing.js');
 function createPopupAnimator() {
   var _phase = 'closed';          // 'opening' | 'open' | 'closing' | 'closed'
   var _startTime = 0;
-  var _openDuration = 550;        // 弹出总时长 ms（统一值）
-  var _closeExpandDur = 30;      // 关闭时"弹一下"阶段时长 ms
-  var _closeShrinkDur = 100;      // 关闭时缩回阶段时长 ms
+  var _openDuration = 350;        // 弹出总时长 ms（无弹簧振荡，350 足够）
+  var _closeDuration = 130;       // 关闭总时长 ms
   var _onClose = null;
-  var _openStartTime = 0;          // 记录打开开始时间，供 stagger 计算
-
-  // 弹簧参数：物理模型在 t≈1.0 自然衰减完毕
-  // 用 SPRING_T_MULT=1.0 让动画填满整个 _openDuration，不再提前结束
-  // stiffness 180 + damping 10 → 明显过冲回弹，手感更"弹"
-  var SPRING_T_MULT = 1.0;
-  var SPRING_STIFF = 180;
-  var SPRING_DAMP = 10;
+  var _openStartTime = 0;          // 记录打开开始时间
 
   function _closedState() { return { scale: 0, alpha: 0, maskAlpha: 0, rawT: 0, elapsed: 0 }; }
   function _openState()   { return { scale: 1, alpha: 1, maskAlpha: 0.5, rawT: 1, elapsed: _openDuration }; }
@@ -70,41 +62,27 @@ function createPopupAnimator() {
 
     var elapsed = Date.now() - _startTime;
 
-    // ---- 打开动画 ----
+    // ---- 打开动画：0.6→1.0 渐显 + easeOutCubic 放大到正常大小 ----
     if (_phase === 'opening') {
       var rawT = Math.min(elapsed / _openDuration, 1);
-      var springVal = Easing.spring(rawT * SPRING_T_MULT, SPRING_STIFF, SPRING_DAMP);
-      var scl = 0.15 + 0.85 * springVal;
-      var alp = springVal;
-      var msk = 0.5 * springVal;
+      var eased = Easing.easeOutCubic(rawT);
+      var scl = 0.6 + 0.4 * eased;
+      var alp = eased;
+      var msk = 0.5 * eased;
 
       if (rawT >= 1) {
         _phase = 'open';
         return _openState();
       }
-      return { scale: Math.max(0, scl), alpha: Math.max(0, Math.min(1, alp)), maskAlpha: Math.max(0, msk), rawT: rawT, elapsed: elapsed };
+      return { scale: scl, alpha: alp, maskAlpha: msk, rawT: rawT, elapsed: elapsed };
     }
 
-    // ---- 关闭动画（两阶段：弹一下 → 缩回）----
+    // ---- 关闭动画：1.0→0.3 加速缩小 + 淡出 ----
     if (_phase === 'closing') {
-      var totalDur = _closeExpandDur + _closeShrinkDur;
-      var ct = Math.min(elapsed / totalDur, 1);
-      var splitT = _closeExpandDur / totalDur;
-      var scl, alp;
-
-      if (ct <= splitT) {
-        // 阶段1: 微微放大 "弹一下" (1.0 → 1.06)
-        var et = ct / splitT;
-        scl = 1 + 0.06 * Easing.easeOutCubic(et);
-        alp = 1;
-      } else {
-        // 阶段2: 加速缩回消失 (1.06 → 0.12)
-        var st = (ct - splitT) / (1 - splitT);
-        var shrink = 1 - Easing.easeInCubic(st);
-        scl = 1.06 * shrink;
-        alp = 1 - Easing.easeInCubic(Math.min(st * 1.4, 1));
-      }
-
+      var ct = Math.min(elapsed / _closeDuration, 1);
+      var eased = Easing.easeInCubic(ct);
+      var scl = 1 - 0.7 * eased;
+      var alp = 1 - eased;
       var msk = 0.5 * alp;
 
       if (ct >= 1) {
@@ -114,7 +92,7 @@ function createPopupAnimator() {
         if (cb) cb();
         return _closedState();
       }
-      return { scale: Math.max(0, scl), alpha: Math.max(0, Math.min(1, alp)), maskAlpha: Math.max(0, msk), rawT: ct, elapsed: elapsed };
+      return { scale: scl, alpha: alp, maskAlpha: msk, rawT: ct, elapsed: elapsed };
     }
 
     return _closedState();
