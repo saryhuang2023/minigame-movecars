@@ -435,6 +435,16 @@ class PlayingEngine {
       databus.gameState = 'menu';
       return;
     }
+    // 入场动画状态必须在 loadLevel 之前设置，确保首帧渲染时 es 已存在
+    this._entranceState = {
+      startTime: Date.now(),
+      phase: 'board',        // board → pigs → ui → done
+      pigFadeDelay: 300,     // 300ms 后开始猪渐显
+      pigFadeDur: 500,       // 猪渐显 500ms (ease-out)
+      uiStart: 800,           // 800ms 后开始 UI 飞入
+      uiDur: 500,             // UI 飞入 500ms (ease-out cubic)
+      totalDuration: 1300,     // 总时长 1300ms
+    };
     this.loadLevel(data);
     this._loading = false;
     // 重置脏检测基准（确保首轮一定写入）
@@ -520,6 +530,8 @@ class PlayingEngine {
   handleEvent(e) {
     // 加载中：阻止所有用户操作（云端关卡拉取中）
     if (this._loading) return;
+    // 入场动画期间：猪渐显完成前（board/pigs 阶段），阻止所有操作
+    if (this._entranceState && this._entranceState.phase !== 'done' && this._entranceState.phase !== 'ui') return;
 
     var self = this;
     const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
@@ -1462,6 +1474,41 @@ class PlayingEngine {
     // 同步引擎数据 → UI 组件
     this._syncUIData();
 
+    // ---- 入场动画三阶段：棋盘 → 猪渐显 → UI飞入 ----
+    var es = this._entranceState;
+    if (es && es.phase !== 'done') {
+      var now = Date.now();
+      // 阶段切换（else if 链，每帧最多跳一次）
+      if (es.phase === 'board' && now - es.startTime >= es.pigFadeDelay) {
+        es.phase = 'pigs';
+      } else if (es.phase === 'pigs' && now - es.startTime >= es.uiStart) {
+        es.phase = 'ui';
+      } else if (es.phase === 'ui' && now - es.startTime >= es.totalDuration) {
+        es.phase = 'done';
+      }
+    }
+    var entranceActive = es && es.phase !== 'done';
+    var eElapsed = entranceActive ? (Date.now() - es.startTime) : 0;
+
+    // 辅助曲线
+    function _easeOut(t) {
+      t = Math.max(0, Math.min(1, t));
+      return t * (2 - t);  // quadratic ease-out
+    }
+    function _easeOutCubic(t) {
+      t = Math.max(0, Math.min(1, t));
+      return 1 - Math.pow(1 - t, 3);
+    }
+
+    // 猪 alpha（board 阶段恒为 0；pigs 阶段 0→1；ui/done 恒为 1）
+    var pigAlpha = 1;
+    if (es && es.phase === 'board') {
+      pigAlpha = 0;
+    } else if (es && es.phase === 'pigs') {
+      var t = Math.min(1, (eElapsed - es.pigFadeDelay) / es.pigFadeDur);
+      pigAlpha = _easeOut(t);
+    }
+
     // 加载中：不显示任何 UI（设置/关主/提示/奖杯等），仅显示加载提示
     if (this._loading) {
       // 加载提示
@@ -1480,36 +1527,76 @@ class PlayingEngine {
     this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
     this.gp.renderBoard(ctx, {
       hintPigId: this._hint.getTargetId(),
-      guidePigId: this._guide.getActiveGuidePigId()
+      guidePigId: this._guide.getActiveGuidePigId(),
+      entrancePigAlpha: pigAlpha,
     });
 
-    // 3. 关主卡片（UIManager）
-    this._uiMasterPanel.render(ctx);
-
-    // 3.8 奖杯（UIManager）
-    this._uiCrownPig.render(ctx);
-
-    // 3.9 通关飞行特效动画（VictoryAnimation 独立渲染组件）
+    // 3.9 通关飞行特效动画（VictoryAnimation 独立渲染组件，始终渲染）
     this._checkMasterAnimWaiting();
     this._victoryAnim.setLayout(this._boardCardX, this._boardCardY, this._boardCardW, SCREEN_WIDTH, SCREEN_HEIGHT);
     this._victoryAnim.update();
     this._victoryAnim.render(ctx);
 
-    // 方案D：等所有金币飞到再启动通关动画序列
+    // 方案D：等所有金币飞到再启动通关动画序列（始终检查）
     if (this._coinsSettling && !this._coinFlyEffect.isActive()) {
       this._settleCoinsAndStartVictory();
     }
 
-    // 4. 顶栏（UIManager）
-    this._uiTopBar.render(ctx);
-
-    // 4.5. 金币余额（非通关时正常渲染；通关结算时浮于遮罩之上，保持延续性）
-    if (!this._showVictoryPanel) {
-      this._uiGoldWidget.render(ctx);
+    // ---- UI 渲染（受入场动画控制）----
+    if (!entranceActive) {
+      // 动画结束：正常渲染所有 UI
+      // 3. 关主卡片（UIManager）
+      this._uiMasterPanel.render(ctx);
+      // 3.8 奖杯（UIManager）
+      this._uiCrownPig.render(ctx);
+      // 4. 顶栏（UIManager）
+      this._uiTopBar.render(ctx);
+      // 4.5. 金币余额（非通关时正常渲染；通关结算时浮于遮罩之上，保持延续性）
+      if (!this._showVictoryPanel) {
+        this._uiGoldWidget.render(ctx);
+      }
+      // 5. 底部栏（UIManager）
+      this._uiBottomBar.render(ctx);
+    } else if (es.phase === 'ui') {
+      // UI 飞入动画（500ms，ease-out cubic）
+      var uiT = Math.min(1, (eElapsed - es.uiStart) / es.uiDur);
+      var ease = _easeOutCubic(uiT);
+      // 上方控件：从 y=-200 落到 y=0（同时）
+      var topItems = [
+        { comp: this._uiTopBar,    cond: true },
+        { comp: this._uiGoldWidget, cond: !this._showVictoryPanel },
+        { comp: this._uiCrownPig,   cond: true },
+      ];
+      for (var i = 0; i < topItems.length; i++) {
+        var item = topItems[i];
+        if (!item.comp || item.cond === false) continue;
+        var dy = -200 * (1 - ease);
+        var alpha = uiT < 0.03 ? 0 : 1;
+        ctx.save();
+        ctx.translate(0, dy);
+        ctx.globalAlpha = alpha;
+        item.comp.render(ctx);
+        ctx.restore();
+      }
+      // 下方控件：从 y=+200 落到 y=0（同时）
+      var bottomItems = [
+        { comp: this._uiMasterPanel, cond: true },
+        { comp: this._uiBottomBar,  cond: true },
+      ];
+      for (var i = 0; i < bottomItems.length; i++) {
+        var item = bottomItems[i];
+        if (!item.comp || item.cond === false) continue;
+        var dy = 200 * (1 - ease);
+        var alpha = uiT < 0.03 ? 0 : 1;
+        ctx.save();
+        ctx.translate(0, dy);
+        ctx.globalAlpha = alpha;
+        item.comp.render(ctx);
+        ctx.restore();
+      }
+    } else {
+      // board 或 pigs 阶段：不渲染任何 UI 控件
     }
-
-    // 5. 底部栏（UIManager）
-    this._uiBottomBar.render(ctx);
 
     // 6. 通关弹窗（UIManager）
     if (this._victory && this._showVictoryPanel) {

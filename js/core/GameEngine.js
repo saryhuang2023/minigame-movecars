@@ -11,7 +11,6 @@ const SkinSystem = require('../game/SkinSystem.js');
 const ShopPanel = require('../ui/ShopPanel.js');
 const Theme = require('../ui/Theme.js');
 const Easing = require('./Easing.js');
-const TransitionManager = require('./TransitionManager.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
@@ -1114,12 +1113,6 @@ class GameEngine {
   update() {
     databus.frame++;
 
-    // 过渡动画进行中 → 屏蔽输入（让动画跑完）
-    if (TransitionManager.isActive()) {
-      TransitionManager.getProgress(); // 驱动状态机
-      return;
-    }
-
     // 菜单入场动画进行中 → 屏蔽输入
     if (this._menuEntrance && this._menuEntrance.phase === 'slideIn') {
       var elapsed = Date.now() - this._menuEntrance.startTime;
@@ -1151,12 +1144,6 @@ class GameEngine {
 
     const prev = this._prevState;
     console.log('[LOG] checkStateTransition: ' + prev + ' → ' + curr + ' (当前 _cloudMaxLevel=' + databus._cloudMaxLevel + ')');
-
-    // 启动场景过渡动画（在引擎切换之前）
-    // 返回主菜单 → 用自己的入场动画替代 TransitionManager
-    if (prev && curr && curr !== prev && curr !== 'menu') {
-      TransitionManager.start(prev, curr);
-    }
 
     // 切场景：停止所有 SFX，避免残留音效
     audio.onSceneChange();
@@ -1193,32 +1180,7 @@ class GameEngine {
     beginFrame();
     this.drawBackground();
 
-    // 场景过渡动画
-    var trans = TransitionManager.getProgress();
-    if (trans && !trans.done) {
-      var sw = databus.screenWidth;
-      var offset = 0;
-
-      if (trans.direction === 'forward') {
-        // 新场景从右侧滑入
-        offset = sw * (1 - trans.t);
-      } else if (trans.direction === 'back') {
-        // 新场景从左侧滑入
-        offset = -sw * (1 - trans.t);
-      }
-      // fade: offset = 0（无滑入，直接叠在上面）
-
-      ctx.save();
-      if (trans.direction === 'fade') {
-        ctx.globalAlpha = trans.t;
-      } else {
-        ctx.translate(offset, 0);
-      }
-      this._renderCurrentScene();
-      ctx.restore();
-    } else {
-      this._renderCurrentScene();
-    }
+    this._renderCurrentScene();
 
     // 开发者调试面板 — 最顶层渲染
     DebugPanel.render(databus, this);

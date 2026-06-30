@@ -8,19 +8,9 @@ var databus = require('../databus.js');
 var _active = false;
 var _startTime = 0;
 var _duration = 0;
-var _direction = 'forward';  // 'forward' | 'back' | 'fade' | 'none'
+var _direction = 'fade';  // 统一使用 'fade' 淡入淡出
 var _from = null;
 var _to = null;
-
-// 方向规则
-var FORWARD_SCENES = {
-  'menu->levelSelect': true,
-  'menu->playing': true,
-  'levelSelect->playing': true,
-  'playing->menu': false,    // 游戏内回主界面也算"后退"
-  'levelSelect->menu': true,
-  'playing->levelSelect': true,
-};
 
 /**
  * 开始场景过渡
@@ -31,31 +21,8 @@ var FORWARD_SCENES = {
  *   opts.direction - 手动指定方向 'forward'|'back'|'fade'，不传则自动推断
  */
 function start(from, to, opts) {
-  opts = opts || {};
-  _active = true;
-  _from = from;
-  _to = to;
-  _startTime = Date.now();
-
-  var key = from + '->' + to;
-  if (opts.direction) {
-    _direction = opts.direction;
-  } else if (from === 'menu' && to === 'editor') {
-    _direction = 'fade';
-  } else {
-    // 从菜单出发、关卡选择出发的 → forward；返回的 → back
-    if (from === 'menu' || from === 'levelSelect') {
-      _direction = 'forward';
-    } else {
-      _direction = 'back';
-    }
-  }
-
-  if (_direction === 'fade') {
-    _duration = opts.duration || 250;
-  } else {
-    _duration = opts.duration || 300;
-  }
+  // 过渡动画已禁用，直接完成
+  _active = false;
 }
 
 /**

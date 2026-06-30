@@ -1034,6 +1034,10 @@ class GameplayEngine {
     const animOffs = {};
     for (const a of this.animations) animOffs[a.pigId] = { dx: a.currentDx, dy: a.currentDy };
 
+    var entrancePigAlpha = options.entrancePigAlpha == null ? 1 : options.entrancePigAlpha;
+    ctx.save();
+    ctx.globalAlpha = entrancePigAlpha;
+
     for (const pig of this.pigs) {
       const off = animOffs[pig.id] || { dx: 0, dy: 0 };
       const isDragPig = this.dragState && (
@@ -1065,6 +1069,7 @@ class GameplayEngine {
       }
 
     }
+    ctx.restore();
 
     // 幽灵动画（面向 hintAngle 飞行，前 10% 淡入，循环播放）
     for (const g of this.ghostAnimations) {
