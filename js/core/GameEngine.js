@@ -306,6 +306,7 @@ class GameEngine {
       checkpointDialog.open({
         steps: cp.steps,
         levelName: cp.levelName,
+        levelIndex: cp.levelIndex,
         onConfirm: function() {
           console.log('[LOG] 用户确认恢复存档');
           self.startLastLevel();

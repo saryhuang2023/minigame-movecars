@@ -877,8 +877,8 @@ class PlayingEngine {
       this._hint.onPigExited(pigId);
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
 
-      // 金币磁吸飞行：非试玩模式，每推出一只猪 → 等猪飞到屏幕边缘后再从边缘弹出金币
-      if (databus.returnState !== 'editor' && this._uiGoldWidget) {
+      // 金币磁吸飞行：非试玩模式且本关未领过金币，每推出一只猪 → 等猪飞到屏幕边缘后再从边缘弹出金币
+      if (databus.returnState !== 'editor' && this._uiGoldWidget && !GoldSystem.isSettled(this.levelName)) {
         var tailHole = this.gp.holes[pig.tailIndex];
         if (tailHole) {
           var tailSX = this.gp.boardOffsetX + tailHole.x;
@@ -1323,8 +1323,8 @@ class PlayingEngine {
    */
   _settleCoinsAndStartVictory() {
     this._coinsSettling = false;
-    // 满额庆祝
-    if (this._uiGoldWidget) {
+    // 满额庆祝（仅首次通关有金币奖励时播放）
+    if (this._uiGoldWidget && this._pendingGoldReward) {
       this._uiGoldWidget.celebrate();
     }
     var self = this;
