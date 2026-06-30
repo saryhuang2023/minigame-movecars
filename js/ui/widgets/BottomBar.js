@@ -88,6 +88,7 @@ function BottomBar(opts) {
   this._cardW = opts.cardW;
   this._buttonPress = opts.buttonPress;
   this._hintActive = false;
+  this._currentSteps = 0;
 
   // 回调
   this.onHintClick = opts.onHintClick || function () {};
@@ -103,6 +104,10 @@ BottomBar.prototype.constructor = BottomBar;
 
 BottomBar.prototype.setHintActive = function (active) {
   this._hintActive = !!active;
+};
+
+BottomBar.prototype.setCurrentSteps = function (steps) {
+  this._currentSteps = steps;
 };
 
 /**
@@ -187,20 +192,34 @@ BottomBar.prototype.render = function (ctx) {
   }
 
   // 绘制按钮底框（提示/移除使用不同配色）
+  var offsetY = 0;
   if (this._hintActive) {
     _drawEraseBg(ctx, hintX, hintY);
+    offsetY = -8;
   } else {
     _drawHintBg(ctx, hintX, hintY);
   }
 
   // 广告图标
   if (AssetPreloader.isReady('ad_icon')) {
-    ctx.drawImage(AssetPreloader.get('ad_icon'), hintX + 22, hintY + 15, AD_ICON_W, AD_ICON_H);
+    ctx.drawImage(AssetPreloader.get('ad_icon'), hintX + 22, hintY + 15 + offsetY, AD_ICON_W, AD_ICON_H);
   }
 
   // 文字
   var label = this._hintActive ? '移除!' : '提示!';
-  _drawLabel(ctx, label, hintX + 66, hintY + 19.5, 2);
+  _drawLabel(ctx, label, hintX + 66, hintY + 19.5 + offsetY, 2);
+
+  // 移除按钮：步数说明文字（底部居中）
+  if (this._hintActive) {
+    ctx.font = '13px ' + Theme.font.family;
+    ctx.fillStyle = '#000000';
+    ctx.strokeStyle = 'transparent';
+    var stepText = '移除增加5步';
+    var textW = ctx.measureText(stepText).width;
+    var stepTextX = hintX + 66 - textW / 2 + 10;  // 水平居中后右移10px
+    var stepTextY = hintY + 63 - 7 - 13;     // bottom: 4px, textH: 13px
+    ctx.fillText(stepText, stepTextX, stepTextY);
+  }
 
   ctx.restore();
 

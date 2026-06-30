@@ -45,7 +45,6 @@ function CrownPigWidget(opts) {
   this._crownSteps = 0;
   this._steps = 0;
   this._gotCrown = false;
-  this._hasUsedRemove = false;
   this._hidden = false;
 
   // 步数奖励动画（纯视觉效果，不修改 _steps）
@@ -73,11 +72,10 @@ function CrownPigWidget(opts) {
 CrownPigWidget.prototype = Object.create(UIComponent.prototype);
 CrownPigWidget.prototype.constructor = CrownPigWidget;
 
-CrownPigWidget.prototype.setData = function (crownSteps, steps, gotCrown, hasUsedRemove) {
+CrownPigWidget.prototype.setData = function (crownSteps, steps, gotCrown) {
   this._crownSteps = crownSteps || 0;
   this._steps = steps || 0;
   this._gotCrown = !!gotCrown;
-  this._hasUsedRemove = !!hasUsedRemove;
 };
 
 CrownPigWidget.prototype.setAnimPhase = function () { /* 位置固定后不再需要动画阶段 */ };
@@ -162,8 +160,8 @@ CrownPigWidget.prototype.render = function (ctx) {
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 4;
 
-  if (!this._gotCrown && (this._hasUsedRemove || this._steps > this._crownSteps)) {
-    // 未激活状态（使用过移除 或 步数已超）
+  if (!this._gotCrown && this._steps > this._crownSteps) {
+    // 未激活状态（步数已超）
     if (this._inactiveLoaded) {
       ctx.drawImage(this._imgInactive, trophyX, trophyY, TROPHY_SIZE, TROPHY_SIZE);
     }
@@ -192,7 +190,7 @@ CrownPigWidget.prototype.render = function (ctx) {
     remaining = 0;
     fillW = 0;
   } else {
-    remaining = this._hasUsedRemove ? 0 : (this._crownSteps - this._steps);
+    remaining = this._crownSteps - this._steps;
     if (remaining < 0) remaining = 0;
     var progressRatio = this._crownSteps > 0 ? remaining / this._crownSteps : 0;
     fillW = Math.floor(STEP_BG_W * progressRatio);
@@ -252,8 +250,6 @@ CrownPigWidget.prototype.render = function (ctx) {
   var text = '';
   if (this._bonusAnimActive) {
     text = '剩' + this._bonusAnimRemaining + '步';
-  } else if (this._hasUsedRemove) {
-    text = '本关不计';
   } else if (!this._gotCrown) {
     if (this._steps > this._crownSteps) {
       text = '步数已超';

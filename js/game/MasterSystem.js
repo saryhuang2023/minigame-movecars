@@ -86,7 +86,7 @@ MasterSystem.prototype.updateMyRecord = function (steps) {
  * 尝试夺位成为关主。
  * @param {Object}  params
  * @param {number}  params.steps              当前步数
- * @param {boolean} params.hasUsedRemove      是否用过移除（是则跳过夺位）
+ * @param {boolean} params.hasUsedRemove      是否用过移除（已弃用，保留兼容）
  * @param {boolean} params.isTrialMode        是否试玩模式（是则跳过夺位）
  * @param {Function} [params.onShowAuthDialog] 需要弹出授权对话框时的回调
  * @param {Function} [params.onNewMaster]      夺位成功回调（PlayingEngine 内部调度动画）
@@ -96,7 +96,7 @@ MasterSystem.prototype.tryClaim = function (params) {
   // 关主信息尚未拉回 → 不判定夺位（避免 currentMin=9999 误判通关即夺位）
   if (this._masterLoading) return;
   var steps = params.steps;
-  if (params.hasUsedRemove || params.isTrialMode) return;
+  if (params.isTrialMode) return;
 
   this.updateMyRecord(steps);
   var currentMin = this._levelMaster ? this._levelMaster.masterSteps : 9999;

@@ -90,7 +90,7 @@ class PlayingEngine {
     this._showAuthDialog = false;  // 是否显示授权对话框
     this._authAnimator = PopupAnimator.createPopupAnimator();
     this._skipAuthBtnRect = null;  // 跳过按钮碰撞区
-    this._hasUsedRemove = false;    // 本局是否用过移除按钮
+    // _hasUsedRemove 已移除：移除不再取消资格，改为消耗 5 步数
     this._removeBtn = null;         // 移除按钮碰撞区
     this._loading = false;          // 是否正在加载（云端拉取中，阻止所有操作）
     this._lastFrameTime = 0;        // 上一帧时间戳（引导系统 dt 计算用）
@@ -135,7 +135,6 @@ class PlayingEngine {
     this._hint.clear();
     this._guide.reset();
     this._lastFrameTime = 0;       // 防止切关卡时 dt 突增
-    this._hasUsedRemove = false;
     this._pendingResume = false;    // 防御：每次重置关卡状态都清理恢复标志
     // 奖杯状态
     this._hadCrownBefore = !!wx.getStorageSync('crown_' + databus.currentLevelIndex);
@@ -291,6 +290,7 @@ class PlayingEngine {
 
     // BottomBar
     this._uiBottomBar.setHintActive(this._hint.isActive());
+    this._uiBottomBar.setCurrentSteps(this.steps);
 
     // MasterPanel
     this._uiMasterPanel.setHiddenByTrial(databus.returnState === 'editor');
@@ -309,7 +309,7 @@ class PlayingEngine {
 
     // 奖杯组件
     this._uiCrownPig.setHidden(databus.returnState === 'editor');
-    this._uiCrownPig.setData(this._crownSteps, this.steps, this._gotCrown, this._hasUsedRemove);
+    this._uiCrownPig.setData(this._crownSteps, this.steps, this._gotCrown);
 
     // VictoryPopup
     var master = this._master.getMaster();
@@ -1014,7 +1014,7 @@ class PlayingEngine {
       // 仍设 _gotCrown=true 确保渲染显示金色（重玩场景）
       this._gotCrown = true;
       this._earnedCrown = false;
-    } else if (this._crownSteps > 0 && this.steps <= this._crownSteps && !this._hasUsedRemove) {
+    } else if (this._crownSteps > 0 && this.steps <= this._crownSteps) {
       wx.setStorageSync('crown_' + databus.currentLevelIndex, true);
       this._earnedCrown = true;
       this._gotCrown = false;  // 动画期间保持灰色
@@ -1044,11 +1044,11 @@ class PlayingEngine {
         this._pendingGoldReward = true;
       }
     }
-    // 尝试夺关主（试玩模式/用过移除则跳过）
-    if (!this._hasUsedRemove && databus.returnState !== 'editor') {
+    // 尝试夺关主（试玩模式则跳过）
+    if (databus.returnState !== 'editor') {
       this._master.tryClaim({
         steps: this.steps,
-        hasUsedRemove: this._hasUsedRemove,
+        hasUsedRemove: false,
         isTrialMode: databus.returnState === 'editor',
         onShowAuthDialog: this._showMasterAuthButton.bind(this),
         onNewMaster: (function () {
@@ -1060,7 +1060,7 @@ class PlayingEngine {
         onClaimNotGranted: this._destroyAuthBtn.bind(this),
       });
     } else {
-      console.log('[关主] 使用了移除按钮，跳过关主判定');
+      console.log('[关主] 试玩模式，跳过关主判定');
     }
     // 异步同步到云端（fire-and-forget，不阻塞 UI）
     this._syncToCloud();
@@ -1403,6 +1403,8 @@ class PlayingEngine {
 
       if (ticked >= totalTicks) {
         clearInterval(ticker);
+        // 步数动画结束 → 立即切换奖杯图标为金色（不等 VictoryAnimation crown 动画完成）
+        self._gotCrown = true;
         // 结束步数动画，启动奖杯
         if (self._uiCrownPig) {
           self._uiCrownPig.endStepBonusAnim();
@@ -1548,13 +1550,14 @@ class PlayingEngine {
   _removeHintedPig() {
     var pig = this._hint.getTarget();
     if (!pig) return;
-    // 从棋盘移除（不记步数）
+    // 从棋盘移除（消耗 5 步数，保留关主/奖杯资格）
     var idx = this.gp.pigs.indexOf(pig);
     if (idx >= 0) {
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pig.id);
     }
-    this._hasUsedRemove = true;
+    this.steps += 5;
+    databus.currentStep += 5;
     this._trialUsedRemove = true;   // 试玩中用了移除 → 不保存提示数据
     this._saveCheckpoint();         // 立档存盘，确保断点恢复
     this._hint.clear();
@@ -1622,7 +1625,6 @@ class PlayingEngine {
       pigs: this.gp.pigs.map(function(p) {
         return { id: p.id, tailIndex: p.tailIndex, length: p.length, angle: p.angle };
       }),
-      hasUsedRemove: this._hasUsedRemove,
       savedAt: Date.now()
     };
     try {
@@ -1715,8 +1717,7 @@ class PlayingEngine {
     this.gp.rebuildOccupancy();
 
     // 恢复完成后不清理存档 — 由 30 秒定时器自然覆盖
-    this._hasUsedRemove = !!cp.hasUsedRemove;
-    console.log('[LOG] 存档已恢复 steps=' + this.steps + ' pigs=' + this.gp.pigs.length + ' hasUsedRemove=' + this._hasUsedRemove);
+    console.log('[LOG] 存档已恢复 steps=' + this.steps + ' pigs=' + this.gp.pigs.length);
   }
 }
 
