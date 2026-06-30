@@ -1,11 +1,11 @@
 {
   "board": {
     "boardRate": 2.9,
-    "boardWidth": 365,
+    "boardWidth": 347,
     "oddCols": 6,
     "rows": 14
   },
-  "crownSteps": 160,
+  "crownSteps": 140,
   "pigs": [
     {
       "angle": 29.999999999999996,
@@ -377,5 +377,5 @@
     }
   ],
   "ready": 1,
-  "version": 16
+  "version": 1
 }

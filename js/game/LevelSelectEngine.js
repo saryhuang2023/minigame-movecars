@@ -329,9 +329,10 @@ LevelSelectEngine.prototype._syncUIData = function () {
 LevelSelectEngine.prototype._getCompletedCount = function () {
   try {
     var idx = wx.getStorageSync('lastLevelIndex');
-    if (typeof idx === 'number' && idx >= 0) return idx;
+    // lastLevelIndex 是最后完成关卡的全局索引（0-based），已完成数量 = idx + 1
+    if (typeof idx === 'number' && idx >= 0) return idx + 1;
   } catch (e) { /* ignore */ }
-  return -1;
+  return 0;
 };
 
 /**

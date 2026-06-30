@@ -1,6 +1,8 @@
 // Canvas 初始化 + 屏幕尺寸常量 + 超采样抗锯齿
 
-const DPR = 2; // 超采样倍率（2x 渲染 → 缩小回 1x 消除锯齿）
+// 取设备像素比，上限 2（2x 渲染+缩小回 1x 提供自然抗锯齿）
+var sysInfo = wx.getSystemInfoSync();
+const DPR = Math.min(sysInfo.pixelRatio || 2, 2);
 
 const realCanvas = wx.createCanvas();
 const realCtx = realCanvas.getContext('2d');
