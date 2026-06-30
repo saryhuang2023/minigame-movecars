@@ -1153,7 +1153,8 @@ class GameEngine {
     console.log('[LOG] checkStateTransition: ' + prev + ' → ' + curr + ' (当前 _cloudMaxLevel=' + databus._cloudMaxLevel + ')');
 
     // 启动场景过渡动画（在引擎切换之前）
-    if (prev && curr && curr !== prev) {
+    // 返回主菜单 → 用自己的入场动画替代 TransitionManager
+    if (prev && curr && curr !== prev && curr !== 'menu') {
       TransitionManager.start(prev, curr);
     }
 
@@ -1169,7 +1170,17 @@ class GameEngine {
 
     // 激活新状态（menu 的输入在 setupMenuInput 已注册）
     switch (curr) {
-      case 'menu':       audio.playMusic('menu'); break;
+      case 'menu':
+        audio.playMusic('menu');
+        // 从其他界面返回 → 触发主菜单入场动画（与 loading 进入一致）
+        if (prev) {
+          this._menuEntrance = {
+            phase: 'slideIn',
+            startTime: Date.now(),
+            totalDuration: 800,
+          };
+        }
+        break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;
       case 'levelSelect': this.levelSelect.activate(); audio.playMusic('levelSelect'); break;
       case 'playing':     this.playing.activate(); audio.playMusic('playing'); break;

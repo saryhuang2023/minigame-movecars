@@ -82,16 +82,8 @@ LoadingRenderer.prototype.render = function () {
   // 1. 背景
   this._drawBackground();
 
-  // 2. 主界面 idle 小猪动画（滑出时淡出）
-  if (!this._slideOutActive) {
-    PigRenderer.drawMenuIdlePig(ctx, PIG_CX, PIG_CY, PIG_TARGET_W);
-  } else {
-    var t = this._slideOutT();
-    ctx.save();
-    ctx.globalAlpha = 1 - t;
-    PigRenderer.drawMenuIdlePig(ctx, PIG_CX, PIG_CY, PIG_TARGET_W);
-    ctx.restore();
-  }
+  // 2. 主界面 idle 小猪动画（始终保持，不做滑出淡化）
+  PigRenderer.drawMenuIdlePig(ctx, PIG_CX, PIG_CY, PIG_TARGET_W);
 
   // 3. 进度条 + 文字（滑出时向下平移 + 淡出）
   this._drawProgressBar();
