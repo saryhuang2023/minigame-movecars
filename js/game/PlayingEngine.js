@@ -43,7 +43,7 @@ const CARD_PADDING = 12;    // 棋盘卡片内边距
 
 const ESCAPE_SPEED = 120;  // 正常逃脱速度（逻辑像素/秒）
 
-const SNAP_ANGLE_PUSH_THRESHOLD = 45;
+const SNAP_ANGLE_PUSH_THRESHOLD = 90;
 
 class PlayingEngine {
   constructor(input) {
