@@ -371,19 +371,10 @@ VictoryPopup.prototype.render = function (ctx) {
     this._doubleGoldBtn = null;
   }
 
-  // === 元素错开动画 ===
-  var elapsed = Date.now() - this._animStart;
-  var STAGGER_START = 80;
-  var STAGGER_INTERVAL = 55;
-  var self = this;
-
-  var _elAnim = function (delayMs) {
-    var t = Math.max(0, Math.min(1, (elapsed - delayMs) / 280));
-    var s = Easing.spring(t * 3.5, 200, 11);
-    return { alpha: s, scale: 0.6 + 0.4 * s };
+  // === 所有元素一次性显示，无错开动画 ===
+  var _elAnim = function () {
+    return { alpha: 1, scale: 1 };
   };
-
-  var staggerIdx = 0;
 
   // === 文本框（相对背景面板定位）===
   var _drawInfoText = function (anim, text, x, y) {
@@ -432,17 +423,14 @@ VictoryPopup.prototype.render = function (ctx) {
   };
 
   // 红 — 关主步数
-  staggerIdx++;
   var redBadgeAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawBadge(redBadgeAnim, badgeX, py + 161, '#FF7B7B');
 
   // 蓝 — 本关步数
-  staggerIdx++;
   var blueBadgeAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawBadge(blueBadgeAnim, badgeX, py + 207, '#83DEFF');
 
   // 黄 — 获得金币
-  staggerIdx++;
   var goldBadgeAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawBadge(goldBadgeAnim, badgeX, py + 251, '#FFC500');
 
@@ -463,32 +451,26 @@ VictoryPopup.prototype.render = function (ctx) {
   };
 
   // 奖杯（关主）
-  staggerIdx++;
   var crownIconAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawIcon(crownIconAnim, 'master_hat', iconX, py + 157);
 
   // 步数
-  staggerIdx++;
   var stepIconAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawIcon(stepIconAnim, 'leftStep', iconX, py + 205);
 
   // 金币
-  staggerIdx++;
   var coinIconAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawIcon(coinIconAnim, 'coin', iconX, py + 249);
 
   // 关主步数（标签）
-  staggerIdx++;
   var masterAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawInfoText(masterAnim, '关主步数', infoX, py + 165);
 
   // 本关步数（标签）
-  staggerIdx++;
   var stepsAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawInfoText(stepsAnim, '本关步数', infoX, py + 207);
 
   // 获得金币（标签）
-  staggerIdx++;
   var goldTextAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawInfoText(goldTextAnim, '获得金币', infoX, py + 253);
 
@@ -508,18 +490,15 @@ VictoryPopup.prototype.render = function (ctx) {
 
   // 关主步数数据（top: 168px）
   if (this._masterSteps != null) {
-    staggerIdx++;
-    var masterDataAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
+      var masterDataAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
     _drawDataText(masterDataAnim, this._masterSteps + '步', py + 168);
   }
 
   // 本关步数数据（top: 214px）
-  staggerIdx++;
   var myStepsAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
   _drawDataText(myStepsAnim, this._steps + '步', py + 214);
 
   // 获得金币数据（top: 258px）— 双击双倍时翻滚，否则静态 +N
-  staggerIdx++;
   var myGoldAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL);
 
   // 双倍翻滚中循环播放 coin_roll 音效
@@ -594,13 +573,11 @@ VictoryPopup.prototype.render = function (ctx) {
 
   if (showGold) {
     // ── 有金币：继续(左) + 重玩(右)（双倍按钮已在上方 large button 区域绘制）──
-    staggerIdx++;
-    var contAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var contAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
     _renderContinueBtn(contAnim);
 
-    staggerIdx++;
-    var restAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var restAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
     _renderReplayBtn(restAnim);
 
@@ -610,24 +587,20 @@ VictoryPopup.prototype.render = function (ctx) {
     // ── 无金币 menu：继续 + 重玩 ──
     this._exitBtn = null;
     this._doubleGoldBtn = null;
-    staggerIdx++;
-    var restAnim3 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var restAnim3 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
     _renderReplayBtn(restAnim3);
-    staggerIdx++;
-    var contAnim2 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 40);
+      var contAnim2 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 40);
     this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
     _renderContinueBtn(contAnim2);
   } else if (rState === 'levelSelect') {
     // ── 无金币 levelSelect：重玩 + 继续 ──
     this._exitBtn = null;
     this._doubleGoldBtn = null;
-    staggerIdx++;
-    var restAnim2 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var restAnim2 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
     _renderReplayBtn(restAnim2);
-    staggerIdx++;
-    var contAnim3 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 40);
+      var contAnim3 = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 40);
     this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
     _renderContinueBtn(contAnim3);
   } else {
@@ -638,8 +611,7 @@ VictoryPopup.prototype.render = function (ctx) {
     var exitBtnW = 100, exitBtnH = 42;
     var exitBtnX = (SCREEN_WIDTH - exitBtnW) / 2;
     var exitBtnY = CONT_BTN_Y + 3;
-    staggerIdx++;
-    var exitAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
+      var exitAnim = _elAnim(STAGGER_START + staggerIdx * STAGGER_INTERVAL + 20);
     this._exitBtn = { x: exitBtnX, y: exitBtnY, w: exitBtnW, h: exitBtnH };
     var exitLabel = rState === 'editor' ? '返回编辑' : '退出';
     ctx.save();

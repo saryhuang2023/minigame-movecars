@@ -15,6 +15,7 @@ const SELECTED_COLOR = '#2196F3';
 // 单张猪图中：尾部占比 / 头部占比，中段 = 1 - TAIL_SLICE - HEAD_SLICE
 const TAIL_SLICE = 0.37;
 const HEAD_SLICE = 0.51;
+const WIDTH_HEIGHT_RATE_MIN = 1.8; // 猪的长宽比的最小值
 
 // ============================================================
 // === canvas 工具 ===
@@ -147,7 +148,7 @@ class PigRenderer {
 
     // 猪太短时缩窄身高，保证头尾完整显示、不被裁切
     const maxBodyH = totalLen * parts.height / (tailSrcW + headSrcW);
-    const bodyH = Math.min(targetBodyH, maxBodyH);
+    const bodyH = Math.min(targetBodyH, maxBodyH, totalLen / WIDTH_HEIGHT_RATE_MIN);
 
     const imgScale = bodyH / parts.height;
     const drawH = bodyH;
