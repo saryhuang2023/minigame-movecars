@@ -618,6 +618,12 @@ class PlayingEngine {
         return;
       }
 
+      // 步数飞币测试按钮（_showTestBurstBtn=true 时可点击）
+      if (this._showTestBurstBtn && this._testBurstBtn && _hitRect(t.x, t.y, this._testBurstBtn)) {
+        this._testBurstEffect();
+        return;
+      }
+
       // 左上角金币（覆盖金币+文字整个区域）
       if (_hitRect(t.x, t.y, { x: 10, y: 78, w: 100, h: 50 })) {
         this._uiGoldWidget.triggerBreathe();
@@ -1368,6 +1374,23 @@ class PlayingEngine {
   }
 
   /**
+   * 测试按钮：触发 4 枚步数金币的炸开飞行动画（纯视觉，不关联任何游戏逻辑）
+   */
+  _testBurstEffect() {
+    audio.play('coin_fly');
+    var fromX = SCREEN_WIDTH - 41;
+    var fromY = 127;
+    var toX = 32;
+    var toY = 106;
+    for (var i = 0; i < 4; i++) {
+      var self = this;
+      setTimeout(function () {
+        self._coinFlyEffect.trigger(fromX, fromY, toX, toY, true);
+      }, i * 80);
+    }
+  }
+
+  /**
    * 步数金币飞行 ticker：1秒内均匀递减，每 tick 驱动：
    *   数字 -1 → 进度条 -1格 → 触发一枚金币磁吸飞行
    * ticker 完成 → startCrown() 奖杯动画
@@ -1394,8 +1417,9 @@ class PlayingEngine {
       // 更新展示公式用变量（同步：GoldSystem.getGold() - _stepBonusRemaining）
       self._stepBonusRemaining = Math.max(0, newRemaining);
 
-      // 触发金币磁吸飞行（与猪推出飞行共用 CoinFlyEffect + render 到达处理）
-      self._coinFlyEffect.trigger(fromX, fromY, toX, toY);
+      // 触发金币磁吸飞行（步数奖励=炸开模式）
+      audio.play('coin_fly');
+      self._coinFlyEffect.trigger(fromX, fromY, toX, toY, true);
 
       // 更新 CrownPigWidget 进度条和文字
       if (self._uiCrownPig) {
@@ -1534,6 +1558,22 @@ class PlayingEngine {
       this._victoryAnim.render(ctx);
       // 3.8 奖杯（UIManager）
       this._uiCrownPig.render(ctx);
+      // 3.85 步数飞币测试按钮（_showTestBurstBtn=true 时可见）
+      if (this._showTestBurstBtn && !this._showVictoryPanel) {
+        var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
+        ctx.fillStyle = 'rgba(33,150,243,0.6)';
+        ctx.beginPath();
+        ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px ' + Theme.font.family + '';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
+        this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
+      } else {
+        this._testBurstBtn = null;
+      }
       // 4. 顶栏（UIManager）
       this._uiTopBar.render(ctx);
       // 4.5. 金币余额（非通关时正常渲染；通关结算时浮于遮罩之上，保持延续性）
