@@ -1,11 +1,11 @@
 {
   "board": {
     "boardRate": 2.9,
-    "boardWidth": 365,
+    "boardWidth": 347,
     "oddCols": 5,
     "rows": 11
   },
-  "crownSteps": 100,
+  "crownSteps": 70,
   "pigs": [
     {
       "angle": 270,
@@ -110,14 +110,6 @@
       "id": 260,
       "length": 135,
       "tail": 94
-    },
-    {
-      "angle": 330.00000000000006,
-      "hintAngle": 330.00000000000006,
-      "hintId": 3,
-      "id": 261,
-      "length": 44,
-      "tail": 62
     },
     {
       "angle": 330,
@@ -278,6 +270,14 @@
       "id": 281,
       "length": 139,
       "tail": 2
+    },
+    {
+      "angle": 329.99999999999994,
+      "hintAngle": 329.99999999999994,
+      "hintId": 3,
+      "id": 282,
+      "length": 70,
+      "tail": 62
     }
   ],
   "ready": 1,

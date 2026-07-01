@@ -8,6 +8,7 @@ const commonIcons = require('../ui/commonIcons.js');
 const checkpointDialog = require('../ui/CheckpointDialog.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
+const SkinLoader = require('../entity/SkinLoader.js');
 const ShopPanel = require('../ui/ShopPanel.js');
 const Theme = require('../ui/Theme.js');
 const Easing = require('./Easing.js');
@@ -81,6 +82,9 @@ class GameEngine {
     var self = this;
     this._loadingMgr = new LoadingManager();
     this._loadingRdr = new LoadingRenderer(this._loadingMgr);
+
+    // 皮肤配置必须在 loading 启动前同步加载（frameCount 依赖 skin.json）
+    SkinLoader.loadSkinConfig(0);
 
     // 启动加载
     this._loadingMgr.start();

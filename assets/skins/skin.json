@@ -1,0 +1,4 @@
+{
+  "pig_0": { "idle": 11, "run": 8, "escape": 8, "hint": 8 },
+  "rock":  { "idle": 1,  "hint": 1 }
+}

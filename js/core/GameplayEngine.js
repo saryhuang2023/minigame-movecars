@@ -183,9 +183,25 @@ class GameplayEngine {
   // ---- OBB 矩形几何 ----
   // 返回 { cx, cy, hw, cosL, sinL, cosP, sinP, rad }
   // hw = 半长（沿方向）
-  getPigRect(tailIndex, length, angle) {
+  getPigRect(tailIndex, length, angle, entityType) {
     const tail = this.holes[tailIndex];
     if (!tail) return null;
+
+    // rock 精灵：圆心对齐孔洞中心，碰撞区 = 以孔心为圆心、直径/3 为半径的圆
+    if (entityType === 'rock') {
+      const capRadius = this.scaledDiameter / 3;
+      return {
+        cx: tail.x, cy: tail.y,
+        hw: 0,
+        collisionHw: 0, collisionHh: 0, collisionCx: tail.x, collisionCy: tail.y,
+        touchHw: capRadius, touchHh: capRadius, touchHeadExt: 0,
+        cosL: 0, sinL: 0, cosP: 0, sinP: 0, rad: 0,
+        capTailX: tail.x, capTailY: tail.y,
+        capHeadX: tail.x, capHeadY: tail.y,
+        capRadius: capRadius,
+        collisionCapRadius: capRadius
+      };
+    }
     const rad = angle * Math.PI / 180;
     const cosL = Math.cos(rad);
     const sinL = -Math.sin(rad);       // canvas y-flip
@@ -312,8 +328,8 @@ class GameplayEngine {
 
     // 当前是否已重叠？用 capRadius（占用半径，宽）而非 collisionCapRadius（碰撞半径，窄）
     // 因为视觉重叠对应的是占用半径级，碰撞半径仅为 1/2 会漏判
-    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
+    const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
     if (!cr || !ob) return false;
     const crWide = { ...cr, collisionCapRadius: undefined };
     const obWide = { ...ob, collisionCapRadius: undefined };
@@ -342,8 +358,8 @@ class GameplayEngine {
     const other = this.pigs.find(p => p.id === otherPigId);
     if (!other) return false;
 
-    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
-    const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
+    const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
     if (!cr || !ob) return false;
 
     // 当前不重叠 → 不豁免（用 capRadius 宽检测，与视觉重叠保持一致）
@@ -404,7 +420,7 @@ class GameplayEngine {
     };
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
-      const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
       if (!ob) continue;
       if (this._capsuleIntersect(moved, ob)) return other.id;
     }
@@ -429,7 +445,7 @@ class GameplayEngine {
   getPigAtPoint(x, y) {
     const offY = this.topBarH + this.boardOffsetY;
     for (const pig of this.pigs) {
-      const r = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+      const r = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
       if (!r) continue;
       const px = (x - this.boardOffsetX) - r.cx;
       const py = (y - offY) - r.cy;
@@ -488,7 +504,7 @@ class GameplayEngine {
     // ② 胶囊碰撞（已重叠的后退可以豁免）
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
-      const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
       if (!ob) continue;
       if (this._capsuleIntersect(r, ob)) {
         if (this._isRetreatingFrom(excludeId, tailIdx, len, angle, other.id)) continue;
@@ -634,7 +650,7 @@ class GameplayEngine {
     if (!pr) return false;
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
-      const ob = this.getPigRect(other.tailIndex, other.length, other.angle);
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
       if (!ob) continue;
       if (this._capsuleIntersect(pr, ob)) return false;
     }
@@ -862,7 +878,7 @@ class GameplayEngine {
     const pig = this.pigs.find(p => p.id === pigId);
     if (!pig) return { canPush: false, reason: '猪不存在' };
 
-    const r0 = this.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    const r0 = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
     if (!r0) return { canPush: false, reason: '无有效位置' };
 
     const rad = pig.angle * Math.PI / 180;
@@ -1063,7 +1079,7 @@ class GameplayEngine {
       // 正常绘制
       pr.draw(ctx, pig, off.dx, off.dy, drawAnim);
 
-      // 染色（离屏隔离，通过 drawTinted 内部复用 _drawPigImage 保证抖动同步）
+      // 染色（离屏隔离，通过 drawTinted 内部复用 _drawPigImage/_drawRockTinted 保证抖动同步）
       if (tint) {
         pr.drawTinted(ctx, pig, off.dx, off.dy, drawAnim, tint);
       }

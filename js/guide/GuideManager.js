@@ -21,7 +21,6 @@ class GuideManager {
     this._idleTime = 0;             // 空闲计时器（秒），touchend 时清零
 
     // --- 诊断用 ---
-    this._lastHeartbeat = 0;        // 上次心跳日志时间戳
     this._lastSkipLogTs = {};       // 每个 guide 上次打"跳过"日志的时间
     this._loggedReset = false;      // 是否已打过 reset 日志（防重复）
   }
@@ -47,17 +46,6 @@ class GuideManager {
 
     // --- 心跳日志：每 5 秒报告一次状态 ---
     var now = Date.now();
-    if (!this._lastHeartbeat || now - this._lastHeartbeat > 5000) {
-      this._lastHeartbeat = now;
-      var completedList = Object.keys(this._completedGuides).join(',');
-      console.log('[LOG] GuideManager 心跳 — level=' + state.levelName +
-        ' idle=' + this._idleTime.toFixed(1) + 's' +
-        ' active=' + (this._activeGuide ? this._activeGuide.id : 'null') +
-        ' completed=[' + completedList + ']' +
-        ' pigs=' + this._engine.gp.pigs.length +
-        ' ghostLen=' + this._engine.gp.ghostAnimations.length);
-    }
-
     if (this._activeGuide) {
       // 活跃引导 → 更新 + 检查结束条件
       this._activeGuide.onUpdate(dt, state, this._engine);
@@ -80,14 +68,7 @@ class GuideManager {
         if (g.checkCondition(state, this._engine)) {
           this._activateGuide(g);
           break; // 同时只激活一个
-        } else {
-          // checkCondition 返回 false，每 3 秒打一次
-          if (!this._lastSkipLogTs[g.id] || now - this._lastSkipLogTs[g.id] > 3000) {
-            console.log('[LOG] GuideManager skip ' + g.id + ' — 条件不满足（level=' + state.levelName +
-              ' idle=' + state.idleTime.toFixed(1) + 's）');
-            this._lastSkipLogTs[g.id] = now;
-          }
-        }
+        } 
       }
     }
   }
@@ -117,7 +98,6 @@ class GuideManager {
     }
     this._idleTime = 0;
     // 重置心跳计时器，确保新关卡立即能打心跳
-    this._lastHeartbeat = 0;
     this._lastSkipLogTs = {};
     this._lastActionLogTs = 0;
   }

@@ -6,7 +6,7 @@ const Easing = require('../core/Easing.js');
 
 const GROW_DURATION = 1600;   // 0→1.2x 缩放 ms
 const HOLD_DURATION = 1000;   // 1.2x 停留 ms
-const SUCK_DURATION = 800;    // 吸入目的地 ms
+const SUCK_DURATION = 530;    // 吸入目的地 ms (原 800，缩短 1/3)
 const MAX_SCALE = 1.2;        // 中央亮相最大缩放
 
 // 奖杯目标位置（与 CrownPigWidget 对齐）

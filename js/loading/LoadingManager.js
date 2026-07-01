@@ -210,6 +210,16 @@ LoadingManager.prototype._tickPhase1 = function () {
   var phaseProgress = idleRatio * 0.50 + imgRatio * 0.25 + fontRatio * 0.25;
   this._progress = phaseProgress * w.phase1;
 
+  if (this._p1.idleLoaded !== (this._lastP1Idle || 0) ||
+      this._p1.imgLoaded !== (this._lastP1Img || 0)) {
+    this._lastP1Idle = this._p1.idleLoaded;
+    this._lastP1Img = this._p1.imgLoaded;
+    console.log('[LOG_load] P1 idle=' + this._p1.idleLoaded + '/' + p1.idleFrameCount
+      + ' img=' + this._p1.imgLoaded + '/' + p1.images.length
+      + ' font=' + this._p1.fontLoaded
+      + ' progress=' + this._progress.toFixed(3));
+  }
+
   // 检查阶段完成
   if (this._p1.idleLoaded >= p1.idleFrameCount &&
       this._p1.imgLoaded >= p1.images.length &&

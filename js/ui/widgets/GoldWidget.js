@@ -117,6 +117,14 @@ GoldWidget.prototype.forceSet = function (gold) {
 GoldWidget.prototype.triggerBreathe = function () {
   this._breatheStart = Date.now();
   this._breatheActive = true;
+  this._burstBreathe = false;
+};
+
+/** 触发强力呼吸（2倍幅度，步数金币到账时用） */
+GoldWidget.prototype.triggerBurstBreathe = function () {
+  this._breatheStart = Date.now();
+  this._breatheActive = true;
+  this._burstBreathe = true;
 };
 
 /** 获取当前呼吸缩放值 */
@@ -126,12 +134,14 @@ GoldWidget.prototype._getBreatheScale = function () {
   var elapsed = Date.now() - this._breatheStart;
   if (elapsed >= this._BREATHE_DURATION) {
     this._breatheActive = false;
+    this._burstBreathe = false;
     return 1;
   }
 
   var t = elapsed / this._BREATHE_DURATION;
   var pulse = Math.abs(Math.sin(t * Math.PI));
-  return 1 + pulse * this._BREATHE_AMPLITUDE;
+  var amp = this._burstBreathe ? this._BREATHE_AMPLITUDE * 2 : this._BREATHE_AMPLITUDE;
+  return 1 + pulse * amp;
 };
 
 /** 金币到达时弹出 "+N" 浮动文字 */

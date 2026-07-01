@@ -2,8 +2,11 @@
 // 从 GameplayEngine 抽离，减少 token 消耗
 // require/module.exports，wx API
 // v26.13: 三宫格单图切片 → 尾固定/中拉伸/头固定，替代三图拼接
+// v27: 支持多精灵类型，rock 走简单图片绘制
 
 const databus = require('../databus');
+const SkinLoader = require('../entity/SkinLoader.js');
+const { entityKey } = require('../entity/EntityTypes.js');
 
 const PIG_COLOR = '#FFD700';
 const PIG_STROKE = '#FFB300';
@@ -85,7 +88,7 @@ class PigRenderer {
 
   // ---- 坐标计算辅助 ----
   _pigCenter(pig, offDx, offDy) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig));
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig), pig.type);
     if (!r) return null;
     const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
     const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
@@ -179,9 +182,77 @@ class PigRenderer {
     return true;
   }
 
+  // ---- rock 染色（离屏画布，无旋转无抖动，source-atop 上色） ----
+  _drawRockTinted(targetCtx, pig, offDx, offDy, tint) {
+    var parts = _loadRockParts('rock', AnimType.IDLE);
+    var frameImg = parts ? parts.frameImg : null;
+    if (!frameImg) return;
+
+    // 屏幕坐标（用于最终贴回目标画布）
+    var r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle || 0, pig.type);
+    if (!r) return;
+
+    var d = this.e.scaledDiameter;
+    var rockSize = Math.ceil(d * 1.2);
+    var pad = 8;
+    var ocW = rockSize + pad * 2;
+    var ocH = ocW;
+
+    if (!this._overlayRockOC) this._overlayRockOC = wx.createCanvas();
+    var oc = this._overlayRockOC;
+    if (oc.width !== ocW || oc.height !== ocH) {
+      oc.width = ocW; oc.height = ocH;
+    }
+    var octx = oc.getContext('2d');
+    octx.clearRect(0, 0, ocW, ocH);
+
+    // rock 图片居中（不旋转、不抖动）
+    octx.drawImage(frameImg, pad, pad, rockSize, rockSize);
+
+    // source-atop 染色
+    octx.globalCompositeOperation = 'source-atop';
+    octx.globalAlpha = tint.alpha;
+    octx.fillStyle = tint.color;
+    octx.fillRect(0, 0, ocW, ocH);
+    octx.globalCompositeOperation = 'source-over';
+    octx.globalAlpha = 1;
+
+    // 叠回目标画布
+    var cx = this.e.boardOffsetX + r.cx + (offDx || 0);
+    var cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
+    targetCtx.drawImage(oc, cx - ocW / 2, cy - ocH / 2);
+  }
+
+  // ---- rock 精灵绘制：单图居中，无拉伸无抖动 ----
+  _drawRock(ctx, pig, offDx, offDy, animType) {
+    // rock 无皮肤，entityKey 固定为 'rock'
+    animType = animType || AnimType.IDLE;
+    var parts = _loadRockParts('rock', animType);
+    var frameImg = parts ? parts.frameImg : null;
+    if (!frameImg) return null;
+
+    // 计算屏幕坐标
+    var r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle || 0, pig.type);
+    if (!r) return null;
+    var cx = this.e.boardOffsetX + r.cx + (offDx || 0);
+    var cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
+    var d = this.e.scaledDiameter;
+    var size = d * 1.2;  // 略大于孔
+
+    ctx.save();
+    ctx.drawImage(frameImg, cx - size / 2, cy - size / 2, size, size);
+    ctx.restore();
+    return { cx, cy, rad: 0, totalLen: d };
+  }
+
   // ---- 正常猪绘制 ----
   // animType: 可选 AnimType 枚举值，不传则自动判断（拖拽→RUN，否则→IDLE）
   draw(ctx, pig, offDx, offDy, animType) {
+    // rock 类型：简单图片绘制，不拉伸不抖动不旋转
+    if (pig.type === 'rock') {
+      return this._drawRock(ctx, pig, offDx, offDy, animType);
+    }
+
     const c = this._pigCenter(pig, offDx, offDy);
     if (!c) return null;
 
@@ -217,10 +288,16 @@ class PigRenderer {
     return c;
   }
 
-  // ---- 染色猪绘制（离屏隔离，避免 source-atop 污染主画布） ----
-  // 内部调用 draw() 保证抖动/帧号完全同步，然后 source-atop 染色，最后叠回目标画布
+  // ---- 染色精灵绘制（离屏隔离，避免 source-atop 污染主画布） ----
+  //猪：内部调用 _drawPigImage 保证抖动/帧号完全同步，然后 source-atop 染色，最后叠回目标画布
+  //rock：无旋转/无抖动，画单张图片后 source-atop 染色
   drawTinted(targetCtx, pig, offDx, offDy, animType, tint) {
     if (!tint || tint.alpha <= 0) return;
+
+    // rock 精灵：走简化染色流程
+    if (pig.type === 'rock') {
+      return this._drawRockTinted(targetCtx, pig, offDx, offDy, tint);
+    }
 
     const c = this._pigCenter(pig, offDx, offDy);
     if (!c) return;
@@ -277,7 +354,7 @@ class PigRenderer {
     octx.restore();
 
     // 叠回目标画布
-    const pigR = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig));
+    const pigR = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig), pig.type);
     if (!pigR) return;
     const screenCx = this.e.boardOffsetX + pigR.cx + (offDx || 0);
     const screenCy = this.e.topBarH + this.e.boardOffsetY + pigR.cy + (offDy || 0);
@@ -286,7 +363,7 @@ class PigRenderer {
 
   // ---- 头部中心绿点 ----
   drawHeadDot(ctx, pig, offDx, offDy) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
     if (!r) return;
     const hsc = this.e._headSquareCenter(r);
     const cx = this.e.boardOffsetX + hsc.x + (offDx || 0);
@@ -298,7 +375,7 @@ class PigRenderer {
   }
   // ---- 碰撞区空心虚线外轮廓（胶囊体：两端半圆 + 两条平行边） ----
   drawCollisionBox(ctx, pig, offDx, offDy) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle);
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
     if (!r) return;
     const bx = this.e.boardOffsetX + (offDx || 0);
     const by = this.e.topBarH + this.e.boardOffsetY + (offDy || 0);
@@ -336,7 +413,9 @@ let _pigParts = null;
 function _loadPigParts() {
   if (_pigParts) return _pigParts;
 
-  var base = 'assets/skins/0/idle/';
+  var base = SkinLoader.getSkinFramePath(0, 'pig_0', 'idle', 0).replace(/\/\d+\.png$/, '/');
+  var frameCount = SkinLoader.getAnimFrameCount(0, 'pig_0', 'idle');
+  console.log('[LOG_load] _loadPigParts base=' + base + ' frameCount=' + frameCount);
   var parts = {
     frameImg: wx.createImage(),
     _loaded: false,
@@ -344,7 +423,8 @@ function _loadPigParts() {
 
     idleFrameImgs: [],
     _idleLoaded: 0,
-    get idleAllLoaded() { return this._idleLoaded >= IDLE_FRAME_COUNT; }
+    _frameCount: frameCount,
+    get idleAllLoaded() { return this._idleLoaded >= frameCount; }
   };
 
   Object.defineProperty(parts, 'allLoaded', {
@@ -352,16 +432,23 @@ function _loadPigParts() {
   });
 
   // 加载首帧（也用作 drawComposedPig 等静态场景）
-  parts.frameImg.src = base + '1.png';
+  var url = base + '1.png';
+  console.log('[LOG_load] 加载首帧: ' + url);
+  parts.frameImg.src = url;
   parts.frameImg.onload = function() {
+    console.log('[LOG_load] 首帧 onload: ' + url);
     parts._loaded = true;
     parts.frameW = parts.frameImg.width;
     parts.height = parts.frameImg.height;
     parts.idleFrameImgs[0] = parts.frameImg;
     parts._idleLoaded++;
   };
+  parts.frameImg.onerror = function(e) {
+    console.error('[LOG_load] 首帧 onerror: ' + url + ' err=' + (e && e.message));
+    parts._idleLoaded++;
+  };
 
-  _preloadFrames(parts, base, IDLE_FRAME_COUNT);
+  _preloadFrames(parts, base, frameCount);
 
   _pigParts = parts;
   return parts;
@@ -475,6 +562,29 @@ function _loadHintParts() {
   return parts;
 }
 
+// ---- rock parts (多 entityKey 缓存) ----
+let _rockParts = {};  // { entityKey: { animType: parts } }
+
+function _loadRockParts(entityKey, animType) {
+  // rock 只有 idle 和 hint anim，统一用 idle
+  animType = (animType === 'hint' || animType === AnimType.HINT) ? 'hint' : 'idle';
+  if (!_rockParts[entityKey]) _rockParts[entityKey] = {};
+  if (_rockParts[entityKey][animType]) return _rockParts[entityKey][animType];
+
+  var base = SkinLoader.getSkinFramePath(0, entityKey, animType, 0).replace(/\/\d+\.png$/, '/');
+  var parts = {
+    frameImg: wx.createImage(),
+    _loaded: false,
+  };
+  parts.frameImg.src = base + '1.png';
+  parts.frameImg.onload = function () {
+    parts._loaded = true;
+  };
+
+  _rockParts[entityKey][animType] = parts;
+  return parts;
+}
+
 // ---- seq frame lazy loader ----
 function _preloadFrames(parts, base, frameCount) {
   for (var i = 2; i <= frameCount; i++) {
@@ -483,12 +593,15 @@ function _preloadFrames(parts, base, frameCount) {
 }
 function _loadOneFrame(parts, base, i) {
   var img = wx.createImage();
-  img.src = base + i + '.png';
+  var url = base + i + '.png';
+  img.src = url;
   img.onload = function() {
+    console.log('[LOG_load] frame ' + i + ' ok');
     parts.idleFrameImgs[i - 1] = img;
     parts._idleLoaded++;
   };
-  img.onerror = function() {
+  img.onerror = function(e) {
+    console.error('[LOG_load] frame ' + i + ' FAIL: ' + url + ' err=' + (e && e.message));
     // 加载失败也计数，避免 idleAllLoaded 永远为 false；降级继续用首帧
     parts._idleLoaded++;
   };
@@ -605,22 +718,25 @@ function drawMenuIdlePig(ctx, x, y, targetWidth) {
  */
 function preloadIdle(onProgress) {
   var parts = _loadPigParts(); // 启动加载（首帧开始，2~11 异步排队）
+  // parts._frameCount 在 _loadPigParts 中设置，与 skin.json 一致
+  var total = parts._frameCount || IDLE_FRAME_COUNT;
+  console.log('[LOG_load] preloadIdle total=' + total + ' initLoaded=' + parts._idleLoaded + ' idleAll=' + parts.idleAllLoaded);
   if (parts.idleAllLoaded) {
-    // 已经全部就绪（首次调用过后再调）
-    if (onProgress) onProgress(IDLE_FRAME_COUNT, IDLE_FRAME_COUNT);
+    if (onProgress) onProgress(total, total);
     return;
   }
 
   var lastCount = parts._idleLoaded;
-  if (onProgress) onProgress(lastCount, IDLE_FRAME_COUNT);
+  if (onProgress) onProgress(lastCount, total);
 
   var timer = setInterval(function () {
     if (parts._idleLoaded !== lastCount) {
       lastCount = parts._idleLoaded;
-      if (onProgress) onProgress(lastCount, IDLE_FRAME_COUNT);
+      if (onProgress) onProgress(lastCount, total);
     }
     if (parts.idleAllLoaded) {
       clearInterval(timer);
+      if (onProgress) onProgress(total, total);  // 确保最终回调
     }
   }, 100);
 }

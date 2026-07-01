@@ -1,0 +1,109 @@
+{
+  "board": {
+    "boardRate": 2.9,
+    "boardWidth": 336,
+    "oddCols": 3,
+    "rows": 4
+  },
+  "crownSteps": 8,
+  "pigs": [
+    {
+      "angle": 0,
+      "id": 9,
+      "length": 50,
+      "tail": 14,
+      "type": "rock"
+    },
+    {
+      "angle": 0,
+      "id": 10,
+      "length": 50,
+      "tail": 15,
+      "type": "rock"
+    },
+    {
+      "angle": 0,
+      "id": 11,
+      "length": 50,
+      "tail": 16,
+      "type": "rock"
+    },
+    {
+      "angle": 0,
+      "id": 12,
+      "length": 50,
+      "tail": 17,
+      "type": "rock"
+    },
+    {
+      "angle": 0,
+      "id": 13,
+      "length": 50,
+      "tail": 0,
+      "type": "rock"
+    },
+    {
+      "angle": 0,
+      "id": 14,
+      "length": 50,
+      "tail": 1,
+      "type": "rock"
+    },
+    {
+      "angle": 0,
+      "id": 15,
+      "length": 50,
+      "tail": 2,
+      "type": "rock"
+    },
+    {
+      "angle": 0,
+      "id": 16,
+      "length": 50,
+      "tail": 3,
+      "type": "rock"
+    },
+    {
+      "angle": 209.99999999999997,
+      "hintAngle": 270,
+      "hintId": 5,
+      "id": 17,
+      "length": 70,
+      "tail": 7
+    },
+    {
+      "angle": 210.00000000000003,
+      "hintAngle": 210.00000000000003,
+      "hintId": 1,
+      "id": 21,
+      "length": 70,
+      "tail": 13
+    },
+    {
+      "angle": 210.00000000000003,
+      "hintAngle": 270,
+      "hintId": 2,
+      "id": 22,
+      "length": 70,
+      "tail": 12
+    },
+    {
+      "angle": 30.000000000000014,
+      "hintAngle": 270,
+      "hintId": 4,
+      "id": 23,
+      "length": 70,
+      "tail": 8
+    },
+    {
+      "angle": 90,
+      "hintAngle": 330,
+      "hintId": 3,
+      "id": 24,
+      "length": 70,
+      "tail": 6
+    }
+  ],
+  "ready": 0,
+  "version": 6
+}

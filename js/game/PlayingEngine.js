@@ -143,7 +143,6 @@ class PlayingEngine {
     this._hint.clear();
     this._guide.reset();
     this._lastFrameTime = 0;       // 防止切关卡时 dt 突增
-    this._pendingResume = false;    // 防御：每次重置关卡状态都清理恢复标志
     // 奖杯状态
     this._hadCrownBefore = !!wx.getStorageSync('crown_' + databus.currentLevelIndex);
     this._gotCrown = this._hadCrownBefore;
@@ -474,6 +473,7 @@ class PlayingEngine {
     this._lastSavedSteps = -1;
     this._lastSavedPigCount = -1;
     // 恢复存档（如果有）
+    console.log('[LOG_cp] _loadAndStart _pendingResume=' + this._pendingResume);
     if (this._pendingResume) {
       this._pendingResume = false;
       this._doResume();
@@ -500,10 +500,13 @@ class PlayingEngine {
     if (!databus._checkpointResume) {
       var cp;
       try { cp = wx.getStorageSync('game_checkpoint'); } catch (e) { cp = null; }
+      console.log('[LOG_cp] activate 自检: cp=' + !!cp + ' name=' + name + ' cpLevelName=' + (cp && cp.levelName));
       if (cp && cp.levelName === name) {
-        console.log('[LOG] activate自检: 发现存档 level=' + name + ' step=' + cp.steps + '，设置恢复标记');
+        console.log('[LOG_cp] activate 自检匹配！设置恢复标记');
         databus._checkpointResume = true;
       }
+    } else {
+      console.log('[LOG_cp] activate _checkpointResume 已设置，跳过自检');
     }
     var resume = !!databus._checkpointResume;
     if (resume) databus._checkpointResume = false;
@@ -531,10 +534,14 @@ class PlayingEngine {
     this._levelVersion = (data && data.version) || 0;
     this.gp.pigs = (data && data.pigs ? data.pigs : []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
+      type: p.type || 'pig', skinId: p.skinId || 0,
       hintId: p.hintId != null ? p.hintId : null,
       hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
     }));
-    this._totalPigsInLevel = this.gp.pigs.length;  // 快照原始猪数量，结算奖励用（不受 setTimeout 异步时序影响）
+    var EntityTypes = require('../entity/EntityTypes.js');
+    this._totalPigsInLevel = this.gp.pigs.filter(function(p) {
+      return EntityTypes.entityProps(p).canEscape;
+    }).length;
     this.gp.dragState = null;
     this.gp.flashingPigs = {};
     this.gp.animations = [];
@@ -796,7 +803,11 @@ class PlayingEngine {
     const hit = this.gp.getPigAtPoint(boardPos.x, boardPos.y);
     if (hit) {
       const pig = this.gp.pigs.find(p => p.id === hit.id);
-      if (pig) {
+      // rock 不可拖拽，不可旋转/逃脱，但点击播放受击动画（染色）
+      if (pig && pig.type === 'rock') {
+        audio.play('collide');
+        this.gp.triggerCollisionEffect(hit.id);
+      } else if (pig) {
         this.gp.dragState = {
           type: 'rotate',
           pigId: pig.id,
@@ -987,8 +998,9 @@ class PlayingEngine {
         this._trialEscapeSequence.push({ pigId: pigId, angle: pig.angle });
       }
 
-      // 所有猪都逃脱 → 通关
-      if (this.gp.pigs.length === 0) {
+      // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算）
+      var canEscapeRemaining = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
+      if (canEscapeRemaining === 0) {
         this._markCleared();
         this._victory = true;
         this._victoryTime = Date.now();
@@ -1465,6 +1477,7 @@ class PlayingEngine {
       // 触发金币磁吸飞行（步数奖励=炸开模式）
       audio.play('coin_fly');
       self._coinFlyEffect.trigger(fromX, fromY, toX, toY, true);
+      if (self._uiGoldWidget) self._uiGoldWidget.triggerBurstBreathe();
 
       // 更新 CrownPigWidget 进度条和文字
       if (self._uiCrownPig) {
@@ -1653,27 +1666,27 @@ class PlayingEngine {
       // board 或 pigs 阶段：不渲染任何 UI 控件
     }
 
-    // 5.5 测试按钮（飞币 + 奖杯）— 已注释，需用时取消注释
-    // var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
-    // var awardBx = testBx - testBw - 6;
-    //   // "奖" 按钮
-    //   ctx.fillStyle = 'rgba(255,152,0,0.7)';
-    //   ctx.beginPath();
-    //   ctx.arc(awardBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
-    //   ctx.fill();
-    //   ctx.fillStyle = '#fff';
-    //   ctx.font = 'bold 12px ' + Theme.font.family + '';
-    //   ctx.textAlign = 'center';
-    //   ctx.textBaseline = 'middle';
-    //   ctx.fillText('奖', awardBx + testBw / 2, testBy + testBh / 2);
-    //   // "币" 按钮
-    //   ctx.fillStyle = 'rgba(33,150,243,0.6)';
-    //   ctx.beginPath();
-    //   ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
-    //   ctx.fill();
-    //   ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
-    //   this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
-    //   this._testAwardBtn = { x: awardBx, y: testBy, w: testBw, h: testBh };
+    // 5.5 测试按钮（飞币 + 奖杯）
+    var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
+    var awardBx = testBx - testBw - 6;
+    // "奖" 按钮
+    ctx.fillStyle = 'rgba(255,152,0,0.7)';
+    ctx.beginPath();
+    ctx.arc(awardBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px ' + Theme.font.family + '';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('奖', awardBx + testBw / 2, testBy + testBh / 2);
+    // "币" 按钮
+    ctx.fillStyle = 'rgba(33,150,243,0.6)';
+    ctx.beginPath();
+    ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
+    this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
+    this._testAwardBtn = { x: awardBx, y: testBy, w: testBw, h: testBh };
 
     // 6. 通关弹窗（UIManager）
     if (this._victory && this._showVictoryPanel) {
@@ -1744,7 +1757,8 @@ class PlayingEngine {
     this._hint.clear();
 
     // 所有猪都消失 → 通关
-    if (this.gp.pigs.length === 0) {
+    var canEscapeRemaining2 = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
+    if (canEscapeRemaining2 === 0) {
       this._markCleared();
       this._victory = true;
       this._victoryTime = Date.now();
@@ -1789,7 +1803,7 @@ class PlayingEngine {
       console.log('[LOG] 跳过保存: 已通关 (_victory=true)');
       return;
     }
-    if (this.gp.pigs.length === 0) {
+    if (!this.gp.pigs.some(function(p) { return p.type !== 'rock'; })) {
       console.log('[LOG] 跳过保存: 猪已全消');
       return;
     }
@@ -1849,6 +1863,7 @@ class PlayingEngine {
     try {
       cp = wx.getStorageSync('game_checkpoint');
     } catch (e) { cp = null; }
+    console.log('[LOG_cp] _doResume: cp=' + !!cp + ' level=' + (cp && cp.levelName) + ' steps=' + (cp && cp.steps) + ' version=' + (cp && cp.version) + ' currentVersion=' + this._levelVersion);
     if (!cp) return;
 
     // 版本校验：关卡配置已更新则重新开始

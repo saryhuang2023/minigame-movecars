@@ -2,6 +2,8 @@
 // 纯 Canvas 2D 渲染，无 DOM 依赖
 // require/module.exports，wx API，InputManager 事件路由
 
+const { entityProps, entityKey, entityLabel, PRESET_LENGTHS } = require('../entity/EntityTypes.js');
+
 // wxfile://usr 在开发者工具中对应真实文件系统路径
 // 仅用于日志输出，fs.writeFileSync 仍走 wxfile 协议
 const WXFILE_USR_REAL = (() => {
@@ -48,8 +50,8 @@ class EditorEngine {
     this._btnPress = new ButtonPress(); // 按钮按压微交互
 
     // ===== 预设猪长度 =====
+    this._selectedEntityType = 'pig';       // 当前选中精灵类型
     this._presetLength = null;        // null=灵活, 70/125/205/280/380=固定长度
-    this._presetLengthLabel = '灵活';   // 当前选中按钮标签
 
     // ===== Toast =====
     this.toastText = '';
@@ -339,6 +341,10 @@ class EditorEngine {
 
   // 移动超过阈值 → 激活拖拽（原 handleEditTouchStart 中拖拽初始化逻辑）
   _activatePigDrag(pig, pigInfo) {
+    // 非可拖拽类型（如 rock）不进入拖拽
+    var props = entityProps(pig);
+    if (!props.draggable) return;
+
     const isHead = pigInfo.offset >= pigInfo.totalLen - this.gp.scaledHeadZone;
     this.gp.dragState = null;
 
@@ -449,9 +455,11 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    // 预设长度模式下使用固定长度；灵活模式下根据拖拽距离计算
+    // rock 精灵固定长度 = 孔直径（REFERENCE_DIAMETER），不受拖拽距离/预设影响
     var len;
-    if (this._presetLength != null) {
+    if (this._selectedEntityType === 'rock') {
+      len = 50;
+    } else if (this._presetLength != null) {
       len = this._presetLength;
     } else {
       len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
@@ -532,9 +540,11 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    // 预设长度模式下使用固定长度；灵活模式下根据拖拽距离计算
+    // rock 精灵固定长度 = 孔直径（REFERENCE_DIAMETER），不受拖拽距离/预设影响
     var len;
-    if (this._presetLength != null) {
+    if (this._selectedEntityType === 'rock') {
+      len = 50;
+    } else if (this._presetLength != null) {
       len = this._presetLength;
     } else {
       len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
@@ -561,7 +571,8 @@ class EditorEngine {
         this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
       }
       const tempId = -999;
-      this.gp.pigs.push({ id: tempId, tailIndex: cfg.tailIndex, length: cfg.length, angle: cfg.angle });
+      this.gp.pigs.push({ id: tempId, tailIndex: cfg.tailIndex, length: cfg.length, angle: cfg.angle,
+        type: this._selectedEntityType || 'pig' });
       this.gp.dragState.pendingId = tempId;
       this.gp.updatePigOccupancy(tempId, cfg.tailIndex, cfg.length, cfg.angle);
     }
@@ -630,28 +641,44 @@ class EditorEngine {
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== this.gp.dragState.pendingId);
       this.gp.rebuildOccupancy();
       if (lv) {
-        const snapped = this._snapWithLengthFallback(
-          lv.tailIndex, lv.length, lv.angle, undefined
-        );
-        if (snapped) {
+        // rock 精灵：固定角度=0、长度=50，跳过 snap
+        var finalLen, finalAngle, finalTail;
+        if (this._selectedEntityType === 'rock') {
+          finalLen = 50;
+          finalAngle = 0;
+          finalTail = lv.tailIndex;
+        } else {
+          const snapped = this._snapWithLengthFallback(
+            lv.tailIndex, lv.length, lv.angle, undefined
+          );
+          if (snapped) {
+            finalLen = snapped.length;
+            finalAngle = snapped.angle;
+            finalTail = snapped.tailIndex;
+          } else {
+            finalLen = null;
+          }
+        }
+        if (finalLen != null) {
           let realId;
           if (this.gp.dragState.pigId != null) {
             realId = this.gp.dragState.pigId;
             // 保留原猪的 hintId/hintAngle
             var origPig = this.gp.dragState.originalPig;
-            this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle,
+            this.gp.pigs.push({ id: realId, tailIndex: finalTail, length: finalLen, angle: finalAngle,
               hintId: (origPig && origPig.hintId != null) ? origPig.hintId : null,
-              hintAngle: (origPig && origPig.hintAngle != null) ? origPig.hintAngle : snapped.angle });
+              hintAngle: (origPig && origPig.hintAngle != null) ? origPig.hintAngle : finalAngle });
             this.gp.selectedPigId = realId;
           } else {
             realId = this.gp.nextPigId++;
-            this.gp.pigs.push({ id: realId, tailIndex: snapped.tailIndex, length: snapped.length, angle: snapped.angle });
+            this.gp.pigs.push({ id: realId, tailIndex: finalTail, length: finalLen, angle: finalAngle,
+              type: this._selectedEntityType || 'pig' });
             this.gp.selectedPigId = realId;
           }
           for (let i = 0; i < this.gp.holeOccupied.length; i++) {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
           }
-          this.gp.updatePigOccupancy(realId, snapped.tailIndex, snapped.length, snapped.angle);
+          this.gp.updatePigOccupancy(realId, finalTail, finalLen, finalAngle);
           this.markCurrentDirty();
         } else {
           // 无法落孔 → 清理 temp 占用
@@ -747,6 +774,8 @@ class EditorEngine {
     base.board = { rows: this.gp.rows, oddCols: this.gp.oddCols, boardWidth: this.gp.boardWidth, boardRate: this.gp.boardRate };
     base.pigs = this.gp.pigs.map(p => {
       const obj = { id: p.id, tail: p.tailIndex, length: p.length, angle: p.angle };
+      if (p.type && p.type !== 'pig') obj.type = p.type;
+      if (p.skinId) obj.skinId = p.skinId;
       if (p.hintId != null) {
         obj.hintId = p.hintId;
         obj.hintAngle = (p.hintAngle != null) ? p.hintAngle : p.angle;
@@ -768,6 +797,7 @@ class EditorEngine {
     this._crownSteps = (data && data.crownSteps) || 0;
     this.gp.pigs = (data.pigs || []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
+      type: p.type || 'pig', skinId: p.skinId || 0,
       hintId: p.hintId != null ? p.hintId : null,
       hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
     }));
@@ -1259,24 +1289,10 @@ class EditorEngine {
       var dir = `${wx.env.USER_DATA_PATH}/levels`;
       try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
 
-      var skippedLocal = 0;
       for (var entry of Object.entries(payload)) {
         var name = entry[0];
         var info = entry[1];
         var fileName = name + '.json';
-
-        // 云端仅做增量补充：本地已有关卡配置则跳过
-        var localExists = false;
-        try { fs.accessSync(`${dir}/${fileName}`); localExists = true; } catch (e) {}
-        if (!localExists) {
-          try { fs.accessSync('assets/levels/' + fileName); localExists = true; } catch (e) {}
-        }
-        if (localExists) {
-          skippedLocal++;
-          // 仍保存 .meta 以便版本追踪
-          this._saveCloudMeta(name, info._id, info.version);
-          continue;
-        }
 
         info.data.version = info.version;
         if (info.data.crownSteps == null && info.crownSteps != null) {
@@ -1290,9 +1306,7 @@ class EditorEngine {
         fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(info.data, null, 2), 'utf8');
         this._saveCloudMeta(name, info._id, info.version);
       }
-      if (skippedLocal > 0) {
-        console.log('[Cloud] 跳过 ' + skippedLocal + ' 个本地已有的关卡（云端仅做补充）');
-      }
+      console.log('[Cloud] 云端数据已覆盖本地: ' + Object.keys(payload).length + ' 个关卡');
     } catch (e) {
       console.warn('[Cloud] 批量下载失败，回退到逐个下载:', e);
       await this._pullCloudLevelsFallback();
@@ -1311,47 +1325,29 @@ class EditorEngine {
 
     const minLevel = range.minLevel || 0;
     const maxLevel = range.maxLevel || 0;
-    var skippedLocal = 0;
     for (let lv = minLevel; lv <= maxLevel; lv++) {
       var name = String(lv).padStart(4, '0');
       var fileName = name + '.json';
-
-      // 云端仅做增量补充：本地已有关卡配置则跳过
-      var localExists = false;
-      try { fs.accessSync(`${dir}/${fileName}`); localExists = true; } catch (e) {}
-      if (!localExists) {
-        try { fs.accessSync('assets/levels/' + fileName); localExists = true; } catch (e) {}
-      }
-      if (localExists) {
-        skippedLocal++;
-        continue;
-      }
 
       try {
         const full = await cloud.downloadLevel(null, name, false);
         if (full && full.data) {
           const cloudVersion = (full.version != null) ? full.version : (full._version || 1);
           full.data.version = cloudVersion;
-          // crownSteps 双保险：优先用 full.data 内嵌值，否则用顶级字段
           if (full.data.crownSteps == null && full.crownSteps != null) {
             full.data.crownSteps = full.crownSteps;
           }
-          // 云端 published 状态映射到 ready 字段
-          if (full.published === true) {
-            full.data.ready = 1;
-          } else if (full.data.ready === undefined) {
-            full.data.ready = 0;
+          if (full.data.ready === undefined) {
+            full.data.ready = (full.published === true) ? 1 : 0;
           }
           fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(full.data, null, 2), 'utf8');
           this._saveCloudMeta(name, full._id, cloudVersion);
         }
       } catch (e) {
-        console.warn(`[Cloud] 下载 ${name} 失败:`, e);
+        console.warn('[Cloud] Fallback 下载关卡 ' + name + ' 失败:', e && e.message);
       }
     }
-    if (skippedLocal > 0) {
-      console.log('[Cloud] Fallback 跳过 ' + skippedLocal + ' 个本地已有的关卡（云端仅做补充）');
-    }
+    console.log('[Cloud] Fallback 同步完成');
   }
 
   markCurrentDirty() {
@@ -1868,8 +1864,9 @@ class EditorEngine {
 
     // ===== 第二行：预设长度按钮 =====
     const presetRowY = offsetY + topBarH;
-    const presetLabels = ['2格', '3格', '4格', '5格', '6格', '灵活'];
-    const presetValues = [70, 125, 205, 280, 380, null];
+    const presetLabels = ['2格', '3格', '4格', '5格', '6格', '灵活', '石头'];
+    const presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
+    const presetValues = [70, 125, 205, 280, 380, null, 44];
     const gap = 8;
     const totalGaps = (presetLabels.length - 1) * gap;
     const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - totalGaps) / presetLabels.length);
@@ -1880,7 +1877,8 @@ class EditorEngine {
     for (var i = 0; i < presetLabels.length; i++) {
       var px = 12 + i * (presetBtnW + gap);
       var py = presetRowY + 3;
-      var isSelected = this._presetLength === presetValues[i];
+      var isSelected = (presetTypes[i] === 'pig' && this._selectedEntityType === 'pig' && this._presetLength === presetValues[i])
+        || (presetTypes[i] === 'rock' && this._selectedEntityType === 'rock');
 
       var pscale = this._btnPress.getScale('preset:' + i);
       var pcx = px + presetBtnW / 2;
@@ -1910,6 +1908,7 @@ class EditorEngine {
         x: px, y: py, w: presetBtnW, h: presetBtnH,
         label: presetLabels[i],
         value: presetValues[i],
+        entityType: presetTypes[i],
         id: 'preset:' + i
       });
     }
@@ -1940,8 +1939,8 @@ class EditorEngine {
           audio.play('button_click');
           this._btnPress.press(b.id);
           this._btnPress.breathe(b.id);
+          this._selectedEntityType = b.entityType;
           this._presetLength = b.value;
-          this._presetLengthLabel = b.label;
           return true;
         }
       }
@@ -2067,9 +2066,9 @@ class EditorEngine {
 
     x = 12;
 
-    // 猪按钮
+    // 精灵按钮
     const pigW = 66;
-    const pigLabel = this.gp.selectedPigId != null ? '#' + this.gp.selectedPigId : '猪';
+    const pigLabel = this.gp.selectedPigId != null ? '#' + this.gp.selectedPigId : '精灵';
     this._drawBtn('btm:pig', x, btnY1, pigW, btnH, function() {
       ctx.fillStyle = '#FF9800';
       roundRect(ctx, x, btnY1, pigW, btnH, 6);
@@ -2433,7 +2432,7 @@ class EditorEngine {
     ctx.font = 'bold 15px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText('选中小猪', 20, sheetY + 24);
+    ctx.fillText('选中精灵', 20, sheetY + 24);
 
     const closeX = SCREEN_WIDTH - 50;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
@@ -2448,7 +2447,7 @@ class EditorEngine {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       const infoY = sheetY + 56;
-      ctx.fillText(`编号: #${pig.id}`, 28, infoY);
+      ctx.fillText(`类型: ${entityLabel(pig.type || 'pig')}  编号: #${pig.id}`, 28, infoY);
 
       // 长度 + [-]/[+]
       ctx.fillText(`长度: ${Math.round(pig.length)}px`, 28, infoY + 26);
@@ -2502,7 +2501,7 @@ class EditorEngine {
       ctx.font = '14px ' + Theme.font.family + '';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText('未选中小猪', 28, sheetY + 56);
+      ctx.fillText('未选中精灵', 28, sheetY + 56);
     }
 
     this.sheetPigRect = { x: 0, y: sheetY, w: SCREEN_WIDTH, h: sheetH };
