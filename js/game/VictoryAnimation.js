@@ -4,8 +4,7 @@
 const audio = require('../audio/AudioManager.js');
 const Easing = require('../core/Easing.js');
 
-const FLY_DURATION = 1500;   // 飞行阶段时长 ms
-const FLASH_DURATION = 800;  // 闪烁阶段时长 ms
+const FLY_DURATION = 1500;   // 飞行阶段时长 ms（闪烁阶段已删除）
 
 // 奖杯目标位置（与 CrownPigWidget 对齐）
 const TROPHY_SIZE = 44;
@@ -38,14 +37,14 @@ class VictoryAnimation {
     this._trophyImg.src = TROPHY_IMG;
 
     // Crown state
-    this._crownPhase = null;   // null | 'flying' | 'flashing' | 'done'
+    this._crownPhase = null;   // null | 'flying' | 'done'
     this._crownStart = 0;
     this._crownFromX = 0;
     this._crownFromY = 0;
     this._gotCrown = false;
 
     // Master state
-    this._masterPhase = null;  // null | 'flying' | 'flashing' | 'done'
+    this._masterPhase = null;  // null | 'flying' | 'done'
     this._masterStart = 0;
     this._masterFromX = 0;
     this._masterFromY = 0;
@@ -143,17 +142,10 @@ class VictoryAnimation {
 
     if (this._crownPhase === 'flying') {
       if (elapsed >= FLY_DURATION) {
-        this._crownPhase = 'flashing';
-        this._crownStart = Date.now();
-      }
-      return;
-    }
-
-    if (this._crownPhase === 'flashing') {
-      if (elapsed >= FLASH_DURATION) {
         this._crownPhase = 'done';
         this._gotCrown = true;
         this._crownStart = 0;
+        console.log('[LOG_victory] 奖杯飞行动画完成 (elapsed=' + elapsed + 'ms)');
         this._onCrownDone();
       }
     }
@@ -195,16 +187,9 @@ class VictoryAnimation {
 
     if (this._masterPhase === 'flying') {
       if (elapsed >= FLY_DURATION) {
-        this._masterPhase = 'flashing';
-        this._masterStart = Date.now();
-      }
-      return;
-    }
-
-    if (this._masterPhase === 'flashing') {
-      if (elapsed >= FLASH_DURATION) {
         this._masterPhase = 'done';
         this._masterStart = 0;
+        console.log('[LOG_victory] 关主飞行动画完成 (elapsed=' + elapsed + 'ms)');
         this._onMasterDone();
       }
     }

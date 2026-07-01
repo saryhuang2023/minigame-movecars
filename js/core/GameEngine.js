@@ -132,7 +132,7 @@ class GameEngine {
       return;
     }
 
-    // ---- Phase C: 注入数据 + 启动主循环 + 菜单滑入 ----
+    // ---- Phase C: 注入数据 + 启动主循环 + 菜单滑入 + 用户信息预加载 ----
     if (!this._transitioned) {
       this._transitioned = true;
 
@@ -144,6 +144,9 @@ class GameEngine {
       this._preloadedPlayerData = this._loadingMgr.getPlayerData();
       this._preloadedCloudRange = this._loadingMgr.getCloudLevelRange();
       this._preloadedChapters = this._loadingMgr.getChapterData();
+
+      // 用户信息预加载（fire-and-forget，不阻塞启动）
+      this._prefetchUserInfo();
 
       // 初始化菜单入场动画
       this._menuEntrance = {
@@ -310,6 +313,48 @@ class GameEngine {
       }
     }).catch(function(err) {
       console.warn('[Cloud] chapter.json 异常（非阻塞）:', err && err.message);
+    });
+  }
+
+  // ===== 用户信息预加载（loading 阶段异步拉取，不阻塞） =====
+
+  _prefetchUserInfo() {
+    var self = this;
+    // 先检查是否有缓存
+    var cached = null;
+    try { cached = wx.getStorageSync('userinfo_cache'); } catch (e) {}
+    if (cached && cached.avatarPath) {
+      console.log('[LOG_victory] 用户信息已有缓存 (avatarPath=' + cached.avatarPath + ')');
+      return;
+    }
+    console.log('[LOG_victory] 开始异步预加载用户信息...');
+    // 异步拉取
+    wx.getUserInfo({
+      success: function (res) {
+        var info = res.userInfo || {};
+        var avatarUrl = info.avatarUrl || '';
+        var nickName = info.nickName || '';
+        if (!avatarUrl) {
+          console.log('[GameEngine] getUserInfo 无头像URL');
+          return;
+        }
+        wx.downloadFile({
+          url: avatarUrl,
+          success: function (dfRes) {
+            if (dfRes.statusCode === 200) {
+              var cache = { avatarUrl: avatarUrl, nickName: nickName, avatarPath: dfRes.tempFilePath };
+              try { wx.setStorageSync('userinfo_cache', cache); } catch (e) {}
+              console.log('[LOG_victory] 用户头像已缓存: avatarUrl=' + avatarUrl + ' path=' + dfRes.tempFilePath);
+            }
+          },
+          fail: function () {
+            console.log('[GameEngine] 头像下载失败');
+          }
+        });
+      },
+      fail: function () {
+        console.log('[GameEngine] getUserInfo 失败');
+      }
     });
   }
 

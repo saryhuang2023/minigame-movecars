@@ -158,31 +158,22 @@ MasterSystem.prototype.retryClaimWithRealInfo = function (steps, nickName, avata
     });
 };
 
-// ========== 内部：获取用户信息（内存缓存 + wx.getUserInfo + openid 降级） ==========
+// ========== 内部：获取用户信息（缓存优先，不再调 wx.getUserInfo） ==========
 
 MasterSystem.prototype._getUserInfo = function () {
   if (this._userInfo) return Promise.resolve(this._userInfo);
+  // 尝试从缓存读取（loading 阶段已预加载）
+  var cached = null;
+  try { cached = wx.getStorageSync('userinfo_cache'); } catch (e) {}
+  if (cached && (cached.avatarUrl || cached.nickName)) {
+    this._userInfo = { nickName: cached.nickName || '', avatarUrl: cached.avatarUrl || '' };
+    return Promise.resolve(this._userInfo);
+  }
+  // 无缓存：用 openid 降级
   var self = this;
-  return new Promise(function (resolve) {
-    wx.getUserInfo({
-      withCredentials: false,
-      success: function (res) {
-        var info = res.userInfo || {};
-        var nick = info.nickName || '';
-        var avatar = info.avatarUrl || '';
-        if (!nick && self._myOpenId) nick = '玩家' + self._myOpenId.slice(-4);
-        self._userInfo = { nickName: nick, avatarUrl: avatar };
-        wx.setStorageSync('userinfo_cache', self._userInfo);
-        resolve(self._userInfo);
-      },
-      fail: function () {
-        var nick = self._myOpenId ? '玩家' + self._myOpenId.slice(-4) : '';
-        self._userInfo = { nickName: nick, avatarUrl: '' };
-        wx.setStorageSync('userinfo_cache', self._userInfo);
-        resolve(self._userInfo);
-      }
-    });
-  });
+  var nick = self._myOpenId ? '玩家' + self._myOpenId.slice(-4) : '';
+  self._userInfo = { nickName: nick, avatarUrl: '' };
+  return Promise.resolve(self._userInfo);
 };
 
 // ========== 访问器 ==========
