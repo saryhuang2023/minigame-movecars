@@ -50,7 +50,7 @@ function entityLabel(type) {
 
 // ---- 预设长度值（编辑器顶部按钮） ----
 var PRESET_LENGTHS = {
-  pig: [70, 125, 205, 280, 380],
+  pig: [70, 125, 205, 275, 370],
   rock: [50],  // rock 只占 1 孔，长度=孔直径
 };
 
