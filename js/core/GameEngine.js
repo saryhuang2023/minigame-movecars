@@ -393,10 +393,10 @@ class GameEngine {
       console.log('[GameEngine] 合并 crowns: ' + crownMerged + ' 条');
     }
 
-    // 金币：云端权威覆盖本地
+    // 金币：取云端和本地最大值（不覆盖）
     if (typeof cloudData.gold === 'number') {
-      GoldSystem.setGold(cloudData.gold);
-      console.log('[GameEngine] 云端金币同步: ' + cloudData.gold);
+      var merged = GoldSystem.mergeFromCloud(cloudData.gold);
+      console.log('[GameEngine] 云端金币合并: cloud=' + cloudData.gold + ' local=' + GoldSystem.getGold() + ' → ' + merged);
     }
 
     // 还原已领取金币的关卡记录

@@ -63,6 +63,7 @@ function GoldWidget(opts) {
 GoldWidget.prototype = Object.create(UIComponent.prototype);
 GoldWidget.prototype.constructor = GoldWidget;
 
+/** 设置显示数字（带翻滚动画） */
 GoldWidget.prototype.setData = function (gold) {
   if (typeof gold !== 'number') return;
   gold = Math.max(0, gold);
@@ -70,6 +71,8 @@ GoldWidget.prototype.setData = function (gold) {
   // 当前真实的显示值（正在滚就用目标值，否则用 _gold）
   var currentDisplay = this._rollActive ? this._rollTarget : this._gold;
   if (gold === currentDisplay) return;
+
+  console.log('[LOG_gold] GoldWidget.setData: ' + currentDisplay + ' -> ' + gold + ' (rollActive=' + this._rollActive + ' _gold=' + this._gold + ' _rollFrom=' + this._rollFrom + ')');
 
   if (this._rollActive) {
     // 正在滚 → 无缝更新目标，继续滚到新值
@@ -97,9 +100,17 @@ GoldWidget.prototype._getRollDisplay = function () {
   }
 
   var t = elapsed / this._ROLL_DURATION;
-  var eased = Easing.easeOutBack(t, 1.70158);
+  var eased = Easing.easeOutCubic(t);  // easeOutCubic 无回弹，不会冲过目标
   var val = this._rollFrom + (this._rollTarget - this._rollFrom) * eased;
   return Math.round(val);
+};
+
+/** 强制设值（跳过翻滚动画，直接同步） */
+GoldWidget.prototype.forceSet = function (gold) {
+  if (typeof gold !== 'number') return;
+  this._gold = Math.max(0, gold);
+  this._rollFrom = this._gold;  // 同步翻滚起点，防止后续 setData 从旧值起跳
+  this._rollActive = false;
 };
 
 /** 触发呼吸动画（单次缓慢呼吸，纯 UI 反馈，跟奖杯一致） */

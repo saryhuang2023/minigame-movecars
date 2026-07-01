@@ -36,8 +36,6 @@ Guide2.prototype.checkCondition = function (state, engine) {
   var pig20Exists = engine.gp.pigs.some(function (p) { return p.id === 20; });
   if (pig20Exists) {
     console.log('[Guide2] checkCondition ✓ level=' + state.levelName + ' idle=' + state.idleTime.toFixed(1) + 's pig20=true');
-  } else {
-    console.log('[Guide2] checkCondition ✗ pig20 已被推出，跳过');
   }
   return pig20Exists;
 };
@@ -47,10 +45,9 @@ Guide2.prototype.checkCondition = function (state, engine) {
 // ----------------------------------------------------------------
 Guide2.prototype.onActivate = function (engine) {
   var pig = engine.gp.pigs.find(function (p) { return p.id === 20; });
-  console.log('[Guide2] onActivate pig(20) found=' + !!pig + ' pigs.length=' + engine.gp.pigs.length);
   if (!pig) {
     // 关卡中不存在 ID=20 的猪，直接标记完成跳过
-    console.log('[Guide2] ⚠ pig 20 不存在，跳过');
+    console.warn('[Guide2] ⚠ pig 20 不存在，跳过');
     this._completed = true;
     return;
   }
@@ -70,9 +67,7 @@ Guide2.prototype.onActivate = function (engine) {
     duration: 1e9           // 极长 duration，避免自动循环重置 startTime
   };
   engine.gp.ghostAnimations.push(this._ghostEntry);
-  console.log('[Guide2] 幽灵已推入 ghostAnimations.length=' + engine.gp.ghostAnimations.length);
-
-  console.log('[Guide2] (无提示，仅旋转)');
+  console.log('[Guide2] 幽灵已推入，物体时只旋转 ghostAnimations.length=' + engine.gp.ghostAnimations.length);
 };
 
 // ----------------------------------------------------------------
@@ -80,7 +75,10 @@ Guide2.prototype.onActivate = function (engine) {
 // ----------------------------------------------------------------
 Guide2.prototype.onUpdate = function (dt, state, engine) {
   if (!this._ghostEntry) {
-    if (!this._loggedMissing) { console.log('[Guide2] onUpdate: _ghostEntry 为 null，跳过'); this._loggedMissing = true; }
+    if (!this._loggedMissing) { 
+      console.log('[Guide2] onUpdate: _ghostEntry 为 null，跳过'); 
+      this._loggedMissing = true; 
+    }
     return;
   }
 

@@ -54,6 +54,7 @@ class PlayingEngine {
     this.backBtn = null;
     this.hintBtn = null;       // 提示按钮
     this._btnPress = new ButtonPress();
+    this._showTestBurstBtn = true;  // 测试按钮：飞币 + 奖杯
     this._victory = false;
     this._victoryTime = 0;
     this._exitBtn = null;
@@ -165,6 +166,7 @@ class PlayingEngine {
     this._coinFlyEffect = new CoinFlyEffect();  // 重置飞行中动画
     this._goldSettled = false;
     this._settlementTriggered = false;
+    this._lastGoldLog = -1;  // 诊断日志去重用
     // 清除兜底定时器
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
     // 试玩逃脱序列记录（供编辑器提示数据自动生成）
@@ -298,8 +300,14 @@ class PlayingEngine {
     var goldDisplay;
     if (this._goldSettled && this._stepBonusRemaining > 0) {
       goldDisplay = GoldSystem.getGold() - this._stepBonusRemaining;
+    } else if (this._goldSettled) {
+      goldDisplay = GoldSystem.getGold();  // 已结算，不再叠加旧累积
     } else {
       goldDisplay = GoldSystem.getGold() + this._levelAccumulatedGold;
+    }
+    if (this._lastGoldLog !== goldDisplay) {
+      this._lastGoldLog = goldDisplay;
+      console.log('[LOG_gold] _syncUIData goldDisplay=' + goldDisplay + ' settled=' + this._goldSettled + ' stepRemaining=' + this._stepBonusRemaining + ' getGold=' + GoldSystem.getGold() + ' accum=' + this._levelAccumulatedGold);
     }
     this._uiGoldWidget.setData(goldDisplay);
 
@@ -618,9 +626,14 @@ class PlayingEngine {
         return;
       }
 
-      // 步数飞币测试按钮（_showTestBurstBtn=true 时可点击）
-      if (this._showTestBurstBtn && this._testBurstBtn && _hitRect(t.x, t.y, this._testBurstBtn)) {
+      // 步数飞币测试按钮
+      if (this._testBurstBtn && _hitRect(t.x, t.y, this._testBurstBtn)) {
         this._testBurstEffect();
+        return;
+      }
+      // 奖杯测试按钮
+      if (this._testAwardBtn && _hitRect(t.x, t.y, this._testAwardBtn)) {
+        this._testAwardEffect();
         return;
       }
 
@@ -1085,17 +1098,17 @@ class PlayingEngine {
       console.log('[关主] 试玩模式，跳过关主判定');
     }
     // 异步同步到云端（fire-and-forget，不阻塞 UI）
-    this._syncToCloud();
+    // 注：移至 _settleCoinsAndStartVictory 中金币入账后执行，此处删
 
     // 2.5s 兜底：如果结算面板仍未弹出，强弹
     var self = this;
-    console.log('[LOG_victory] 启动2.5s超时兜底定时器');
+    console.log('[LOG_victory] 启动6s超时兜底定时器');
     this._settlementTimer = setTimeout(function () {
       if (self._victory && !self._showVictoryPanel) {
         console.log('[LOG_victory] 超时兜底触发，强弹面板！');
         self._finishVictorySequence();
       }
-    }, 3000);
+    }, 6000);
   }
 
   _syncToCloud() {
@@ -1144,11 +1157,14 @@ class PlayingEngine {
 
   /** 双倍金币 — 本地再补一倍（基础金币已入账），播放翻滚动画 */
   _onDoubleGoldClick() {
+    console.log('[LOG_gold] 双倍金币点击: _goldAmount=' + this._goldAmount + ' 当前余额=' + GoldSystem.getGold() + ' goldWidget._gold=' + (this._uiGoldWidget && this._uiGoldWidget._gold));
     if (!this._uiVictoryPopup._goldClaimed && this._goldAmount > 0) {
       var bonus = this._goldAmount;
       GoldSystem.addGold(bonus);
-      console.log('[LOG_victory] 双倍金币入账: +' + bonus + ' 余额=' + GoldSystem.getGold());
+      console.log('[LOG_gold] 双倍金币入账: +' + bonus + ' 余额=' + GoldSystem.getGold() + ' goldWidget._gold=' + (this._uiGoldWidget && this._uiGoldWidget._gold));
       audio.play('rewards');
+      // 双倍入账后同步到云端
+      this._syncToCloud();
       this._uiVictoryPopup.markGoldClaimed();
     }
   }
@@ -1298,7 +1314,7 @@ class PlayingEngine {
       var self = this;
       img.onload = function () {
         console.log('[LOG_victory] 关主头像加载成功，启动飞行');
-        self._victoryAnim.startMaster(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, img);
+        self._victoryAnim.startMaster(img);
       };
       img.onerror = function () {
         console.log('[LOG_victory] 关主头像加载失败 → 标记完成');
@@ -1330,8 +1346,14 @@ class PlayingEngine {
       console.log('[LOG_victory] 金币入账: +' + this._goldAmount + ' 余额=' + GoldSystem.getGold());
     }
     this._goldSettled = true;
+    this._levelAccumulatedGold = 0;  // 清零累积，防止旧计数值叠加显示
+    // 强制同步 GoldWidget 内部值（避免翻滚从旧残留值起跳）
+    if (this._uiGoldWidget) this._uiGoldWidget.forceSet(GoldSystem.getGold());
     // 清除兜底定时器（正常路径已完成结算）
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
+
+    // 金币已入账 → 同步到云端
+    this._syncToCloud();
 
     var self = this;
     // 步数奖励 → 结束后并行启动奖杯+关主
@@ -1352,10 +1374,7 @@ class PlayingEngine {
     // 启动奖杯（如果有）
     if (this._earnedCrown) {
       console.log('[LOG_victory] → 启动奖杯飞行（并行）');
-      this._victoryAnim.startCrown(
-        this._boardCardX + this._boardCardW / 2,
-        this._boardCardY + this._boardCardH / 2
-      );
+      this._victoryAnim.startCrown();
     } else {
       this._crownAnimFinished = true;  // 无奖杯，直接标记完成
     }
@@ -1370,6 +1389,32 @@ class PlayingEngine {
     if (this._crownAnimFinished && this._masterAnimFinished) {
       console.log('[LOG_victory] ★ 并行动画全部完成，弹出结算面板');
       this._finishVictorySequence();
+    }
+  }
+
+  /**
+   * 测试按钮：播放奖杯+关主中央亮相动画（纯视觉）
+   */
+  _testAwardEffect() {
+    // 强制重置并重新启动（杀旧动画）
+    this._victoryAnim.reset();
+    this._crownAnimFinished = false;
+    this._masterAnimFinished = false;
+    // 启动奖杯
+    this._victoryAnim.startCrown();
+    this._crownAnimFinished = false;
+    // 模拟关主头像（如果有缓存）
+    var cache = wx.getStorageSync('userinfo_cache');
+    if (cache && cache.avatarPath) {
+      var img = wx.createImage();
+      var self = this;
+      img.onload = function () {
+        self._victoryAnim.startMaster(img);
+      };
+      img.src = cache.avatarPath;
+      this._masterAnimFinished = false;
+    } else {
+      this._masterAnimFinished = true;
     }
   }
 
@@ -1428,14 +1473,15 @@ class PlayingEngine {
 
       if (ticked >= totalTicks) {
         clearInterval(ticker);
-        console.log('[LOG_victory] 步数ticker完成 → 并行启动奖杯+关主');
-        // 步数动画结束 → 立即切换奖杯图标为金色（不等 VictoryAnimation crown 动画完成）
+        console.log('[LOG_victory] 步数ticker完成 → 等待金币飞入...');
         self._gotCrown = true;
-        // 结束步数动画，启动并行动画
         if (self._uiCrownPig) {
           self._uiCrownPig.endStepBonusAnim();
         }
-        self._startParallelCrownAndMaster();
+        // 等所有步数金币飞入后再启动奖杯+关主动画（coin fly 600ms + buffer）
+        setTimeout(function () {
+          self._startParallelCrownAndMaster();
+        }, 700);
       }
     }, interval);
   }
@@ -1558,22 +1604,6 @@ class PlayingEngine {
       this._victoryAnim.render(ctx);
       // 3.8 奖杯（UIManager）
       this._uiCrownPig.render(ctx);
-      // 3.85 步数飞币测试按钮（_showTestBurstBtn=true 时可见）
-      if (this._showTestBurstBtn && !this._showVictoryPanel) {
-        var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
-        ctx.fillStyle = 'rgba(33,150,243,0.6)';
-        ctx.beginPath();
-        ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 12px ' + Theme.font.family + '';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
-        this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
-      } else {
-        this._testBurstBtn = null;
-      }
       // 4. 顶栏（UIManager）
       this._uiTopBar.render(ctx);
       // 4.5. 金币余额（非通关时正常渲染；通关结算时浮于遮罩之上，保持延续性）
@@ -1622,6 +1652,28 @@ class PlayingEngine {
     } else {
       // board 或 pigs 阶段：不渲染任何 UI 控件
     }
+
+    // 5.5 测试按钮（飞币 + 奖杯，始终可见，与游戏逻辑无关）
+    var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
+    var awardBx = testBx - testBw - 6;
+      // "奖" 按钮
+      ctx.fillStyle = 'rgba(255,152,0,0.7)';
+      ctx.beginPath();
+      ctx.arc(awardBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px ' + Theme.font.family + '';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('奖', awardBx + testBw / 2, testBy + testBh / 2);
+      // "币" 按钮
+      ctx.fillStyle = 'rgba(33,150,243,0.6)';
+      ctx.beginPath();
+      ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
+      this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
+      this._testAwardBtn = { x: awardBx, y: testBy, w: testBw, h: testBh };
 
     // 6. 通关弹窗（UIManager）
     if (this._victory && this._showVictoryPanel) {
