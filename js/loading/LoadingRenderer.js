@@ -25,7 +25,7 @@ var PIG_CY = SCREEN_HEIGHT / 2;
 var PIG_TARGET_W = SCREEN_WIDTH * 2 / 3;
 
 // 金币图标在进度条中的尺寸
-var COIN_SIZE = 28;
+var COIN_SIZE = 42;
 
 function LoadingRenderer(loadingManager) {
   this._lm = loadingManager;

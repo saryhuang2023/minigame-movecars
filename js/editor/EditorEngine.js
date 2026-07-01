@@ -815,7 +815,6 @@ class EditorEngine {
     this.gp.bottomStripH = 92;
     this.gp.recenterBoard();
     this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
-    this._detectConflicts();
   }
 
   // 检测冲突：① 孔占用冲突(红色) ② 猪身体碰撞(绿色)
@@ -849,11 +848,11 @@ class EditorEngine {
     const pigs = this.gp.pigs;
     for (let i = 0; i < pigs.length; i++) {
       const pa = pigs[i];
-      const ra = this.gp.getPigRect(pa.tailIndex, pa.length, pa.angle);
+      const ra = this.gp.getPigRect(pa.tailIndex, pa.length, pa.angle, pa.type);
       if (!ra) continue;
       for (let j = i + 1; j < pigs.length; j++) {
         const pb = pigs[j];
-        const rb = this.gp.getPigRect(pb.tailIndex, pb.length, pb.angle);
+        const rb = this.gp.getPigRect(pb.tailIndex, pb.length, pb.angle, pb.type);
         if (!rb) continue;
         if (this.gp._capsuleIntersect(ra, rb)) {
           this._collisionPigIds.add(pa.id);
@@ -1689,7 +1688,7 @@ class EditorEngine {
 
     // 辅助函数：画碰撞胶囊体
     var drawPigOverlay = function(pig, color) {
-      var pr = this.gp.getPigRect(pig.tailIndex, pig.length, pig.angle);
+      var pr = this.gp.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
       if (!pr) return;
       var bx = offX;
       var by = offY;
@@ -2126,6 +2125,13 @@ class EditorEngine {
     }.bind(this));
     this.bottomBtns.push({ x, y: btnY1, w: collBoxW, h: btnH, id: 'btm:collBox', onClick: () => {
       this._showAllCollisionBoxes = !this._showAllCollisionBoxes;
+      if (this._showAllCollisionBoxes) {
+        this._detectConflicts();
+      } else {
+        this._conflictPigIds = null;
+        this._conflictHoleIndices = null;
+        this._collisionPigIds = null;
+      }
     }});
     x += collBoxW + 8;
 

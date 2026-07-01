@@ -4,6 +4,7 @@
 var SKIN_BASE = 'assets/skins/';
 
 var _configs = {};  // { skinId: skinJson }
+var _cloudCache = null;  // { 'skins/rock/idle/1.png': 'wxfile://tmp_xxx.png' } — LoadingManager 注入
 
 /** 同步读取本地 skin.json（游戏启动时调用，无异步真空期） */
 function loadSkinConfig(skinId) {
@@ -53,8 +54,28 @@ function getSkinFramePath(skinId, entityKey, anim, frame) {
   return SKIN_BASE + dirKey + '/' + anim + '/' + frame + '.png';
 }
 
+/** LoadingManager 下载完成后注入云端图片缓存 */
+function setCloudCache(cache) {
+  _cloudCache = cache;
+  if (cache) {
+    console.log('[SkinLoader] 云端缓存已注入: ' + Object.keys(cache).join(', '));
+  }
+}
+
+/** rock 图片路径：优先云端缓存，不可用时回退本地 */
+function getRockImagePath(anim) {
+  var cloudKey = 'skins/rock/' + anim + '/1.png';
+  if (_cloudCache && _cloudCache[cloudKey]) {
+    return _cloudCache[cloudKey];
+  }
+  // 兜底：本地路径
+  return SKIN_BASE + 'rock/' + anim + '/1.png';
+}
+
 module.exports = {
   loadSkinConfig: loadSkinConfig,
   getAnimFrameCount: getAnimFrameCount,
   getSkinFramePath: getSkinFramePath,
+  setCloudCache: setCloudCache,
+  getRockImagePath: getRockImagePath,
 };

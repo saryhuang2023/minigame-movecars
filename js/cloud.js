@@ -222,6 +222,30 @@ async function downloadCloudFile(relativePath) {
 }
 
 /**
+ * 从云存储下载图片/二进制文件
+ * @param {string} relativePath 相对于 CLOUD_DATA_PREFIX 的路径（如 'skins/rock/idle/1.png'）
+ * @returns {Promise<string>} 本地临时文件路径
+ */
+async function downloadCloudImage(relativePath) {
+  const fileID = CLOUD_DATA_PREFIX + relativePath;
+  const t0 = Date.now();
+  try {
+    var downloadRes = await wx.cloud.downloadFile({ fileID });
+    if (downloadRes.statusCode !== 200) {
+      console.warn('[Cloud] downloadCloudImage ' + relativePath + ' HTTP ' + downloadRes.statusCode);
+      throw new Error('HTTP ' + downloadRes.statusCode);
+    }
+    var duration = Date.now() - t0;
+    console.log('[Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  → ' + downloadRes.tempFilePath);
+    return downloadRes.tempFilePath;
+  } catch (e) {
+    var duration = Date.now() - t0;
+    console.warn('[Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
+    throw e;
+  }
+}
+
+/**
  * 关卡金币结算（服务器权威）
  * @param {string} levelId 关卡名（如 "0001"）
  * @param {number} pigCount 该关卡小猪数量
@@ -255,6 +279,7 @@ module.exports = {
   claimLevelMaster,
   getOpenId,
   downloadCloudFile,
+  downloadCloudImage,
   settleLevel,
   deletePlayerProfile
 };

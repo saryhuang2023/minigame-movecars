@@ -19,6 +19,9 @@ class DataBus {
     this.currentFPS = 60;       // 实时帧率（GameEngine.loop 更新）
     this.frameTimestamps = [];  // 最近 90 帧的时间戳（用于计算FPS）
     this.currentStep = 0;       // 当前步数（PlayingEngine 同步）
+
+    // 调试开关
+    this.DEBUG_TEST_BUTTONS = false; // 游戏内"奖""币"测试按钮（改 true 显示）
   }
 }
 

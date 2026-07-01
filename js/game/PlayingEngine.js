@@ -54,7 +54,6 @@ class PlayingEngine {
     this.backBtn = null;
     this.hintBtn = null;       // 提示按钮
     this._btnPress = new ButtonPress();
-    this._showTestBurstBtn = true;  // 测试按钮：飞币 + 奖杯
     this._victory = false;
     this._victoryTime = 0;
     this._exitBtn = null;
@@ -1666,7 +1665,8 @@ class PlayingEngine {
       // board 或 pigs 阶段：不渲染任何 UI 控件
     }
 
-    // 5.5 测试按钮（飞币 + 奖杯）
+    // 5.5 测试按钮（飞币 + 奖杯）— 由 databus.DEBUG_TEST_BUTTONS 控制
+    if (databus.DEBUG_TEST_BUTTONS) {
     var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
     var awardBx = testBx - testBw - 6;
     // "奖" 按钮
@@ -1687,6 +1687,10 @@ class PlayingEngine {
     ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
     this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
     this._testAwardBtn = { x: awardBx, y: testBy, w: testBw, h: testBh };
+    } else {
+      this._testBurstBtn = null;
+      this._testAwardBtn = null;
+    }
 
     // 6. 通关弹窗（UIManager）
     if (this._victory && this._showVictoryPanel) {

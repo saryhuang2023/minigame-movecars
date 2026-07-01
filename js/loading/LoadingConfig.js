@@ -40,6 +40,11 @@ var PHASE2 = {
   animationTotalFrames: 24,
   // 音频是否启用云端下载
   audioEnabled: true,
+  // 云端图片资源（通过 cloud.downloadCloudImage 下载）
+  cloudImages: [
+    'skins/rock/idle/1.png',
+    'skins/rock/hint/1.png',
+  ],
 };
 
 // ===== AssetPreloader 映射：key → path =====

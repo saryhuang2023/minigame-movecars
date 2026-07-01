@@ -566,17 +566,18 @@ function _loadHintParts() {
 let _rockParts = {};  // { entityKey: { animType: parts } }
 
 function _loadRockParts(entityKey, animType) {
-  // rock 只有 idle 和 hint anim，统一用 idle
+  // rock 只有 idle 和 hint anim
   animType = (animType === 'hint' || animType === AnimType.HINT) ? 'hint' : 'idle';
   if (!_rockParts[entityKey]) _rockParts[entityKey] = {};
   if (_rockParts[entityKey][animType]) return _rockParts[entityKey][animType];
 
-  var base = SkinLoader.getSkinFramePath(0, entityKey, animType, 0).replace(/\/\d+\.png$/, '/');
+  // 优先使用云端缓存路径，不可用时回退本地
+  var path = SkinLoader.getRockImagePath(animType);
   var parts = {
     frameImg: wx.createImage(),
     _loaded: false,
   };
-  parts.frameImg.src = base + '1.png';
+  parts.frameImg.src = path;
   parts.frameImg.onload = function () {
     parts._loaded = true;
   };

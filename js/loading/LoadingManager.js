@@ -9,6 +9,7 @@ var Theme = require('../ui/Theme.js');
 var SkinSystem = require('../game/SkinSystem.js');
 var GoldSystem = require('../game/GoldSystem.js');
 var AssetPreloader = require('../ui/AssetPreloader.js');
+var SkinLoader = require('../entity/SkinLoader.js');
 
 function LoadingManager() {
   this._progress = 0;
@@ -137,6 +138,24 @@ LoadingManager.prototype._startPhase2 = function () {
       self._p2.audioProgress = progress;
     });
   }
+
+  // 4. 下载云端图片（rock 等）→ 缓存 temp 路径供 SkinLoader 使用
+  self._cloudImageCache = {};
+  if (p2.cloudImages && p2.cloudImages.length > 0) {
+    for (var ci = 0; ci < p2.cloudImages.length; ci++) {
+      (function (relativePath) {
+        cloud.downloadCloudImage(relativePath).then(function (localPath) {
+          self._cloudImageCache[relativePath] = localPath;
+          self._p2.cloudLoaded = (self._p2.cloudLoaded || 0) + 1;
+          console.log('[LoadingManager] 云端图片就绪: ' + relativePath + ' → ' + localPath);
+          self._tickPhase2();  // 推进进度
+        }).catch(function (err) {
+          self._p2.cloudLoaded = (self._p2.cloudLoaded || 0) + 1;
+          self._tickPhase2();
+        });
+      })(p2.cloudImages[ci]);
+    }
+  }
 };
 
 LoadingManager.prototype._startPhase3 = function () {
@@ -233,18 +252,19 @@ LoadingManager.prototype._tickPhase2 = function () {
   var w = config.PHASE_WEIGHTS;
   var p2 = config.PHASE2;
 
-  // Phase 2 子项权重: images 40%, animFrames 35%, audio 25%
+  // Phase 2 子项权重: images 35%, animFrames 30%, audio 20%, cloudImages 15%
   var imgRatio = this._p2.imgLoaded / p2.images.length;
   var animRatio = this._p2.animLoaded / p2.animationTotalFrames;
-  var audioRatio = this._p2.audioProgress; // audio.init 的 progress 已是 0~1
+  var audioRatio = this._p2.audioProgress;
+  var cloudTotal = p2.cloudImages ? p2.cloudImages.length : 0;
+  var cloudRatio = cloudTotal > 0 ? (this._p2.cloudLoaded || 0) / cloudTotal : 1;
 
-  if (!p2.audioEnabled) audioRatio = 1; // 音频未启用 → 视为完成
+  if (!p2.audioEnabled) audioRatio = 1;
 
-  var phaseProgress = imgRatio * 0.40 + animRatio * 0.35 + audioRatio * 0.25;
+  var phaseProgress = imgRatio * 0.35 + animRatio * 0.30 + audioRatio * 0.20 + cloudRatio * 0.15;
   this._progress = w.phase1 + phaseProgress * w.phase2;
 
-  // 检查阶段完成
-  if (imgRatio >= 1 && animRatio >= 1 && audioRatio >= 1) {
+  if (imgRatio >= 1 && animRatio >= 1 && audioRatio >= 1 && cloudRatio >= 1) {
     this._progress = w.phase1 + w.phase2;
     this._startPhase3();
   }
@@ -309,6 +329,10 @@ LoadingManager.prototype._finish = function () {
     }
   }
   console.log('[LoadingManager] AssetPreloader 注入完成: ' + assetKeys.length + ' 个 key');
+
+  // 将云端图片缓存注入 SkinLoader
+  SkinLoader.setCloudCache(this._cloudImageCache || {});
+  console.log('[LoadingManager] SkinLoader 云端缓存注入完成: ' + Object.keys(this._cloudImageCache || {}).length + ' 项');
 
   console.log('[LoadingManager] === 全部资源加载完成 ===');
 
