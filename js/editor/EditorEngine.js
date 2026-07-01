@@ -47,6 +47,10 @@ class EditorEngine {
     this.hintHintBtns = [];             // 提示模式下底部栏按钮
     this._btnPress = new ButtonPress(); // 按钮按压微交互
 
+    // ===== 预设猪长度 =====
+    this._presetLength = null;        // null=灵活, 70/125/205/280/380=固定长度
+    this._presetLengthLabel = '灵活';   // 当前选中按钮标签
+
     // ===== Toast =====
     this.toastText = '';
     this.toastAlpha = 0;
@@ -164,8 +168,9 @@ class EditorEngine {
         this.checkBottomButtons(x, y);
         return;
       }
-      // 顶部工具栏（视觉高度 48px，不受 gp.topBarH 影响）
-      if (y < 48) {
+      // 顶部工具栏（含预设按钮行）
+      var topBarGate = (databus.safeTop || 28) + 84;
+      if (y < topBarGate) {
         this.checkTopButtons(x, y);
         return;
       }
@@ -444,7 +449,13 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
+    // 预设长度模式下使用固定长度；灵活模式下根据拖拽距离计算
+    var len;
+    if (this._presetLength != null) {
+      len = this._presetLength;
+    } else {
+      len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
+    }
 
     // 长度和角度都没变 → 跳过（像素值允许 ±2px 误差）
     if (ds._lastLen !== undefined && Math.abs(ds._lastLen - len) < 3 && ds._lastAngle === angle) return;
@@ -521,7 +532,13 @@ class EditorEngine {
 
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scaledDist = dist / this.gp.boardScale;
-    const len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
+    // 预设长度模式下使用固定长度；灵活模式下根据拖拽距离计算
+    var len;
+    if (this._presetLength != null) {
+      len = this._presetLength;
+    } else {
+      len = Math.max(this.gp.scaledDiameter, Math.min(this.gp.scaledDiameter * 30, Math.round(scaledDist)));
+    }
 
     const pig = this.gp.dragState.pigId != null ? this.gp.pigs.find(p => p.id === this.gp.dragState.pigId) : null;
 
@@ -764,7 +781,7 @@ class EditorEngine {
     var corrected = this.gp.snapAllPigsAngles();
     // 与 render() 中的布局对齐（无白色卡片，直接渲染棋盘在背景上）
     var safeTop = databus.safeTop || 0;
-    this.gp.topBarH = safeTop + 48 + 4;
+    this.gp.topBarH = safeTop + 84 + 4;  // 48+36 两行顶栏
     this.gp.bottomStripH = 92;
     this.gp.recenterBoard();
     this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
@@ -1552,6 +1569,20 @@ class EditorEngine {
     this.showToast('已删除小猪');
   }
 
+  /** 微调选中猪的长度 ±1px */
+  _adjustSelectedPigLength(delta) {
+    if (this.gp.selectedPigId == null) return;
+    var pig = this.gp.pigs.find(function(p) { return p.id === this.gp.selectedPigId; }.bind(this));
+    if (!pig) return;
+    var newLen = Math.max(10, pig.length + delta);  // 最小 10px
+    if (newLen === pig.length) return;
+    pig.length = newLen;
+    this.gp.updatePigOccupancy(pig.id, pig.tailIndex, pig.length, pig.angle);
+    this.gp.rebuildOccupancy();
+    this.markCurrentDirty();
+    this.showToast('长度: ' + Math.round(pig.length) + 'px');
+  }
+
   // ============================================================
   // Toast
   // ============================================================
@@ -1596,8 +1627,8 @@ class EditorEngine {
 
     // 棋盘布局参数（不再画白色卡片，直接让棋盘渲染在背景上）
     var safeTop = databus.safeTop || 0;
-    var topBarH = 48;  // 编辑器顶部工具栏高度
-    this.gp.topBarH = safeTop + topBarH + 4;
+    var barH = 84;  // 48 原顶栏 + 36 预设按钮行
+    this.gp.topBarH = safeTop + barH + 4;
     this.gp.bottomStripH = 92;
 
     // 计算提示文字（提示模式下不显示操作提示）
@@ -1777,13 +1808,15 @@ class EditorEngine {
   // ============================================================
   renderTopBar() {
     const topBarH = 48;
+    const presetBarH = 36;
+    const offsetY = (databus.safeTop || 28);  // 躲开系统状态栏
 
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, SCREEN_WIDTH, topBarH);
+    ctx.fillRect(0, offsetY, SCREEN_WIDTH, topBarH + presetBarH);
 
-    // 返回按钮（左上角）— 手指友好
+    // ===== 第一行：返回 + 标题 + 试玩 =====
     const backW = 44, backH = 36;
-    const backX = 6, backY = (topBarH - backH) / 2;
+    const backX = 6, backY = offsetY + (topBarH - backH) / 2;
     var backCX = backX + backW / 2;
     var backCY = backY + backH / 2;
 
@@ -1809,12 +1842,11 @@ class EditorEngine {
     ctx.font = 'bold 15px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('关卡编辑器', titleX, topBarH / 2);
+    ctx.fillText('关卡编辑器', titleX, offsetY + topBarH / 2);
 
-    // 试玩按钮 — 紧挨标题右侧
-    const titleWidth = 85; // "关卡编辑器" 五个字 15px bold 大约宽度
+    const titleWidth = 85;
     const btnW = 52, btnH = 32;
-    const btnX = titleX + titleWidth + 4, btnY = (topBarH - btnH) / 2;
+    const btnX = titleX + titleWidth + 4, btnY = offsetY + (topBarH - btnH) / 2;
 
     var playScale = this._btnPress.getScale('top:play');
     var playCX = btnX + btnW / 2;
@@ -1834,10 +1866,59 @@ class EditorEngine {
     ctx.fillText('试玩', btnX + btnW / 2, btnY + btnH / 2);
     ctx.restore();
 
+    // ===== 第二行：预设长度按钮 =====
+    const presetRowY = offsetY + topBarH;
+    const presetLabels = ['2格', '3格', '4格', '5格', '6格', '灵活'];
+    const presetValues = [70, 125, 205, 280, 380, null];
+    const gap = 8;
+    const totalGaps = (presetLabels.length - 1) * gap;
+    const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - totalGaps) / presetLabels.length);
+    const presetBtnH = presetBarH - 6;
+
+    this._presetBtns = [];
+
+    for (var i = 0; i < presetLabels.length; i++) {
+      var px = 12 + i * (presetBtnW + gap);
+      var py = presetRowY + 3;
+      var isSelected = this._presetLength === presetValues[i];
+
+      var pscale = this._btnPress.getScale('preset:' + i);
+      var pcx = px + presetBtnW / 2;
+      var pcy = py + presetBtnH / 2;
+      ctx.save();
+      ctx.translate(pcx, pcy);
+      ctx.scale(pscale, pscale);
+      ctx.translate(-pcx, -pcy);
+
+      if (isSelected) {
+        ctx.fillStyle = '#2196F3';
+      } else {
+        ctx.fillStyle = '#f0f0f0';
+      }
+      roundRect(ctx, px, py, presetBtnW, presetBtnH, 6);
+      ctx.fill();
+
+      ctx.fillStyle = isSelected ? '#fff' : '#666';
+      ctx.font = '13px ' + Theme.font.family + '';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(presetLabels[i], px + presetBtnW / 2, py + presetBtnH / 2);
+
+      ctx.restore();
+
+      this._presetBtns.push({
+        x: px, y: py, w: presetBtnW, h: presetBtnH,
+        label: presetLabels[i],
+        value: presetValues[i],
+        id: 'preset:' + i
+      });
+    }
+
     this.topBtns = [
       { x: backX, y: backY, w: backW, h: backH, action: 'back', id: 'top:back' },
       { x: btnX, y: btnY, w: btnW, h: btnH, action: 'play', id: 'top:play' }
     ];
+    this._topBarTotalH = offsetY + topBarH + presetBarH;
   }
 
   checkTopButtons(x, y) {
@@ -1849,6 +1930,20 @@ class EditorEngine {
         if (btn.action === 'play') this._checkDirtyAndDo(() => this._goToPlaying());
         if (btn.action === 'back') this._checkDirtyAndDo(() => this._goToMenu());
         return true;
+      }
+    }
+    // 预设按钮
+    if (this._presetBtns) {
+      for (var i = 0; i < this._presetBtns.length; i++) {
+        var b = this._presetBtns[i];
+        if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+          audio.play('button_click');
+          this._btnPress.press(b.id);
+          this._btnPress.breathe(b.id);
+          this._presetLength = b.value;
+          this._presetLengthLabel = b.label;
+          return true;
+        }
       }
     }
     return false;
@@ -2354,9 +2449,41 @@ class EditorEngine {
       ctx.textBaseline = 'top';
       const infoY = sheetY + 56;
       ctx.fillText(`编号: #${pig.id}`, 28, infoY);
-      ctx.fillText(`长度: ${Math.round(pig.length)}px`, 180, infoY);
-      ctx.fillText(`角度: ${Math.round(pig.angle)}°`, 28, infoY + 26);
-      ctx.fillText(`尾部孔: #${pig.tailIndex}`, 180, infoY + 26);
+
+      // 长度 + [-]/[+]
+      ctx.fillText(`长度: ${Math.round(pig.length)}px`, 28, infoY + 26);
+      var lenTextW = ctx.measureText(`长度: ${Math.round(pig.length)}px`).width;
+      var btnSize = 28;
+      var minusX = 28 + lenTextW + 10;
+      var plusX = minusX + btnSize + 6;
+      var lenBtnY = infoY + 22;
+
+      // [-] 按钮
+      ctx.fillStyle = '#f0f0f0';
+      roundRect(ctx, minusX, lenBtnY, btnSize, btnSize, 4);
+      ctx.fill();
+      ctx.fillStyle = '#666';
+      ctx.font = 'bold 16px ' + Theme.font.family + '';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('−', minusX + btnSize / 2, lenBtnY + btnSize / 2);
+
+      // [+] 按钮
+      ctx.fillStyle = '#f0f0f0';
+      roundRect(ctx, plusX, lenBtnY, btnSize, btnSize, 4);
+      ctx.fill();
+      ctx.fillStyle = '#666';
+      ctx.fillText('+', plusX + btnSize / 2, lenBtnY + btnSize / 2);
+
+      this.sheetPigLenMinus = { x: minusX, y: lenBtnY, w: btnSize, h: btnSize };
+      this.sheetPigLenPlus = { x: plusX, y: lenBtnY, w: btnSize, h: btnSize };
+
+      ctx.fillStyle = '#555';
+      ctx.font = '14px ' + Theme.font.family + '';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`角度: ${Math.round(pig.angle)}°`, 28, infoY + 56);
+      ctx.fillText(`尾部孔: #${pig.tailIndex}`, 180, infoY + 56);
 
       const delBtnX = SCREEN_WIDTH - 120;
       const delBtnY = sheetY + sheetH - 56;
@@ -2399,6 +2526,16 @@ class EditorEngine {
         this._btnPress.press('sheet:delete');
         this._btnPress.breathe('sheet:delete');
         this.deleteSelectedPig();
+        return true;
+      }
+      if (this.sheetPigLenMinus && this.hitRect(x, y, this.sheetPigLenMinus)) {
+        audio.play('button_click');
+        this._adjustSelectedPigLength(-1);
+        return true;
+      }
+      if (this.sheetPigLenPlus && this.hitRect(x, y, this.sheetPigLenPlus)) {
+        audio.play('button_click');
+        this._adjustSelectedPigLength(1);
         return true;
       }
       if (this.sheetPigRect && (x < this.sheetPigRect.x || x > this.sheetPigRect.x + this.sheetPigRect.w ||
