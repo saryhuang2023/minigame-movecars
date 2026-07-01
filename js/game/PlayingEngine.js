@@ -1653,27 +1653,27 @@ class PlayingEngine {
       // board 或 pigs 阶段：不渲染任何 UI 控件
     }
 
-    // 5.5 测试按钮（飞币 + 奖杯，始终可见，与游戏逻辑无关）
-    var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
-    var awardBx = testBx - testBw - 6;
-      // "奖" 按钮
-      ctx.fillStyle = 'rgba(255,152,0,0.7)';
-      ctx.beginPath();
-      ctx.arc(awardBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px ' + Theme.font.family + '';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('奖', awardBx + testBw / 2, testBy + testBh / 2);
-      // "币" 按钮
-      ctx.fillStyle = 'rgba(33,150,243,0.6)';
-      ctx.beginPath();
-      ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
-      this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
-      this._testAwardBtn = { x: awardBx, y: testBy, w: testBw, h: testBh };
+    // 5.5 测试按钮（飞币 + 奖杯）— 已注释，需用时取消注释
+    // var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
+    // var awardBx = testBx - testBw - 6;
+    //   // "奖" 按钮
+    //   ctx.fillStyle = 'rgba(255,152,0,0.7)';
+    //   ctx.beginPath();
+    //   ctx.arc(awardBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+    //   ctx.fill();
+    //   ctx.fillStyle = '#fff';
+    //   ctx.font = 'bold 12px ' + Theme.font.family + '';
+    //   ctx.textAlign = 'center';
+    //   ctx.textBaseline = 'middle';
+    //   ctx.fillText('奖', awardBx + testBw / 2, testBy + testBh / 2);
+    //   // "币" 按钮
+    //   ctx.fillStyle = 'rgba(33,150,243,0.6)';
+    //   ctx.beginPath();
+    //   ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+    //   ctx.fill();
+    //   ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
+    //   this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
+    //   this._testAwardBtn = { x: awardBx, y: testBy, w: testBw, h: testBh };
 
     // 6. 通关弹窗（UIManager）
     if (this._victory && this._showVictoryPanel) {
