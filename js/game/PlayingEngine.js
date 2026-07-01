@@ -1004,21 +1004,11 @@ class PlayingEngine {
         this._victory = true;
         this._victoryTime = Date.now();
         console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
-        // 试玩模式：跳过结算动画和面板，弹出系统提示框
+        // 试玩模式：跳过结算动画和面板，自动保存路径信息
         if (databus.returnState === 'editor') {
           // 传递逃脱序列数据（供编辑器提示数据自动生成）
           databus._trialEscapeSequence = this._trialUsedRemove ? null : this._trialEscapeSequence.slice();
-          wx.showModal({
-            title: '试玩结束',
-            content: '已将所有小猪推出棋盘',
-            showCancel: false,
-            confirmText: '返回编辑',
-            success: function (res) {
-              if (res.confirm) {
-                databus.gameState = 'editor';
-              }
-            }
-          });
+          databus.gameState = 'editor';
         }
       }
       // 猪飞出屏幕后清理（动画结束时猪已离开屏幕，无需继续渲染）
@@ -1111,7 +1101,8 @@ class PlayingEngine {
     // 异步同步到云端（fire-and-forget，不阻塞 UI）
     // 注：移至 _settleCoinsAndStartVictory 中金币入账后执行，此处删
 
-    // 2.5s 兜底：如果结算面板仍未弹出，强弹
+    // 兜底定时器：试玩模式跳过（不弹结算面板）
+    if (databus.returnState !== 'editor') {
     var self = this;
     console.log('[LOG_victory] 启动6s超时兜底定时器');
     this._settlementTimer = setTimeout(function () {
@@ -1120,6 +1111,7 @@ class PlayingEngine {
         self._finishVictorySequence();
       }
     }, 6000);
+    }
   }
 
   _syncToCloud() {
@@ -1770,15 +1762,7 @@ class PlayingEngine {
       if (databus.returnState === 'editor') {
         // 使用了移除 → 不保存提示数据
         databus._trialEscapeSequence = null;
-        wx.showModal({
-          title: '试玩结束',
-          content: '已将所有小猪移除棋盘',
-          showCancel: false,
-          confirmText: '返回编辑',
-          success: function (res) {
-            if (res.confirm) { databus.gameState = 'editor'; }
-          }
-        });
+        databus.gameState = 'editor';
       // settlement 由 render() 中 settlement trigger 统一处理，此处不再手动启动
       }
     }

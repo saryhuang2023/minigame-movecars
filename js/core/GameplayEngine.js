@@ -187,9 +187,9 @@ class GameplayEngine {
     const tail = this.holes[tailIndex];
     if (!tail) return null;
 
-    // rock 精灵：圆心对齐孔洞中心，碰撞区 = 以孔心为圆心、直径/3 为半径的圆
+    // rock 精灵：圆心对齐孔洞中心，碰撞区 = 以孔心为圆心、直径/4 为半径的圆
     if (entityType === 'rock') {
-      const capRadius = this.scaledDiameter / 3;
+      const capRadius = this.scaledDiameter / 4;
       return {
         cx: tail.x, cy: tail.y,
         hw: 0,

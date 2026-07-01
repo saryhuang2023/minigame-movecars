@@ -727,40 +727,31 @@ class EditorEngine {
   }
 
   /**
-   * 试玩返回时检测逃脱序列，弹出提示数据保存对话框
+   * 试玩返回时检测逃脱序列，自动保存提示数据
    */
   _checkTrialHintData() {
     var seq = databus._trialEscapeSequence;
     if (!seq || seq.length === 0) {
-      // 清理标记
       databus._trialEscapeSequence = null;
       return;
     }
-    // 标记为脏（提示数据变更需要保存）
-    this.confirmDialog = {
-      title: '保存提示数据',
-      message: '检测到试玩通关路径，是否保存为提示数据？',
-      buttonLabels: ['保存', '不保存'],
-      onSave: () => {
-        // 应用逃脱序列到编辑器猪：顺序 = hintId，方向 = hintAngle
-        var pigs = this.gp.pigs;
-        for (var i = 0; i < seq.length; i++) {
-          var pig = pigs.find(function (p) { return p.id === seq[i].pigId; });
-          if (pig) {
-            pig.hintId = i + 1;
-            pig.hintAngle = seq[i].angle;
-          }
-        }
-        this.dirty = true;
-        databus._trialEscapeSequence = null;
-        this.showToast('提示数据已保存，请点击保存按钮上传');
-        this.confirmDialog = null;
-      },
-      onSkip: () => {
-        databus._trialEscapeSequence = null;
-        this.confirmDialog = null;
+    // 应用逃脱序列到编辑器猪：顺序 = hintId，方向 = hintAngle
+    var pigs = this.gp.pigs;
+    for (var i = 0; i < seq.length; i++) {
+      var pig = pigs.find(function (p) { return p.id === seq[i].pigId; });
+      if (pig) {
+        pig.hintId = i + 1;
+        pig.hintAngle = seq[i].angle;
       }
-    };
+    }
+    this.dirty = true;
+    databus._trialEscapeSequence = null;
+    wx.showModal({
+      title: '提示数据',
+      content: '试玩路径已自动保存，请记得手动保存关卡。',
+      showCancel: false,
+      confirmText: '知道了',
+    });
   }
 
   // ============================================================
