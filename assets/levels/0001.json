@@ -8,25 +8,9 @@
   "crownSteps": 6,
   "pigs": [
     {
-      "angle": 90,
-      "hintAngle": 90,
-      "hintId": 4,
-      "id": 6,
-      "length": 125,
-      "tail": 4
-    },
-    {
       "angle": 330,
       "hintAngle": 330,
       "hintId": 2,
-      "id": 7,
-      "length": 71,
-      "tail": 7
-    },
-    {
-      "angle": 330,
-      "hintAngle": 330,
-      "hintId": 3,
       "id": 8,
       "length": 201,
       "tail": 0
@@ -35,11 +19,27 @@
       "angle": 270,
       "hintAngle": 270,
       "hintId": 1,
-      "id": 9,
-      "length": 74,
-      "tail": 20
+      "id": 11,
+      "length": 70,
+      "tail": 19
+    },
+    {
+      "angle": 90,
+      "hintAngle": 90,
+      "hintId": 4,
+      "id": 14,
+      "length": 125,
+      "tail": 4
+    },
+    {
+      "angle": 330,
+      "hintAngle": 330,
+      "hintId": 3,
+      "id": 15,
+      "length": 125,
+      "tail": 7
     }
   ],
   "ready": 1,
-  "version": 20
+  "version": 4
 }

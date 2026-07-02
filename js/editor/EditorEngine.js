@@ -288,9 +288,11 @@ class EditorEngine {
     if (!props.draggable) return;
 
     const isHead = pigInfo.offset >= pigInfo.totalLen - this.gp.scaledHeadZone;
+    // 仅"灵活"模式下头部拖拽才可调整长度；固定长度 preset 下头部拖拽 = 纯旋转
+    const canAdjustHead = isHead && this._presetLength === null;
     this.gp.dragState = null;
 
-    if (isHead) {
+    if (canAdjustHead) {
       // 头部拖拽：移除原猪，用临时猪（避免自碰撞）
       this.gp.pigs = this.gp.pigs.filter(p => p.id !== pigInfo.id);
       const tempId = -999;
