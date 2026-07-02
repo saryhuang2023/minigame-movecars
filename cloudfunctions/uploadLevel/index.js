@@ -12,7 +12,7 @@ exports.main = async (event, context) => {
 
   const clientVersion = (typeof version === 'number') ? version : 0;
   const pigCount = (data.pigs && data.pigs.length) || 0;
-  const isPublished = published === true;
+  const hasPublishedParam = (published !== null && published !== undefined);
   const now = Date.now();
 
   try {
@@ -21,13 +21,14 @@ exports.main = async (event, context) => {
       .get();
 
     if (exist.data.length === 0) {
-      // 新增（首次上传）
+      // 新增（首次上传）：默认未发布
       const crownSteps = (typeof data.crownSteps === 'number') ? data.crownSteps : 0;
       data.version = 1;
+      var pub = hasPublishedParam ? !!published : false;
       const res = await db.collection('levels').add({
         data: {
           _openid: OPENID, name, data, pigCount, crownSteps,
-          version: 1, published: isPublished,
+          version: 1, published: pub,
           createdAt: now, updatedAt: now
         }
       });
@@ -42,27 +43,27 @@ exports.main = async (event, context) => {
     mergedData.version = serverVersion + 1;
 
     if (serverVersion > 0 && clientVersion !== serverVersion) {
-      // 版本不匹配 = 冲突：其他设备已保存过，本次写入被拒绝
       return {
         code: 2, msg: 'conflict',
         serverVersion,
-        // 返回服务器当前数据，让客户端自动刷新
         data: doc.data
       };
     }
 
-    // 版本匹配（或首次同步 serverVersion===0 无条件覆盖）— 原子条件更新
+    // 版本匹配 — 原子条件更新
     const newVersion = serverVersion + 1;
     const crownSteps = (typeof data.crownSteps === 'number') ? data.crownSteps : 0;
-    // serverVersion===0 表示旧文档无版本字段，不限制 version 条件
     const whereCond = serverVersion > 0
       ? { _id: doc._id, version: serverVersion }
       : { _id: doc._id };
+    
+    // published: null/undefined → 保持现有值不变
+    var updateData = { data: mergedData, pigCount, crownSteps, version: newVersion, updatedAt: now };
+    if (hasPublishedParam) updateData.published = !!published;
+    
     const result = await db.collection('levels')
       .where(whereCond)
-      .update({
-        data: { data: mergedData, pigCount, crownSteps, version: newVersion, published: isPublished, updatedAt: now }
-      });
+      .update({ data: updateData });
 
     if (result.stats.updated === 0) {
       // 并发写入导致匹配失败（极小概率）

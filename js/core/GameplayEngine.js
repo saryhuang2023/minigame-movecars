@@ -31,7 +31,7 @@ class GameplayEngine {
     this.rows = 5;          // 完整列（贴边列）孔数（决定棋盘高度）
     this.oddCols = 3;       // 完整列数量 → 总列数 = 2*oddCols-1（完整/交错/完整/.../完整，两侧贴边）
     this.boardWidth = 375;  // 棋盘目标总宽度（屏幕像素）
-    this.boardRate = 2.9;   // dt/r 比例（孔间距与半径比），可调节正六边形密度
+    this.boardRate = 2.74;  // dt/r 比例（孔间距与半径比），可调节正六边形密度
     // ===== 动态计算 =====
     this.boardScale = 1;
     this.scaledDiameter = 30;
@@ -216,8 +216,8 @@ class GameplayEngine {
     // 胶囊碰撞体（矩形身体 + 两端半圆，消除 OBB 旋转尖角误判）
     // 占用判定半径 = 孔直径 * 2/3（宽于碰撞半径，确保身体覆盖孔心即判定占用）
     const capRadius = this.scaledDiameter * 2 / 3;
-    // 猪间碰撞半径 = 孔直径 * 1/3（保持窄，避免猪之间轻易碰撞）
-    const collisionCapRadius = this.scaledDiameter / 3;
+    // 猪间碰撞半宽 = 孔直径 * 2/5（全宽 = d * 4/5）
+    const collisionCapRadius = this.scaledDiameter * 2 / 5;
     // 胶囊线段端点：尾部收缩孔直径的 1/6（减少尾部碰撞区）
     const tailShrink = this.scaledDiameter / 6;
     const capTailX = tail.x + tailShrink * cosL;
@@ -230,7 +230,7 @@ class GameplayEngine {
     const touchHeadExt = this.scaledHalfDiameter * 0.5;
     // 保留 OBB 数据供触控和兼容代码使用
     const collisionHw = hw + collisionCapRadius - tailShrink / 2;
-    const collisionHh = this.scaledDiameter / 3;  // 猪间碰撞半径保持窄，不受占用半径影响
+    const collisionHh = this.scaledDiameter * 2 / 5;  // 猪间碰撞半高
     const collisionCx = cx + (tailShrink / 2) * cosL;
     const collisionCy = cy + (tailShrink / 2) * sinL;
     return { cx, cy, hw, collisionHw, collisionHh, collisionCx, collisionCy, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,

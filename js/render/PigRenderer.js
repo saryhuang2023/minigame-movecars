@@ -597,7 +597,6 @@ function _loadOneFrame(parts, base, i) {
   var url = base + i + '.png';
   img.src = url;
   img.onload = function() {
-    console.log('[LOG_load] frame ' + i + ' ok');
     parts.idleFrameImgs[i - 1] = img;
     parts._idleLoaded++;
   };

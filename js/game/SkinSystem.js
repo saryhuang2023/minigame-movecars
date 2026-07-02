@@ -100,47 +100,9 @@ var SkinSystem = {
   },
 
   /** 异步拉取云端配置 + 版本比较 + 缓存写入 */
-  _loadCloudConfigAsync: async function () {
-    var self = this;
-    try {
-      // 读取缓存版本号
-      var cachedVersion = self._getCachedVersion();
-
-      // 下载云端配置
-      var cloudConfig = await cloud.downloadCloudFile(CLOUD_CONFIG_PATH);
-      if (!cloudConfig || typeof cloudConfig.version !== 'number') {
-        // 云端拉取失败，尝试用缓存兜底
-        if (cachedVersion > _configVersion) {
-          self._loadCachedConfig();
-        }
-        self._fireConfigUpdated();
-        return;
-      }
-
-      // 版本号比较：云端必须严格大于缓存才更新
-      if (cloudConfig.version <= cachedVersion) {
-        self._fireConfigUpdated();
-        return;
-      }
-
-      console.log('[LOG] SkinSystem 云端配置更新: version ' + cachedVersion + ' → ' + cloudConfig.version);
-
-      // 写入本地文件缓存
-      self._cacheConfig(cloudConfig);
-
-      // 应用配置
-      self._applyConfig(cloudConfig);
-
-      // 触发回调（如 ShopPanel 已打开则刷新）
-      self._fireConfigUpdated();
-    } catch (e) {
-      // 默默失败，不提示用户
-      console.warn('[LOG] SkinSystem 云端配置拉取异常:', (e && e.message) || String(e));
-      if (cachedVersion > _configVersion) {
-        self._loadCachedConfig();
-      }
-      self._fireConfigUpdated();
-    }
+  /** 云端配置拉取已关闭 */
+  _loadCloudConfigAsync: function () {
+    this._fireConfigUpdated();
   },
 
   /** 应用配置到内存（排序） */

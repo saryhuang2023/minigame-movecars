@@ -533,7 +533,7 @@ class PlayingEngine {
       this.gp.rows = data.board.rows || data.board.cols || 5;
       this.gp.oddCols = data.board.oddCols || data.board.oddRows || 3;
       this.gp.boardWidth = data.board.boardWidth || 375;
-      this.gp.boardRate = data.board.boardRate || 2.9;
+      this.gp.boardRate = data.board.boardRate || 2.74;
     }
     this._crownSteps = (data && data.crownSteps) || 0;
     this._levelVersion = (data && data.version) || 0;
@@ -575,6 +575,10 @@ class PlayingEngine {
         if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
       }
       if (!hasAnyHint) this._uiBottomBar.setHintHidden(true);
+      // 所有猪都有 hint → 无需再收集，通关后不重复上传
+      if (hasAnyHint && this._allPigsHaveHints()) {
+        this._hintMerged = true;  // 标记已完成，跳过 merge
+      }
     }
   }
 
@@ -1048,8 +1052,8 @@ class PlayingEngine {
         }
       }
 
-      // 正式玩法：缓存逃脱顺序（通关后写入关卡配置）
-      if (databus.returnState !== 'editor') {
+      // 正式玩法：缓存逃脱顺序（通关后写入关卡配置；已全都有 hint 则跳过）
+      if (databus.returnState !== 'editor' && !this._hintMerged) {
         this._gameplayHintCache.push({ pigId: pigId, angle: pig.angle });
       }
 
@@ -1194,7 +1198,7 @@ class PlayingEngine {
         fs.writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
         console.log('[Hint] 关卡已写入 ' + cache.length + ' 条提示: ' + this.levelName);
         // 上传云端
-        cloud.uploadLevel(this.levelName, data, data.version || 0, data.ready || 0).then(function() {
+        cloud.uploadLevel(this.levelName, data, data.version || 0, null).then(function() {
           console.log('[Hint] 云端上传成功: ' + self.levelName);
         }).catch(function(e) {
           console.warn('[Hint] 云端上传失败:', e && e.message);
@@ -1203,6 +1207,15 @@ class PlayingEngine {
     } catch (e) {
       console.warn('[Hint] 合并提示数据失败:', e && e.message);
     }
+  }
+
+  /** 所有可逃脱的猪是否都已有 hintId */
+  _allPigsHaveHints() {
+    for (var i = 0; i < this.gp.pigs.length; i++) {
+      var p = this.gp.pigs[i];
+      if (p.type !== 'rock' && p.hintId == null) return false;
+    }
+    return true;
   }
 
   _syncToCloud() {
@@ -1859,14 +1872,7 @@ class PlayingEngine {
     }
     this.steps += 5;
     databus.currentStep += 5;
-    // 试玩中使用移除 → 清空已有提示数据，重置计数器
-    if (databus.returnState === 'editor') {
-      for (var k = 0; k < this.gp.pigs.length; k++) {
-        this.gp.pigs[k].hintId = null;
-        this.gp.pigs[k].hintAngle = null;
-      }
-      this._trialHintNextId = 1;
-    }
+    // 试玩中使用移除：仅移除猪本身，不改变其他猪的提示数据
     this._saveCheckpoint();         // 立档存盘，确保断点恢复
     this._hint.clear();
 

@@ -2,7 +2,7 @@
 // 纯 Canvas 2D 渲染，无 DOM 依赖
 // require/module.exports，wx API，InputManager 事件路由
 
-const { entityProps, entityKey, entityLabel, PRESET_LENGTHS } = require('../entity/EntityTypes.js');
+const { entityProps, entityKey, entityLabel } = require('../entity/EntityTypes.js');
 
 // wxfile://usr 在开发者工具中对应真实文件系统路径
 // 仅用于日志输出，fs.writeFileSync 仍走 wxfile 协议
@@ -696,7 +696,7 @@ class EditorEngine {
       this.gp.rows = data.board.rows || data.board.cols || 5;
       this.gp.oddCols = data.board.oddCols || data.board.oddRows || 3;
       this.gp.boardWidth = data.board.boardWidth || 375;
-      this.gp.boardRate = data.board.boardRate || 2.9;
+      this.gp.boardRate = data.board.boardRate || 2.74;
     }
     this._crownSteps = (data && data.crownSteps) || 0;
     this.gp.pigs = (data.pigs || []).map(p => ({
@@ -1017,7 +1017,7 @@ class EditorEngine {
 
   getDefaultLevelData() {
     return {
-      board: { rows: 5, oddCols: 3, boardWidth: 375, boardRate: 2.9 },
+      board: { rows: 5, oddCols: 3, boardWidth: 375, boardRate: 2.74 },
       pigs: [],
       crownSteps: 0,
       ready: 0,
@@ -1652,9 +1652,9 @@ class EditorEngine {
 
     // ===== 第二行：预设长度按钮 =====
     const presetRowY = offsetY + topBarH;
-    const presetLabels = ['2格', '3格', '4格', '5格', '6格', '灵活', '石头'];
-    const presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
-    const presetValues = [70, 125, 205, 275, 370, null, 44];
+    const presetLabels = ['2格', '3格', '4格', '5格', '6格', '7格', '灵活', '石头'];
+    const presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
+    const presetValues = [70, 125, 205, 275, 342, 468, null, 44];
     const gap = 8;
     const totalGaps = (presetLabels.length - 1) * gap;
     const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - totalGaps) / presetLabels.length);
@@ -2368,7 +2368,7 @@ class EditorEngine {
         this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
-      }, 0.001, this._levelSheetStepperBtns, 42);
+      }, 0.01, this._levelSheetStepperBtns, 42);
     // 点击数值区域可直接输入（像金猪阈值一样）
     this._levelSheetStepperBtns.push({
       x: bx + 30, y: boardY3, w: 42, h: stepperH,

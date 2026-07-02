@@ -26,8 +26,9 @@ function initCloud() {
  * @param {string} name 云函数名称
  * @param {object} data 传入数据
  */
-async function callFunction(name, data = {}) {
+async function callFunction(name, data = {}, tag = '') {
   const t0 = Date.now();
+  const prefix = tag ? `[${tag}][Cloud]` : '[Cloud]';
 
   // 参数摘要
   const argsSummary = {};
@@ -45,18 +46,16 @@ async function callFunction(name, data = {}) {
   }
   const reqSize = JSON.stringify(data).length;
   const reqSizeStr = reqSize >= 1024 ? (reqSize / 1024).toFixed(1) + 'KB' : reqSize + 'B';
-  console.log(`[Cloud] → ${name}  ${reqSizeStr}`, argsSummary);
+  console.log(`${prefix} → ${name}  ${reqSizeStr}`, argsSummary);
 
   try {
     const res = await wx.cloud.callFunction({ name, data });
     const duration = Date.now() - t0;
     const result = res.result;
 
-    // 响应包大小
     const resSize = JSON.stringify(res).length;
     const sizeStr = resSize >= 1024 ? (resSize / 1024).toFixed(1) + 'KB' : resSize + 'B';
 
-    // 结果摘要
     let resultSummary;
     if (result && typeof result === 'object') {
       if (Array.isArray(result)) {
@@ -70,19 +69,18 @@ async function callFunction(name, data = {}) {
     } else {
       resultSummary = String(result).substring(0, 80);
     }
-    console.log(`[Cloud] ← ${name}  ${duration}ms  ${sizeStr}  ${resultSummary}`);
+    console.log(`${prefix} ← ${name}  ${duration}ms  ${sizeStr}  ${resultSummary}`);
 
-    // 额外诊断：如果 code 是 undefined，打印完整 result
     if (result && typeof result === 'object' && result.code === undefined) {
-      console.warn(`[Cloud] ⚠ ${name} 返回结果缺少 code 字段`);
-      console.warn(`[Cloud] res顶层keys:`, Object.keys(res).join(','), `| errMsg:`, res.errMsg);
-      console.warn(`[Cloud] res.result:`, JSON.stringify(result).substring(0, 500));
+      console.warn(`${prefix} ⚠ ${name} 返回结果缺少 code 字段`);
+      console.warn(`${prefix} res顶层keys:`, Object.keys(res).join(','), `| errMsg:`, res.errMsg);
+      console.warn(`${prefix} res.result:`, JSON.stringify(result).substring(0, 500));
     }
 
     return result;
   } catch (err) {
     const duration = Date.now() - t0;
-    console.error(`[Cloud] ✗ ${name}  ${duration}ms  ${(err && err.message) || String(err)}`);
+    console.error(`${prefix} ✗ ${name}  ${duration}ms  ${(err && err.message) || String(err)}`);
     throw err;
   }
 }
@@ -92,7 +90,7 @@ async function callFunction(name, data = {}) {
  * @param {string} openid 玩家 openid（云函数自动获取）
  */
 async function getPlayerData() {
-  return callFunction('getPlayerData');
+  return callFunction('getPlayerData', {}, 'Load');
 }
 
 /**
@@ -100,7 +98,7 @@ async function getPlayerData() {
  * @param {object} data 玩家数据 { score, level, items 等 }
  */
 async function savePlayerData(data) {
-  return callFunction('savePlayerData', { data });
+  return callFunction('savePlayerData', { data }, 'Game');
 }
 
 /**
@@ -110,14 +108,14 @@ async function savePlayerData(data) {
  * @param {number} version 客户端持有的版本号（首次上传传 0）
  */
 async function uploadLevel(name, data, version, published) {
-  console.log('[Cloud] uploadLevel 参数: name=' + name
+  console.log('[Edit][Cloud] uploadLevel 参数: name=' + name
     + ' pigs=' + (data && data.pigs ? data.pigs.length : 0)
     + ' board.cols=' + (data && data.board ? data.board.cols : '?')
     + ' board.rows=' + (data && data.board ? data.board.rows : '?')
     + ' crownSteps=' + (data && data.crownSteps)
     + ' published=' + published
     + ' version=' + version);
-  return callFunction('uploadLevel', { name, data, version, published });
+  return callFunction('uploadLevel', { name, data, version, published }, 'Edit');
 }
 
 /**
@@ -125,8 +123,10 @@ async function uploadLevel(name, data, version, published) {
  * @returns {Promise<{minLevel: number, maxLevel: number}>}
  */
 async function listLevels() {
-  const res = await callFunction('listLevels');
-  return res.data || { minLevel: 0, maxLevel: 0 };
+  const res = await callFunction('listLevels', {}, 'Load');
+  var data = res.data || { minLevel: 0, maxLevel: 0 };
+  console.log('[Load][Cloud] listLevels 数据: min=' + data.minLevel + ' max=' + data.maxLevel);
+  return data;
 }
 
 /**
@@ -136,9 +136,9 @@ async function listLevels() {
  * @param {boolean} [publishedOnly] 仅拉取已发布关卡
  */
 async function downloadLevel(id, name, publishedOnly) {
-  const res = await callFunction('downloadLevel', { id, name, publishedOnly });
+  const res = await callFunction('downloadLevel', { id, name, publishedOnly }, 'Load');
   if (!res || !res.data) {
-    console.log('[Cloud] downloadLevel 返回: null (code=' + (res && res.code) + ' msg=' + (res && res.msg) + ')');
+    console.log('[Load][Cloud] downloadLevel 返回: null (code=' + (res && res.code) + ' msg=' + (res && res.msg) + ')');
   }
   return res.data || null;
 }
@@ -149,7 +149,7 @@ async function downloadLevel(id, name, publishedOnly) {
  * @param {string} [name] 关卡名
  */
 async function deleteLevel(id, name) {
-  return callFunction('deleteLevel', { id, name });
+  return callFunction('deleteLevel', { id, name }, 'Edit');
 }
 
 /**
@@ -157,7 +157,7 @@ async function deleteLevel(id, name) {
  * @param {object} snapshot BugReporter 生成的快照对象
  */
 async function reportBug(snapshot) {
-  return callFunction('reportBug', { report: snapshot });
+  return callFunction('reportBug', { report: snapshot }, 'Game');
 }
 
 /**
@@ -166,7 +166,7 @@ async function reportBug(snapshot) {
  * @returns {Promise<{masterUserId, masterSteps, masterAvatarUrl, masterNickname}|null>}
  */
 async function getLevelInfo(levelId) {
-  const res = await callFunction('getLevelInfo', { levelId });
+  const res = await callFunction('getLevelInfo', { levelId }, 'Game');
   return res.data || null;
 }
 
@@ -179,7 +179,7 @@ async function getLevelInfo(levelId) {
  * @returns {Promise<{claimed: boolean, master: object}>}
  */
 async function claimLevelMaster(levelId, steps, avatarUrl, nickname) {
-  return callFunction('claimLevelMaster', { levelId, steps, avatarUrl, nickname });
+  return callFunction('claimLevelMaster', { levelId, steps, avatarUrl, nickname }, 'Game');
 }
 
 /**
@@ -187,7 +187,7 @@ async function claimLevelMaster(levelId, steps, avatarUrl, nickname) {
  * @returns {Promise<string>}
  */
 async function getOpenId() {
-  const res = await callFunction('getOpenId');
+  const res = await callFunction('getOpenId', {}, 'Load');
   return res.openid || '';
 }
 
@@ -202,7 +202,7 @@ async function downloadCloudFile(relativePath) {
   try {
     var downloadRes = await wx.cloud.downloadFile({ fileID });
     if (downloadRes.statusCode !== 200) {
-      console.warn('[Cloud] downloadCloudFile ' + relativePath + ' HTTP ' + downloadRes.statusCode);
+      console.warn('[Load][Cloud] downloadCloudFile ' + relativePath + ' HTTP ' + downloadRes.statusCode);
       return null;
     }
     var fs = wx.getFileSystemManager();
@@ -212,11 +212,11 @@ async function downloadCloudFile(relativePath) {
     var duration = Date.now() - t0;
     var sizeStr = fileSize >= 1024 ? (fileSize / 1024).toFixed(1) + 'KB' : fileSize + 'B';
     var itemCount = Array.isArray(obj) ? obj.length : (typeof obj === 'object' ? Object.keys(obj).length : 1);
-    console.log('[Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  ' + sizeStr + '  ' + itemCount + ' entries');
+    console.log('[Load][Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  ' + sizeStr + '  ' + itemCount + ' entries');
     return obj;
   } catch (e) {
     var duration = Date.now() - t0;
-    console.warn('[Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
+    console.warn('[Load][Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
     return null;
   }
 }
@@ -232,15 +232,15 @@ async function downloadCloudImage(relativePath) {
   try {
     var downloadRes = await wx.cloud.downloadFile({ fileID });
     if (downloadRes.statusCode !== 200) {
-      console.warn('[Cloud] downloadCloudImage ' + relativePath + ' HTTP ' + downloadRes.statusCode);
+      console.warn('[Load][Cloud] downloadCloudImage ' + relativePath + ' HTTP ' + downloadRes.statusCode);
       throw new Error('HTTP ' + downloadRes.statusCode);
     }
     var duration = Date.now() - t0;
-    console.log('[Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  → ' + downloadRes.tempFilePath);
+    console.log('[Load][Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  → ' + downloadRes.tempFilePath);
     return downloadRes.tempFilePath;
   } catch (e) {
     var duration = Date.now() - t0;
-    console.warn('[Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
+    console.warn('[Load][Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
     throw e;
   }
 }
@@ -254,7 +254,7 @@ async function downloadCloudImage(relativePath) {
  * @returns {Promise<{code, gold, reward, claimed}>}
  */
 async function settleLevel(levelId, pigCount, stepBonus, double) {
-  return callFunction('settleLevel', { levelId, pigCount, stepBonus, double });
+  return callFunction('settleLevel', { levelId, pigCount, stepBonus, double }, 'Game');
 }
 
 /**
@@ -262,7 +262,7 @@ async function settleLevel(levelId, pigCount, stepBonus, double) {
  * @returns {Promise<{code, deleted}>}
  */
 async function deletePlayerProfile() {
-  return callFunction('deletePlayerProfile');
+  return callFunction('deletePlayerProfile', {}, 'Game');
 }
 
 module.exports = {

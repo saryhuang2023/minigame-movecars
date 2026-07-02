@@ -48,12 +48,6 @@ function entityLabel(type) {
   return ENTITY_LABELS[type] || type;
 }
 
-// ---- 预设长度值（编辑器顶部按钮） ----
-var PRESET_LENGTHS = {
-  pig: [70, 125, 205, 275, 370],
-  rock: [44],  // rock 只占 1 孔，长度=孔直径
-};  
-
 module.exports = {
   ENTITY: ENTITY,
   ENTITY_PROPS: ENTITY_PROPS,
@@ -61,5 +55,4 @@ module.exports = {
   entityPropsByKey: entityPropsByKey,
   entityKey: entityKey,
   entityLabel: entityLabel,
-  PRESET_LENGTHS: PRESET_LENGTHS,
 };
