@@ -328,14 +328,10 @@ class BugReporter {
     }
   }
 
-  /** 卡顿上报（静默） */
+  /** 卡顿检测（仅本地日志，不上报后台） */
   _onLag() {
-    if (this._sessionReportCount >= CONFIG.MAX_REPORTS_PER_SESSION) return;
-    this._sessionReportCount++;
-
-    var snapshot = this.snapshot('lag', { message: 'FPS < ' + CONFIG.LAG_FPS_THRESHOLD + ' for ' + CONFIG.LAG_DURATION_THRESHOLD + 'ms', stack: '' });
-    // 静默上报，无 UI 弹窗
-    this._report(snapshot);
+    // FPS 低帧率事件噪音太大，只记日志不上传
+    console.warn('[BugReporter] FPS < ' + CONFIG.LAG_FPS_THRESHOLD + ' 持续 ' + CONFIG.LAG_DURATION_THRESHOLD + 'ms，已过滤，不上报');
     this._lagTimer = 0;
     this._lagActive = false;
   }

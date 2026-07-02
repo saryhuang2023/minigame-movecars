@@ -51,6 +51,10 @@ class EditorEngine {
     // ===== 预设猪长度 =====
     this._selectedEntityType = 'pig';       // 当前选中精灵类型
     this._presetLength = null;        // null=灵活, 70/125/205/280/380=固定长度
+    // 前7个猪模板可自定义，后2个（灵活/石头）不参与
+    this._presetLabels = ['70', '125', '205', '275', '342', '397', '468', '灵活', '石头'];
+    this._presetValues = [70, 125, 205, 275, 342, 397, 468, null, 44];
+    this._presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
 
     // ===== Toast =====
     this.toastText = '';
@@ -654,6 +658,24 @@ class EditorEngine {
     databus.gameState = 'menu';
   }
 
+  /** "设为模板"：将选中猪的长度写入当前预设按钮 */
+  _doSetTemplate() {
+    if (this.gp.selectedPigId == null) return;
+    // 仅前7个猪模板参与（_presetLength 必须是前7个值之一）
+    var idx = this._presetValues.indexOf(this._presetLength);
+    if (idx < 0 || idx >= 7) return;
+
+    var pig = this.gp.pigs.find(function(p) { return p.id === this.gp.selectedPigId; }.bind(this));
+    if (!pig) return;
+
+    var newLen = Math.round(pig.length);
+    this._presetValues[idx] = newLen;
+    this._presetLabels[idx] = String(newLen);
+    this._presetLength = newLen;  // 保持选中状态一致
+    this.markCurrentDirty();
+    this.showToast('模板已更新: ' + newLen);
+  }
+
   _checkDirtyAndDo(action) {
     if (this.dirty) {
       this.confirmDialog = {
@@ -719,6 +741,10 @@ class EditorEngine {
     this.gp.bottomStripH = 92;
     this.gp.recenterBoard();
     this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
+    // 切换关卡时重置预设模板为默认值
+    this._presetLabels = ['70', '125', '205', '275', '342', '397', '468', '灵活', '石头'];
+    this._presetValues = [70, 125, 205, 275, 342, 397, 468, null, 44];
+    this._presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
   }
 
   // ============================================================
@@ -1650,11 +1676,42 @@ class EditorEngine {
     ctx.fillText('试玩', btnX + btnW / 2, btnY + btnH / 2);
     ctx.restore();
 
+    // ===== "设为模板"按钮 =====
+    // 启用条件：选中猪 + 当前预设是前7个之一
+    var canSetTemplate = (this.gp.selectedPigId != null) &&
+      (this._selectedEntityType === 'pig' && this._presetLength != null &&
+       this._presetValues.indexOf(this._presetLength) >= 0 &&
+       this._presetValues.indexOf(this._presetLength) < 7);
+    var tplBtnW = 68, tplBtnH = 32;
+    var tplBtnX = btnX + btnW + 10, tplBtnY = btnY;
+
+    var tplScale = this._btnPress.getScale('top:setTemplate');
+    var tplCX = tplBtnX + tplBtnW / 2;
+    var tplCY = tplBtnY + tplBtnH / 2;
+    ctx.save();
+    ctx.translate(tplCX, tplCY);
+    ctx.scale(tplScale, tplScale);
+    ctx.translate(-tplCX, -tplCY);
+
+    if (canSetTemplate) {
+      ctx.fillStyle = '#FF9800';
+    } else {
+      ctx.fillStyle = '#e0e0e0';
+    }
+    roundRect(ctx, tplBtnX, tplBtnY, tplBtnW, tplBtnH, 6);
+    ctx.fill();
+    ctx.fillStyle = canSetTemplate ? '#fff' : '#999';
+    ctx.font = '12px ' + Theme.font.family + '';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('设为模板', tplBtnX + tplBtnW / 2, tplBtnY + tplBtnH / 2);
+    ctx.restore();
+
     // ===== 第二行：预设长度按钮 =====
     const presetRowY = offsetY + topBarH;
-    const presetLabels = ['2格', '3格', '4格', '5格', '6格', '7格', '灵活', '石头'];
-    const presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
-    const presetValues = [70, 125, 205, 275, 342, 468, null, 44];
+    var presetLabels = this._presetLabels;
+    var presetTypes  = this._presetTypes;
+    var presetValues = this._presetValues;
     const gap = 8;
     const totalGaps = (presetLabels.length - 1) * gap;
     const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - totalGaps) / presetLabels.length);
@@ -1703,7 +1760,8 @@ class EditorEngine {
 
     this.topBtns = [
       { x: backX, y: backY, w: backW, h: backH, action: 'back', id: 'top:back' },
-      { x: btnX, y: btnY, w: btnW, h: btnH, action: 'play', id: 'top:play' }
+      { x: btnX, y: btnY, w: btnW, h: btnH, action: 'play', id: 'top:play' },
+      { x: tplBtnX, y: tplBtnY, w: tplBtnW, h: tplBtnH, action: 'setTemplate', id: 'top:setTemplate' }
     ];
     this._topBarTotalH = offsetY + topBarH + presetBarH;
   }
@@ -1716,6 +1774,7 @@ class EditorEngine {
         this._btnPress.breathe(btn.id);
         if (btn.action === 'play') this._checkDirtyAndDo(() => this._goToPlaying());
         if (btn.action === 'back') this._checkDirtyAndDo(() => this._goToMenu());
+        if (btn.action === 'setTemplate') this._doSetTemplate();
         return true;
       }
     }
