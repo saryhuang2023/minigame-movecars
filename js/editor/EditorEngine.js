@@ -189,7 +189,7 @@ class EditorEngine {
         return;
       }
       // 顶部工具栏（含预设按钮行）
-      var topBarGate = (databus.safeTop || 28) + 84;
+      var topBarGate = (databus.safeTop || 28) + 116;
       if (y < topBarGate) {
         this.checkTopButtons(x, y);
         return;
@@ -737,7 +737,7 @@ class EditorEngine {
     var corrected = this.gp.snapAllPigsAngles();
     // 与 render() 中的布局对齐（无白色卡片，直接渲染棋盘在背景上）
     var safeTop = databus.safeTop || 0;
-    this.gp.topBarH = safeTop + 84 + 4;  // 48+36 两行顶栏
+    this.gp.topBarH = safeTop + 116 + 4;  // 48+68 两行顶栏
     this.gp.bottomStripH = 92;
     this.gp.recenterBoard();
     this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
@@ -1519,7 +1519,7 @@ class EditorEngine {
 
     // 棋盘布局参数（不再画白色卡片，直接让棋盘渲染在背景上）
     var safeTop = databus.safeTop || 0;
-    var barH = 84;  // 48 原顶栏 + 36 预设按钮行
+    var barH = 116;  // 48 原顶栏 + 68 预设按钮两行
     this.gp.topBarH = safeTop + barH + 4;
     this.gp.bottomStripH = 92;
 
@@ -1618,7 +1618,7 @@ class EditorEngine {
   // ============================================================
   renderTopBar() {
     const topBarH = 48;
-    const presetBarH = 36;
+    const presetBarH = 68;
     const offsetY = (databus.safeTop || 28);  // 躲开系统状态栏
 
     ctx.fillStyle = '#ffffff';
@@ -1707,21 +1707,26 @@ class EditorEngine {
     ctx.fillText('设为模板', tplBtnX + tplBtnW / 2, tplBtnY + tplBtnH / 2);
     ctx.restore();
 
-    // ===== 第二行：预设长度按钮 =====
+    // ===== 第二行：预设长度按钮（最多6个一行） =====
     const presetRowY = offsetY + topBarH;
     var presetLabels = this._presetLabels;
     var presetTypes  = this._presetTypes;
     var presetValues = this._presetValues;
     const gap = 8;
-    const totalGaps = (presetLabels.length - 1) * gap;
-    const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - totalGaps) / presetLabels.length);
-    const presetBtnH = presetBarH - 6;
+    const maxPerRow = 6;
+
+    // 每个按钮宽度按 6 个一行计算
+    const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - (maxPerRow - 1) * gap) / maxPerRow);
+    const presetBtnH = 30;
+    const rowH = presetBtnH + 4;       // 行高（含纵向间距）
 
     this._presetBtns = [];
 
     for (var i = 0; i < presetLabels.length; i++) {
-      var px = 12 + i * (presetBtnW + gap);
-      var py = presetRowY + 3;
+      var row = Math.floor(i / maxPerRow);
+      var col = i % maxPerRow;
+      var px = 12 + col * (presetBtnW + gap);
+      var py = presetRowY + 3 + row * rowH;
       var isSelected = (presetTypes[i] === 'pig' && this._selectedEntityType === 'pig' && this._presetLength === presetValues[i])
         || (presetTypes[i] === 'rock' && this._selectedEntityType === 'rock');
 
