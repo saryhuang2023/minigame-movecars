@@ -169,6 +169,9 @@ class PlayingEngine {
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
     // 试玩模式：实时提示记录计数器
     this._trialHintNextId = 0;
+    // 正式玩：通关后保存 hint 数据缓存
+    this._gameplayHintCache = [];
+    this._hintMerged = false;
     // 关主状态重置 + 读取个人记录
     this._master.reset();
     this._master.init(this.levelName);
@@ -564,6 +567,14 @@ class PlayingEngine {
         if (hid != null && hid > maxId) maxId = hid;
       }
       this._trialHintNextId = maxId + 1;
+    }
+    // 正式玩法：关卡无 hint 数据则隐藏提示按钮
+    if (databus.returnState !== 'editor' && this._uiBottomBar) {
+      var hasAnyHint = false;
+      for (var i = 0; i < this.gp.pigs.length; i++) {
+        if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
+      }
+      if (!hasAnyHint) this._uiBottomBar.setHintHidden(true);
     }
   }
 
@@ -1037,6 +1048,11 @@ class PlayingEngine {
         }
       }
 
+      // 正式玩法：缓存逃脱顺序（通关后写入关卡配置）
+      if (databus.returnState !== 'editor') {
+        this._gameplayHintCache.push({ pigId: pigId, angle: pig.angle });
+      }
+
       // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算，试玩模式不做任何处理）
       var canEscapeRemaining = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
       if (canEscapeRemaining === 0) {
@@ -1148,6 +1164,44 @@ class PlayingEngine {
         self._finishVictorySequence();
       }
     }, 6000);
+    }
+
+    // 正式玩法：通关后合并 hint 数据到关卡配置并上传云端
+    if (databus.returnState !== 'editor' && !this._hintMerged && this._gameplayHintCache.length > 0) {
+      this._hintMerged = true;
+      this._mergeAndUploadHints();
+    }
+  }
+
+  /** 正式玩法通关：合并 hint 缓存到关卡 JSON 并上传云端 */
+  _mergeAndUploadHints() {
+    var self = this;
+    var cache = this._gameplayHintCache;
+    if (cache.length === 0) return;
+    try {
+      var path = wx.env.USER_DATA_PATH + '/levels/' + this.levelName + '.json';
+      var fs = wx.getFileSystemManager();
+      var data = JSON.parse(fs.readFileSync(path, 'utf8'));
+      var pigs = data.pigs;
+      if (pigs) {
+        for (var i = 0; i < cache.length; i++) {
+          var p = pigs.find(function(pp) { return pp.id === cache[i].pigId; });
+          if (p) {
+            p.hintId = i + 1;
+            p.hintAngle = cache[i].angle;
+          }
+        }
+        fs.writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+        console.log('[Hint] 关卡已写入 ' + cache.length + ' 条提示: ' + this.levelName);
+        // 上传云端
+        cloud.uploadLevel(this.levelName, data, data.version || 0, data.ready || 0).then(function() {
+          console.log('[Hint] 云端上传成功: ' + self.levelName);
+        }).catch(function(e) {
+          console.warn('[Hint] 云端上传失败:', e && e.message);
+        });
+      }
+    } catch (e) {
+      console.warn('[Hint] 合并提示数据失败:', e && e.message);
     }
   }
 

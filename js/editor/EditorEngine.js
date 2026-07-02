@@ -108,7 +108,12 @@ class EditorEngine {
             ep.hintAngle = newHA;
           }
         }
-        if (hintChanged) this.dirty = true;
+        if (hintChanged) {
+          this.dirty = true;
+          if (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length) {
+            this.levelList[this.currentLevelIdx].isDirty = true;
+          }
+        }
       }
       return;
     }
@@ -698,7 +703,7 @@ class EditorEngine {
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       type: p.type || 'pig', skinId: p.skinId || 0,
       hintId: p.hintId != null ? p.hintId : null,
-      hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
+      hintAngle: p.hintAngle != null ? p.hintAngle : null
     }));
     this.gp.nextPigId = this.gp.pigs.length > 0 ? Math.max(...this.gp.pigs.map(p => p.id)) + 1 : 0;
     this.gp.selectedPigId = null;
@@ -1575,7 +1580,7 @@ class EditorEngine {
         ctx.lineTo(ax + Math.cos(rad - 2.5) * arrowSize, ay - Math.sin(rad - 2.5) * arrowSize);
         ctx.lineTo(ax + Math.cos(rad + 2.5) * arrowSize, ay - Math.sin(rad + 2.5) * arrowSize);
         ctx.closePath();
-        ctx.fillStyle = isSelected ? '#8B5CF6' : 'rgba(139,92,246,0.5)';
+        ctx.fillStyle = 'rgba(139,92,246,0.5)';
         ctx.fill();
         ctx.restore();
       }
