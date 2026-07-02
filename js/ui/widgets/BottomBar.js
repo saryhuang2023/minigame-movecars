@@ -88,6 +88,7 @@ function BottomBar(opts) {
   this._cardW = opts.cardW;
   this._buttonPress = opts.buttonPress;
   this._hintActive = false;
+  this._hintHidden = false;   // 通关后隐藏提示/移除按钮
   this._currentSteps = 0;
 
   // 回调
@@ -104,6 +105,10 @@ BottomBar.prototype.constructor = BottomBar;
 
 BottomBar.prototype.setHintActive = function (active) {
   this._hintActive = !!active;
+};
+
+BottomBar.prototype.setHintHidden = function (hidden) {
+  this._hintHidden = !!hidden;
 };
 
 BottomBar.prototype.setCurrentSteps = function (steps) {
@@ -167,6 +172,7 @@ function _drawLabel(ctx, text, x, y, spacing) {
 
 BottomBar.prototype.render = function (ctx) {
   // ===== 提示/移除按钮（同位置互斥）=====
+  if (this._hintHidden) return;  // 通关后隐藏
   var hintX = SCREEN_WIDTH - 15 - HINT_W;
   var hintY = SCREEN_HEIGHT - 30 - HINT_H;
 

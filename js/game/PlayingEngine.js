@@ -167,9 +167,8 @@ class PlayingEngine {
     this._lastGoldLog = -1;  // 诊断日志去重用
     // 清除兜底定时器
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
-    // 试玩逃脱序列记录（供编辑器提示数据自动生成）
-    this._trialEscapeSequence = [];
-    this._trialUsedRemove = false;
+    // 试玩模式：实时提示记录计数器
+    this._trialHintNextId = 0;
     // 关主状态重置 + 读取个人记录
     this._master.reset();
     this._master.init(this.levelName);
@@ -229,11 +228,15 @@ class PlayingEngine {
       });
       this.ui.add(this._uiTopBar, UIManager.LAYER.CONTROL);
 
-      // Layer 2 — GoldWidget（金币余额显示）
+      // Layer 2 — GoldWidget（金币余额显示，试玩模式隐藏）
+      if (databus.returnState !== 'editor') {
       this._uiGoldWidget = new GoldWidget({
         zIndex: UIManager.LAYER.CONTROL,
       });
       this.ui.add(this._uiGoldWidget, UIManager.LAYER.CONTROL);
+      } else {
+        this._uiGoldWidget = null;
+      }
 
       // Layer 2 — BottomBar
       this._uiBottomBar = new BottomBar({
@@ -307,7 +310,7 @@ class PlayingEngine {
       this._lastGoldLog = goldDisplay;
       console.log('[LOG_gold] _syncUIData goldDisplay=' + goldDisplay + ' settled=' + this._goldSettled + ' stepRemaining=' + this._stepBonusRemaining + ' getGold=' + GoldSystem.getGold() + ' accum=' + this._levelAccumulatedGold);
     }
-    this._uiGoldWidget.setData(goldDisplay);
+    if (this._uiGoldWidget) this._uiGoldWidget.setData(goldDisplay);
 
     // BottomBar
     this._uiBottomBar.setHintActive(this._hint.isActive());
@@ -553,6 +556,15 @@ class PlayingEngine {
     this.gp.snapAllPigsAngles();
     // 异步拉取关主信息
     this._master.fetchMaster();
+    // 试玩模式：初始化提示编号计数器（已有 hintId 中最大 + 1）
+    if (databus.returnState === 'editor') {
+      var maxId = 0;
+      for (var i = 0; i < this.gp.pigs.length; i++) {
+        var hid = this.gp.pigs[i].hintId;
+        if (hid != null && hid > maxId) maxId = hid;
+      }
+      this._trialHintNextId = maxId + 1;
+    }
   }
 
   // ========== 输入 ==========
@@ -643,8 +655,8 @@ class PlayingEngine {
         return;
       }
 
-      // 左上角金币（覆盖金币+文字整个区域）
-      if (_hitRect(t.x, t.y, { x: 10, y: 78, w: 100, h: 50 })) {
+      // 左上角金币（覆盖金币+文字整个区域，试玩无）
+      if (this._uiGoldWidget && _hitRect(t.x, t.y, { x: 10, y: 78, w: 100, h: 50 })) {
         this._uiGoldWidget.triggerBreathe();
         return;
       }
@@ -738,6 +750,17 @@ class PlayingEngine {
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
       audio.play('button_click');
       if (databus.returnState === 'editor') {
+        // 试玩返回：将 hintId/hintAngle 写回关卡数据
+        if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
+          var origPigs = databus.currentLevel.data.pigs;
+          for (var ti = 0; ti < origPigs.length; ti++) {
+            var ep = this.gp.pigs.find(function(p) { return p.id === origPigs[ti].id; });
+            if (ep) {
+              origPigs[ti].hintId = (ep.hintId != null) ? ep.hintId : undefined;
+              origPigs[ti].hintAngle = (ep.hintAngle != null) ? ep.hintAngle : undefined;
+            }
+          }
+        }
         this._btnPress.press('settings');
         this._btnPress.breathe('settings');
         databus.gameState = 'editor';
@@ -992,24 +1015,37 @@ class PlayingEngine {
         }
       }
 
-      // 试玩模式：记录逃脱序列（供编辑器提示数据自动生成）
+      // 试玩模式：实时写入提示数据（已有则跳过，拒绝覆盖）
       if (databus.returnState === 'editor') {
-        this._trialEscapeSequence.push({ pigId: pigId, angle: pig.angle });
+        if (pig.hintId == null) {
+          pig.hintId = this._trialHintNextId++;
+          pig.hintAngle = pig.angle;
+          // 立即写回关卡数据并持久化到本地文件，防止杀进程丢数据
+          if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
+            var orig = databus.currentLevel.data.pigs.find(function(p) { return p.id === pig.id; });
+            if (orig) {
+              orig.hintId = pig.hintId;
+              orig.hintAngle = pig.hintAngle;
+            }
+            try {
+              var path = wx.env.USER_DATA_PATH + '/levels/' + this.levelName + '.json';
+              wx.getFileSystemManager().writeFileSync(path, JSON.stringify(databus.currentLevel.data, null, 2), 'utf8');
+            } catch (e) {
+              console.warn('[Trial] 持久化提示数据失败:', e && e.message);
+            }
+          }
+        }
       }
 
-      // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算）
+      // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算，试玩模式不做任何处理）
       var canEscapeRemaining = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
       if (canEscapeRemaining === 0) {
+        if (databus.returnState !== 'editor') {
         this._markCleared();
         this._victory = true;
         this._victoryTime = Date.now();
-        this.hintBtn = null;  // 通关后隐藏提示按钮
+        this._uiBottomBar.setHintHidden(true);  // 通关后隐藏提示按钮
         console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
-        // 试玩模式：跳过结算动画和面板，自动保存路径信息
-        if (databus.returnState === 'editor') {
-          // 传递逃脱序列数据（供编辑器提示数据自动生成）
-          databus._trialEscapeSequence = this._trialUsedRemove ? null : this._trialEscapeSequence.slice();
-          databus.gameState = 'editor';
         }
       }
       // 猪飞出屏幕后清理（动画结束时猪已离开屏幕，无需继续渲染）
@@ -1612,8 +1648,28 @@ class PlayingEngine {
       // 4. 顶栏（UIManager）
       this._uiTopBar.render(ctx);
       // 4.5. 金币余额（非通关时正常渲染；通关结算时浮于遮罩之上，保持延续性）
-      if (!this._showVictoryPanel) {
+      if (!this._showVictoryPanel && this._uiGoldWidget) {
         this._uiGoldWidget.render(ctx);
+      }
+      // 试玩模式：左上角提示信息进度
+      if (databus.returnState === 'editor') {
+        ctx.save();
+        var infoX = 12, infoY = safeTop + 34, infoW = 150, infoH = 24;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(infoX, infoY, infoW, infoH);
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 12px ' + Theme.font.family + '';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        var hinted = 0;
+        for (var hi = 0; hi < this.gp.pigs.length; hi++) {
+          if (this.gp.pigs[hi].hintId != null) hinted++;
+        }
+        for (var fi = 0; fi < this.gp.flyingPigs.length; fi++) {
+          if (this.gp.flyingPigs[fi].hintId != null) hinted++;
+        }
+        ctx.fillText('提示进度：' + hinted + '/' + this._totalPigsInLevel, infoX + infoW / 2, infoY + infoH / 2);
+        ctx.restore();
       }
       // 5. 底部栏（UIManager）
       this._uiBottomBar.render(ctx);
@@ -1624,7 +1680,7 @@ class PlayingEngine {
       // 上方控件：从 y=-200 落到 y=0（同时）
       var topItems = [
         { comp: this._uiTopBar,    cond: true },
-        { comp: this._uiGoldWidget, cond: !this._showVictoryPanel },
+        { comp: this._uiGoldWidget, cond: !this._showVictoryPanel && this._uiGoldWidget },
         { comp: this._uiCrownPig,   cond: true },
       ];
       for (var i = 0; i < topItems.length; i++) {
@@ -1689,7 +1745,7 @@ class PlayingEngine {
     if (this._victory && this._showVictoryPanel) {
       this._uiVictoryPopup.render(ctx);
       // 方案D：金币区浮于遮罩之上，全程可见，保持结算延续性
-      this._uiGoldWidget.render(ctx);
+      if (this._uiGoldWidget) this._uiGoldWidget.render(ctx);
     }
 
     // 7. 关主授权对话框（UIManager）
@@ -1749,23 +1805,26 @@ class PlayingEngine {
     }
     this.steps += 5;
     databus.currentStep += 5;
-    this._trialUsedRemove = true;   // 试玩中用了移除 → 不保存提示数据
+    // 试玩中使用移除 → 清空已有提示数据，重置计数器
+    if (databus.returnState === 'editor') {
+      for (var k = 0; k < this.gp.pigs.length; k++) {
+        this.gp.pigs[k].hintId = null;
+        this.gp.pigs[k].hintAngle = null;
+      }
+      this._trialHintNextId = 1;
+    }
     this._saveCheckpoint();         // 立档存盘，确保断点恢复
     this._hint.clear();
 
-    // 所有猪都消失 → 通关
+    // 所有猪都消失 → 通关（试玩模式不做处理）
     var canEscapeRemaining2 = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
     if (canEscapeRemaining2 === 0) {
+      if (databus.returnState !== 'editor') {
       this._markCleared();
       this._victory = true;
       this._victoryTime = Date.now();
-      this.hintBtn = null;  // 通关后隐藏提示按钮
+      this._uiBottomBar.setHintHidden(true);
       console.log('[LOG_victory] 通关(remove)！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
-      if (databus.returnState === 'editor') {
-        // 使用了移除 → 不保存提示数据
-        databus._trialEscapeSequence = null;
-        databus.gameState = 'editor';
-      // settlement 由 render() 中 settlement trigger 统一处理，此处不再手动启动
       }
     }
     wx.showToast({ title: '已移除', icon: 'none', duration: 1000 });
