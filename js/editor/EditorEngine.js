@@ -18,6 +18,7 @@ const databus = require('../databus.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 const { roundRect } = require('../render/PigRenderer.js');
 const cloud = require('../cloud.js');
+const LevelCache = require('../preload/LevelCache.js');
 const audio = require('../audio/AudioManager.js');
 const ButtonPress = require('../anim/ButtonPress.js');
 const SceneDefaults = require('../game/SceneDefaults.js');
@@ -62,7 +63,7 @@ class EditorEngine {
     this.toastFade = null;
 
     // ===== 云端同步加载状态 =====
-    this._cloudLoading = false;
+    this._editorLoading = false;     // 编辑器正在懒加载关卡数据
 
     // ===== 点击 vs 拖拽区分 =====
     this._pendingTouch = null;  // { x, y, pigInfo } — 未超过阈值前暂存
@@ -95,7 +96,6 @@ class EditorEngine {
   activate() {
     // 从试玩返回时不重置状态，仅恢复输入监听
     if (databus.returnState === 'editor') {
-      this._cloudLoading = false;
       this.input.on('editor', (e) => this.handleEvent(e));
       // 试玩返回：从关卡数据同步 hintId/hintAngle 到编辑器猪
       if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
@@ -128,31 +128,21 @@ class EditorEngine {
     this.dirty = false;
     this.input.on('editor', (e) => this.handleEvent(e));
 
-    // 从主界面进入：首次全量拉取云端覆盖本地，后续直接读本地缓存
-    if (this._cloudSynced === true) {
-      this.loadLevelList();
-      return;
+    // 从 databus.projectLevels 构建关卡列表（Loading 阶段已拉取）
+    this._buildLevelListFromDatabus();
+
+    if (this.levelList.length > 0) {
+      this.currentLevelIdx = this.levelList.length - 1;
+      this._ensureAndLoadLevel(this.levelList[this.currentLevelIdx]);
+    } else {
+      this.newLevel();
     }
-    this._cloudLoading = true;
-    var self = this;
-    var cloudPromise = this._pullCloudLevels()
-      .then(function() { self._cloudSynced = true; });  // 首次拉取成功后标记，后续不再拉
-    var timeoutPromise = new Promise(function(_, reject) {
-      setTimeout(function() { reject(new Error('cloud_timeout')); }, 20000);
-    });
-    Promise.race([cloudPromise, timeoutPromise])
-      .then(function() { self.loadLevelList(); })
-      .catch(function(err) {
-        console.log('[Editor] 云端拉取超时/失败:', err && err.message);
-        self.loadLevelList();
-      })
-      .finally(function() { self._cloudLoading = false; });
   }
 
   deactivate() {
     this.input.off('editor');
     this.confirmDialog = null;
-    this._cloudLoading = false;
+    this._editorLoading = false;
     this._pendingTouch = null;
   }
 
@@ -160,8 +150,8 @@ class EditorEngine {
   // 事件处理
   // ============================================================
   handleEvent(e) {
-    // 云端同步中，屏蔽所有操作
-    if (this._cloudLoading) return;
+    // 懒加载中，屏蔽所有操作
+    if (this._editorLoading) return;
 
     const t0 = e.touches[0] || e.changedTouches[0];
     if (!t0) return;
@@ -753,94 +743,150 @@ class EditorEngine {
   // 关卡管理
   // ============================================================
   loadLevelList() {
-    const fs = wx.getFileSystemManager();
-    const dir = `${wx.env.USER_DATA_PATH}/levels`;
-    try { fs.accessSync(dir); } catch (e) { try { fs.mkdirSync(dir, true); } catch (e2) {} }
-
-    // 收集已缓存关卡名（用于后续三级合并去重）
-    var cachedNames = new Set();
-
-    try {
-      const files = fs.readdirSync(dir);
-      this.levelList = files.filter(f => f.endsWith('.json')).map(f => {
-        try {
-          const raw = fs.readFileSync(`${dir}/${f}`, 'utf8');
-          const data = JSON.parse(raw);
-          const name = f.replace('.json', '');
-          cachedNames.add(name);
-          // 读取已保存的 _cloudId 和 _version
-          // 优先从 data.version 读取版本号（上传时写入），.meta 作为兜底
-          let cloudId = null, localVersion = data.version || 0;
-          const metaPath = `${dir}/.meta/${name}.json`;
-          try {
-            const metaRaw = fs.readFileSync(metaPath, 'utf8');
-            const meta = JSON.parse(metaRaw);
-            cloudId = meta.cloudId || null;
-            if (!localVersion) localVersion = meta.version || 0;
-          } catch (e) {}
-          return { name, fileName: f, data, isDirty: false, _cloudId: cloudId, _version: localVersion };
-        } catch (e) { return null; }
-      }).filter(Boolean);
-    } catch (e) {
-      this.levelList = [];
-    }
-
-    // === 三级合并：从 assets/levels/ 补充缓存中没有的关卡（云端 > 缓存 > 本地 assets）===
-    try {
-      const assetsIndexPath = 'assets/levels/index.json';
-      const indexRaw = fs.readFileSync(assetsIndexPath, 'utf8');
-      const index = JSON.parse(indexRaw);
-
-      // 支持两种 index.json 格式：
-      //   range:  { "minLevel": 1, "maxLevel": 8 } → 生成 0001~0008
-      //   array:  [{ "file": "0001.json" }, ...]
-      var assetEntries = [];
-      if (typeof index.maxLevel === 'number') {
-        // range 格式
-        for (var lv = index.minLevel || 1; lv <= index.maxLevel; lv++) {
-          var fn = String(lv).padStart(4, '0') + '.json';
-          assetEntries.push({ file: fn, name: fn.replace('.json', '') });
-        }
-      } else if (Array.isArray(index)) {
-        // array 格式
-        for (var i = 0; i < index.length; i++) {
-          var entry = index[i];
-          assetEntries.push({ file: entry.file, name: entry.file.replace('.json', '') });
-        }
-      }
-
-      for (var i = 0; i < assetEntries.length; i++) {
-        var entry = assetEntries[i];
-        var name = entry.name;
-        if (cachedNames.has(name)) continue;  // 云端/缓存优先
-        try {
-          var raw = fs.readFileSync('assets/levels/' + entry.file, 'utf8');
-          var data = JSON.parse(raw);
-          // 本地 assets 关卡无 cloudId/version/published
-          // ready: 0 表示「设计中」
-          if (data.ready === undefined) data.ready = 0;
-          this.levelList.push({ name: name, fileName: entry.file, data: data, isDirty: false, _cloudId: null, _version: 0 });
-        } catch (e2) { /* 跳过损坏的 assets 文件 */ }
-      }
-      console.log('[Editor] 三级合并完成: 缓存 ' + cachedNames.size + ' 个, 本地 assets 补充 ' + (this.levelList.length - cachedNames.size) + ' 个');
-    } catch (e3) {
-      console.log('[Editor] assets/levels/index.json 读取失败，跳过本地合并:', e3 && e3.message);
-    }
-
-    // 按关卡名称排序（自然排序，0001 < 0002 < ...）
-    this.levelList.sort(function(a, b) {
-      return a.name.localeCompare(b.name, undefined, { numeric: true });
-    });
-
+    this._buildLevelListFromDatabus();
     if (this.levelList.length > 0) {
-      // 从试玩返回时保持原关卡不动，只在首次进入时自动选最后一关
       if (this.currentLevelIdx == null || this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) {
         this.currentLevelIdx = this.levelList.length - 1;
       }
-      this.loadLevelData(this.levelList[this.currentLevelIdx].data);
+      this._ensureAndLoadLevel(this.levelList[this.currentLevelIdx]);
     } else {
       this.newLevel();
     }
+  }
+
+  /** 从 databus.projectLevels 构建编辑器关卡列表（不含完整数据） */
+  _buildLevelListFromDatabus() {
+    var pl = databus.projectLevels;
+    if (!pl || pl.length === 0) {
+      // 兜底：从本地文件系统扫描
+      this._scanLocalLevelFiles();
+      return;
+    }
+
+    this.levelList = pl.map(function(item) {
+      return {
+        name: item.name,
+        fileName: item.file,
+        data: null,           // 懒加载
+        isDirty: false,
+        _cloudId: null,
+        _version: 0
+      };
+    });
+
+    console.log('[Editor] 从 databus 构建关卡列表: ' + this.levelList.length + ' 关');
+  }
+
+  /** 兜底：从本地文件系统扫描关卡文件（合并 USER_DATA_PATH + assets/levels） */
+  _scanLocalLevelFiles() {
+    var fs = wx.getFileSystemManager();
+    var seen = {};
+    var entries = [];
+
+    // 扫描 USER_DATA_PATH/levels/
+    try {
+      var dir = wx.env.USER_DATA_PATH + '/levels';
+      try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
+      var files = fs.readdirSync(dir);
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        if (f === 'index.json' || f === '.meta' || !f.endsWith('.json')) continue;
+        var name = f.replace('.json', '');
+        seen[name] = true;
+        entries.push({ name: name, fileName: f, data: null, isDirty: false, _cloudId: null, _version: 0 });
+      }
+    } catch (e) { /* empty */ }
+
+    // 扫描 assets/levels/（内置关卡，去重）
+    try {
+      var afs = fs.readdirSync('assets/levels');
+      for (var j = 0; j < afs.length; j++) {
+        var af = afs[j];
+        if (af === 'index.json' || af === '.meta' || af === 'chapter.json' || !af.endsWith('.json')) continue;
+        var aName = af.replace('.json', '');
+        if (seen[aName]) continue;
+        seen[aName] = true;
+        entries.push({ name: aName, fileName: af, data: null, isDirty: false, _cloudId: null, _version: 0 });
+      }
+    } catch (e) { /* empty */ }
+
+    // 排序
+    entries.sort(function(a, b) {
+      return a.name.localeCompare(b.name, undefined, { numeric: true });
+    });
+
+    this.levelList = entries;
+    console.log('[Editor] 本地扫描构建关卡列表: ' + this.levelList.length + ' 关');
+  }
+
+  /** 确保关卡数据已加载（带 version 校验），然后渲染棋盘 */
+  _ensureAndLoadLevel(entry) {
+    if (!entry) return;
+    var self = this;
+
+    if (entry.data) {
+      // 已有数据 → 直接渲染
+      this.loadLevelData(entry.data);
+      return;
+    }
+
+    // 懒加载：先读本地 → 云端增量
+    this._editorLoading = true;
+
+    // Step 1: 读本地文件
+    var local = this._readLevelFile(entry.name);
+    if (local) {
+      entry.data = local;
+      entry._version = local.version || 0;
+      this._editorLoading = false;
+      this.loadLevelData(local);
+      // 后台增量拉取最新版本
+      LevelCache.fetchLevel(entry.name).then(function(updated) {
+        if (updated) {
+          entry.data = updated;
+          entry._version = updated.version || 0;
+          console.log('[Editor] ' + entry.name + ' 云端更新已同步');
+        }
+      });
+      return;
+    }
+
+    // Step 2: 无本地 → 云端拉取
+    console.log('[Editor] ' + entry.name + ' 无本地数据，从云端拉取...');
+    LevelCache.fetchLevel(entry.name).then(function(data) {
+      self._editorLoading = false;
+      if (data) {
+        entry.data = data;
+        entry._version = data.version || 0;
+      } else {
+        // 最终兜底
+        entry.data = self.getDefaultLevelData();
+        entry.isDirty = true;
+      }
+      self.loadLevelData(entry.data);
+    }).catch(function(err) {
+      console.warn('[Editor] ' + entry.name + ' 拉取失败: ' + (err && err.message));
+      self._editorLoading = false;
+      entry.data = self.getDefaultLevelData();
+      entry.isDirty = true;
+      self.loadLevelData(entry.data);
+    });
+  }
+
+  /** 读取关卡完整文件（优先 USER_DATA_PATH，fallback assets/levels） */
+  _readLevelFile(name) {
+    var fs = wx.getFileSystemManager();
+    var paths = [
+      wx.env.USER_DATA_PATH + '/levels/' + name + '.json',
+      'assets/levels/' + name + '.json'
+    ];
+    for (var i = 0; i < paths.length; i++) {
+      try {
+        var raw = fs.readFileSync(paths[i], 'utf8');
+        return JSON.parse(raw);
+      } catch (e) { /* try next */ }
+    }
+    return null;
   }
 
   saveLevel() {
@@ -1040,7 +1086,7 @@ class EditorEngine {
       this.levelList[this.currentLevelIdx].data = this.getLevelData();
     }
     this.currentLevelIdx = idx;
-    this.loadLevelData(this.levelList[idx].data);
+    this._ensureAndLoadLevel(this.levelList[idx]);
   }
 
   getDefaultLevelData() {
@@ -1112,124 +1158,6 @@ class EditorEngine {
     const metaDir = `${wx.env.USER_DATA_PATH}/levels/.meta`;
     try { fs.accessSync(metaDir); } catch (e) { fs.mkdirSync(metaDir, true); }
     fs.writeFileSync(`${metaDir}/${name}.json`, JSON.stringify({ cloudId, version: version || 0 }), 'utf8');
-  }
-
-  // 从云端下载关卡（增量同步：仅下载有变化的关卡）
-  // 客户端传入本地版本号映射，云函数只返回 version 大于本地的关卡
-  async _pullCloudLevels() {
-    try {
-      // ① 收集本地版本号映射（.meta 目录下的 {name}.json → version）
-      var fs = wx.getFileSystemManager();
-      var metaDir = `${wx.env.USER_DATA_PATH}/levels/.meta`;
-      var versions = {};
-      try {
-        var metaFiles = fs.readdirSync(metaDir);
-        for (var i = 0; i < metaFiles.length; i++) {
-          var fn = metaFiles[i];
-          if (!fn.endsWith('.json')) continue;
-          try {
-            var meta = JSON.parse(fs.readFileSync(`${metaDir}/${fn}`, 'utf8'));
-            var nm = fn.replace('.json', '');
-            versions[nm] = meta.version || 0;
-          } catch (e) { /* ignore corrupted meta */ }
-        }
-      } catch (e) { /* .meta dir may not exist yet */ }
-
-      // ② 调用批量下载云函数（增量模式：传入 versions）
-      var res = await wx.cloud.callFunction({
-        name: 'batchDownloadLevels',
-        data: { versions: versions }
-      });
-      var result = res.result;
-      if (!result || !result.ok) return;
-
-      // 无变更则直接返回（changed 可能 undefined — 兼容旧云函数）
-      var changed = result.changed;
-      if (changed === undefined) changed = (result.count || 0) - (result.skipped || 0);
-
-      console.log('[Cloud] 增量同步: ' + result.count + ' 个云端关卡, ' +
-        changed + ' 个变更, ' + (result.skipped || 0) + ' 个跳过');
-
-      if (!changed || !result.base64) return;
-
-      // ③ base64 → Uint8Array → pako.inflate → JSON
-      var binaryStr = atob(result.base64);
-      var compressed = new Uint8Array(binaryStr.length);
-      for (var j = 0; j < binaryStr.length; j++) {
-        compressed[j] = binaryStr.charCodeAt(j);
-      }
-      var pako = require('../libs/pako_inflate.min');
-      var decompressed = pako.inflate(compressed, { to: 'string' });
-      var payload = JSON.parse(decompressed);
-
-      if (result.compressedSize != null) {
-        console.log('[Cloud] 解压完成: ' + result.compressedSize + 'B → ' + result.originalSize + 'B (' +
-          Math.round(result.compressedSize / result.originalSize * 100) + '%)');
-      }
-
-      // ④ 逐关卡写入本地文件 + .meta
-      var dir = `${wx.env.USER_DATA_PATH}/levels`;
-      try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
-
-      for (var entry of Object.entries(payload)) {
-        var name = entry[0];
-        var info = entry[1];
-        var fileName = name + '.json';
-
-        info.data.version = info.version;
-        if (info.data.crownSteps == null && info.crownSteps != null) {
-          info.data.crownSteps = info.crownSteps;
-        }
-        if (info.published === true) {
-          info.data.ready = 1;
-        } else if (info.data.ready === undefined) {
-          info.data.ready = 0;
-        }
-        fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(info.data, null, 2), 'utf8');
-        this._saveCloudMeta(name, info._id, info.version);
-      }
-      console.log('[Cloud] 云端数据已覆盖本地: ' + Object.keys(payload).length + ' 个关卡');
-    } catch (e) {
-      console.warn('[Cloud] 批量下载失败，回退到逐个下载:', e);
-      await this._pullCloudLevelsFallback();
-    }
-  }
-
-  // 逐个下载（兜底方案，当 batchDownloadLevels 不可用时）
-  // listLevels() 返回 {minLevel, maxLevel}，按数字区间逐个下载
-  async _pullCloudLevelsFallback() {
-    const range = await cloud.listLevels();
-    if (!range || range.maxLevel === 0) return;
-
-    const fs = wx.getFileSystemManager();
-    const dir = `${wx.env.USER_DATA_PATH}/levels`;
-    try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
-
-    const minLevel = range.minLevel || 0;
-    const maxLevel = range.maxLevel || 0;
-    for (let lv = minLevel; lv <= maxLevel; lv++) {
-      var name = String(lv).padStart(4, '0');
-      var fileName = name + '.json';
-
-      try {
-        const full = await cloud.downloadLevel(null, name, false);
-        if (full && full.data) {
-          const cloudVersion = (full.version != null) ? full.version : (full._version || 1);
-          full.data.version = cloudVersion;
-          if (full.data.crownSteps == null && full.crownSteps != null) {
-            full.data.crownSteps = full.crownSteps;
-          }
-          if (full.data.ready === undefined) {
-            full.data.ready = (full.published === true) ? 1 : 0;
-          }
-          fs.writeFileSync(`${dir}/${fileName}`, JSON.stringify(full.data, null, 2), 'utf8');
-          this._saveCloudMeta(name, full._id, cloudVersion);
-        }
-      } catch (e) {
-        console.warn('[Cloud] Fallback 下载关卡 ' + name + ' 失败:', e && e.message);
-      }
-    }
-    console.log('[Cloud] Fallback 同步完成');
   }
 
   markCurrentDirty() {
@@ -1417,7 +1345,6 @@ class EditorEngine {
           // 重置编辑器状态
           self.levelList = [];
           self.currentLevelIdx = -1;
-          self._cloudSynced = false;
           self.dirty = false;
           self.gp.pigs = [];
           self.gp.selectedPigId = null;
@@ -1551,8 +1478,8 @@ class EditorEngine {
     if (this.showLevelSheet) this.renderLevelSheet();
     if (this.confirmDialog) this.renderConfirmDialog();
 
-    // 云端同步加载遮罩
-    if (this._cloudLoading) this.renderCloudLoading();
+    // 懒加载遮罩
+    if (this._editorLoading) this.renderCloudLoading();
   }
 
   // ============================================================

@@ -18,6 +18,7 @@ const MasterPanel = require('../ui/widgets/MasterPanel.js');
 const VictoryPopup = require('../ui/widgets/VictoryPopup.js');
 const AuthDialog = require('../ui/widgets/AuthDialog.js');
 const MasterSystem = require('./MasterSystem.js');
+const LevelCache = require('../preload/LevelCache.js');
 const HintSystem = require('./HintSystem.js');
 const VictoryAnimation = require('./VictoryAnimation.js');
 const CoinFlyEffect = require('../effects/CoinFlyEffect.js');
@@ -441,16 +442,22 @@ class PlayingEngine {
 
   /** 读取本地关卡文件，失败返回 null */
   _readLocalLevel(name) {
-    try {
-      var fs = wx.getFileSystemManager();
-      var raw = fs.readFileSync('assets/levels/' + name + '.json', 'utf8');
-      var data = JSON.parse(raw);
-      console.log('[Playing] 本地关卡 ' + name + '.json 读取成功');
-      return data;
-    } catch(e) {
-      console.warn('[Playing] 本地无 ' + name + '.json');
-      return null;
+    var fs = wx.getFileSystemManager();
+    // 优先 USER_DATA_PATH（预下载/编辑器缓存），fallback assets/levels（内置）
+    var paths = [
+      wx.env.USER_DATA_PATH + '/levels/' + name + '.json',
+      'assets/levels/' + name + '.json'
+    ];
+    for (var i = 0; i < paths.length; i++) {
+      try {
+        var raw = fs.readFileSync(paths[i], 'utf8');
+        var data = JSON.parse(raw);
+        console.log('[Playing] 本地关卡 ' + name + '.json 读取成功 (' + (i === 0 ? '缓存' : '内置') + ')');
+        return data;
+      } catch(e) { /* try next */ }
     }
+    console.warn('[Playing] 本地无 ' + name + '.json');
+    return null;
   }
 
   /** loadLevel + 恢复 _loading。data 为 null 时销毁关卡并返回主菜单 */
@@ -488,6 +495,21 @@ class PlayingEngine {
     }
     // 启动 10 秒存档定时器（放在清存档之后，避免被 _clearCheckpoint 误杀）
     this._startCheckpointTimer();
+
+    // 关卡预下载：仅最新关卡触发（非试玩模式）
+    this._tryPreloadNext();
+  }
+
+  /** 如果是"最新关卡"，触发预下载后续5关 */
+  _tryPreloadNext() {
+    if (databus.returnState === 'editor') return; // 试玩不参与
+    var li = wx.getStorageSync('lastLevelIndex');
+    var lastIdx = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : 0;
+
+    // 不是最新关卡，跳过
+    if (databus.currentLevelIndex < 0 || databus.currentLevelIndex !== lastIdx) return;
+
+    LevelCache.preloadNext(lastIdx + 1);
   }
 
   activate() {

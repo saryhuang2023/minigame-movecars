@@ -10,6 +10,7 @@ var SkinSystem = require('../game/SkinSystem.js');
 var GoldSystem = require('../game/GoldSystem.js');
 var AssetPreloader = require('../ui/AssetPreloader.js');
 var SkinLoader = require('../entity/SkinLoader.js');
+var LevelCache = require('../preload/LevelCache.js');
 
 function LoadingManager() {
   this._progress = 0;
@@ -203,6 +204,13 @@ LoadingManager.prototype._startPhase3 = function () {
     console.log('[LoadingManager] 皮肤配置就绪');
     self._p3.endpointsDone++;
   });
+
+  // 5. 关卡预下载（fire-and-forget，不阻塞 loading 进度）
+  try {
+    var li = wx.getStorageSync('lastLevelIndex');
+    var lastIdx = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : 0;
+    LevelCache.preloadNext(lastIdx);
+  } catch (e) { /* noop */ }
 };
 
 // ===== 内部：每帧更新 =====
