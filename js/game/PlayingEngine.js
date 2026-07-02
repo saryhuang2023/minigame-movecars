@@ -1003,6 +1003,7 @@ class PlayingEngine {
         this._markCleared();
         this._victory = true;
         this._victoryTime = Date.now();
+        this.hintBtn = null;  // 通关后隐藏提示按钮
         console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
         // 试玩模式：跳过结算动画和面板，自动保存路径信息
         if (databus.returnState === 'editor') {
@@ -1758,6 +1759,7 @@ class PlayingEngine {
       this._markCleared();
       this._victory = true;
       this._victoryTime = Date.now();
+      this.hintBtn = null;  // 通关后隐藏提示按钮
       console.log('[LOG_victory] 通关(remove)！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
       if (databus.returnState === 'editor') {
         // 使用了移除 → 不保存提示数据

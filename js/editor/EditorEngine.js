@@ -1856,7 +1856,7 @@ class EditorEngine {
     const presetRowY = offsetY + topBarH;
     const presetLabels = ['2格', '3格', '4格', '5格', '6格', '灵活', '石头'];
     const presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
-    const presetValues = [70, 125, 205, 280, 380, null, 44];
+    const presetValues = [70, 125, 205, 275, 370, null, 44];
     const gap = 8;
     const totalGaps = (presetLabels.length - 1) * gap;
     const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - totalGaps) / presetLabels.length);
