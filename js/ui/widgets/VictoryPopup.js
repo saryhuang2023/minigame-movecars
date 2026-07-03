@@ -93,6 +93,7 @@ function VictoryPopup(opts) {
   this._returnState = 'menu';
   this._goldAmount = 0;
   this._showGold = false;
+  this._isLastLevel = false;
   this._goldClaimed = false;  // 双倍金币是否已领取
 
   // 动画
@@ -146,6 +147,7 @@ VictoryPopup.prototype.setData = function (data) {
     this._goldAmount = data.goldAmount || 0;
   }
   this._showGold = !!data.showGold;
+  this._isLastLevel = !!data.isLastLevel;
   this._masterSteps = data.masterSteps != null ? data.masterSteps : null;
   this._masterNickname = data.masterNickname || null;
 };
@@ -541,14 +543,14 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.translate(-cx, -cy);
     _drawContinueBtnBg(ctx, CONT_BTN_X, CONT_BTN_Y, CONT_BTN_W, CONT_BTN_H);
 
-    // 文字 "继续游戏"（带阴影，同 SettingsPanel）
+    // 文字 "继续游戏" / "返回"（带阴影，同 SettingsPanel）
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '22px ' + Theme.font.family;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.shadowColor = 'rgba(3, 48, 75, 0.6)';
     ctx.shadowBlur = 2;
-    ctx.fillText('继续游戏', cx, cy);
+    ctx.fillText(this._isLastLevel ? '返回' : '继续游戏', cx, cy);
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
     ctx.restore();

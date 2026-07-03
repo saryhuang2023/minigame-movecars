@@ -641,9 +641,12 @@ class EditorEngine {
     var trialName = (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length)
       ? this.levelList[this.currentLevelIdx].name : '试玩';
     databus.currentLevel = { name: trialName, data: lv };
-    databus.currentLevelIndex = -1;  // 试玩不属于正式关卡序列，禁用"下一关"
+    databus.currentLevelIndex = -1;  // 试玩不属于正式关卡序列
     databus.returnState = 'editor';
     databus.gameState = 'playing';
+    // 试玩"下一关"需要：关卡列表引用 + 当前索引
+    databus.trialLevelList = this.levelList;
+    databus.trialCurrentIdx = this.currentLevelIdx;
   }
 
   _goToMenu() {

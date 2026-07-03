@@ -11,6 +11,7 @@ var GoldSystem = require('../game/GoldSystem.js');
 var AssetPreloader = require('../ui/AssetPreloader.js');
 var SkinLoader = require('../entity/SkinLoader.js');
 var LevelCache = require('../preload/LevelCache.js');
+var CloudCache = require('../preload/CloudCache.js');
 
 function LoadingManager() {
   this._progress = 0;
@@ -142,10 +143,15 @@ LoadingManager.prototype._startPhase2 = function () {
 
   // 4. 下载云端图片（rock 等）→ 缓存 temp 路径供 SkinLoader 使用
   self._cloudImageCache = {};
-  if (p2.cloudImages && p2.cloudImages.length > 0) {
-    for (var ci = 0; ci < p2.cloudImages.length; ci++) {
+  var preloadFiles = p2.cloudImages || [];
+  var lazyFiles = p2.cloudImagesLazy || [];
+  if (preloadFiles.length > 0 || lazyFiles.length > 0) {
+    // 初始化 CloudCache：预加载文件立即下载，按需文件仅校验版本
+    CloudCache.init(preloadFiles, lazyFiles);
+
+    for (var ci = 0; ci < preloadFiles.length; ci++) {
       (function (relativePath) {
-        cloud.downloadCloudImage(relativePath).then(function (localPath) {
+        CloudCache.downloadImage(relativePath).then(function (localPath) {
           self._cloudImageCache[relativePath] = localPath;
           self._p2.cloudLoaded = (self._p2.cloudLoaded || 0) + 1;
           console.log('[LoadingManager] 云端图片就绪: ' + relativePath + ' → ' + localPath);
@@ -154,7 +160,7 @@ LoadingManager.prototype._startPhase2 = function () {
           self._p2.cloudLoaded = (self._p2.cloudLoaded || 0) + 1;
           self._tickPhase2();
         });
-      })(p2.cloudImages[ci]);
+      })(preloadFiles[ci]);
     }
   }
 };

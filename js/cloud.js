@@ -198,6 +198,7 @@ async function getOpenId() {
  */
 async function downloadCloudFile(relativePath) {
   const fileID = CLOUD_DATA_PREFIX + relativePath;
+  console.log('[Load][Cloud] → downloadCloudFile ' + relativePath);
   const t0 = Date.now();
   try {
     var downloadRes = await wx.cloud.downloadFile({ fileID });
@@ -228,6 +229,7 @@ async function downloadCloudFile(relativePath) {
  */
 async function downloadCloudImage(relativePath) {
   const fileID = CLOUD_DATA_PREFIX + relativePath;
+  console.log('[Load][Cloud] → downloadCloudImage ' + relativePath);
   const t0 = Date.now();
   try {
     var downloadRes = await wx.cloud.downloadFile({ fileID });
@@ -265,6 +267,19 @@ async function deletePlayerProfile() {
   return callFunction('deletePlayerProfile', {}, 'Game');
 }
 
+/**
+ * 获取资源文件版本号（按文件名独立管理）
+ * @param {string[]} [files] 文件列表，如 ['skins/rock/idle/1.png']
+ * @returns {Promise<{versions: {[file:string]: number}}>}
+ */
+async function getAssetConfig(files) {
+  const res = await callFunction('getAssetConfig', { files: files || [] }, 'Load');
+  var data = res.data || { versions: {} };
+  var keys = Object.keys(data.versions || {});
+  console.log('[Load][Cloud] ← getAssetConfig ' + keys.length + ' 个文件版本: ' + keys.join(', '));
+  return data;
+}
+
 module.exports = {
   initCloud,
   callFunction,
@@ -281,5 +296,6 @@ module.exports = {
   downloadCloudFile,
   downloadCloudImage,
   settleLevel,
-  deletePlayerProfile
+  deletePlayerProfile,
+  getAssetConfig
 };

@@ -7,6 +7,7 @@ const settingsPanel = require('../ui/SettingsPanel.js');
 const ButtonPress = require('../anim/ButtonPress.js');
 const PopupAnimator = require('../ui/PopupAnimator.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
+const { roundRect } = require('../render/PigRenderer.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 
 // === UI 层 ===
@@ -170,6 +171,7 @@ class PlayingEngine {
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
     // 试玩模式：实时提示记录计数器
     this._trialHintNextId = 0;
+    this._trialNextBtn = null;
     // 正式玩：通关后保存 hint 数据缓存
     this._gameplayHintCache = [];
     this._hintMerged = false;
@@ -348,6 +350,7 @@ class PlayingEngine {
       showGold: this._goldAmount > 0,
       masterSteps: master ? master.masterSteps : null,
       masterNickname: master ? master.masterNickname : null,
+      isLastLevel: this._isLastLevelOfGame(),
     });
     this._uiVictoryPopup.visible = this._victory && this._showVictoryPanel;
 
@@ -510,6 +513,46 @@ class PlayingEngine {
     if (databus.currentLevelIndex < 0 || databus.currentLevelIndex !== lastIdx) return;
 
     LevelCache.preloadNext(lastIdx + 1);
+  }
+
+  /** 试玩模式：加载下一关 */
+  _trialGoNext() {
+    var list = databus.trialLevelList;
+    var idx = databus.trialCurrentIdx;
+    if (!list || idx < 0 || idx + 1 >= list.length) {
+      wx.showToast({ title: '已是最后一关', icon: 'none', duration: 1500 });
+      return;
+    }
+
+    var nextEntry = list[idx + 1];
+    // 加载关卡数据（优先 USER_DATA_PATH，fallback assets/levels）
+    var data = this._readLocalLevel(nextEntry.name);
+    if (!data) {
+      wx.showToast({ title: '下一关数据加载失败', icon: 'none', duration: 1500 });
+      return;
+    }
+
+    // 更新 databus
+    databus.currentLevel = { name: nextEntry.name, data: data };
+    databus.trialCurrentIdx = idx + 1;
+
+    // 重启 PlayingEngine
+    this.startLevel(nextEntry.name, { resume: false });
+  }
+
+  /** 试玩模式是否已是最后一关 */
+  _isTrialLastLevel() {
+    var list = databus.trialLevelList;
+    var idx = databus.trialCurrentIdx;
+    return !list || idx < 0 || idx + 1 >= list.length;
+  }
+
+  /** 正式模式是否已是最后一关 */
+  _isLastLevelOfGame() {
+    if (databus.returnState === 'editor') return false;
+    var list = databus.projectLevels;
+    var idx = databus.currentLevelIndex;
+    return !list || idx < 0 || idx + 1 >= list.length;
   }
 
   activate() {
@@ -702,6 +745,15 @@ class PlayingEngine {
       var badgeX = (SCREEN_WIDTH - 80) / 2;
       if (_hitRect(t.x, t.y, { x: badgeX, y: 86, w: 80, h: 32 })) {
         this._uiTopBar.triggerBreathe();
+        return;
+      }
+
+      // 试玩"下一关"按钮
+      if (databus.returnState === 'editor' && this._trialNextBtn && _hitRect(t.x, t.y, this._trialNextBtn)) {
+        this._btnPress.press('trialNext');
+        this._btnPress.breathe('trialNext');
+        audio.play('button_click');
+        this._trialGoNext();
         return;
       }
 
@@ -1280,6 +1332,11 @@ class PlayingEngine {
 
   /** 继续按钮 — 直接进入下一关（金币已入账） */
   _onContinueClick() {
+    if (this._isLastLevelOfGame()) {
+      console.log('[LOG_victory] 已是最后一关，返回主菜单');
+      databus.gameState = 'menu';
+      return;
+    }
     console.log('[LOG_victory] 用户点击继续 → 进入下一关 (current balance=' + GoldSystem.getGold() + ')');
     this._goNextLevel();
   }
@@ -1759,6 +1816,34 @@ class PlayingEngine {
         }
         ctx.fillText('提示进度：' + hinted + '/' + this._totalPigsInLevel, infoX + infoW / 2, infoY + infoH / 2);
         ctx.restore();
+
+        // "下一关"按钮（右上角，最后一关隐藏）
+        if (!this._isTrialLastLevel()) {
+        var nextW = 60, nextH = 32;
+        var nextX = SCREEN_WIDTH - PADDING - nextW;
+        var nextY = infoY;
+        this._trialNextBtn = { x: nextX, y: nextY, w: nextW, h: nextH };
+
+        var nextScale = this._btnPress.getScale('trialNext');
+        var nextCX = nextX + nextW / 2;
+        var nextCY = nextY + nextH / 2;
+        ctx.save();
+        ctx.translate(nextCX, nextCY);
+        ctx.scale(nextScale, nextScale);
+        ctx.translate(-nextCX, -nextCY);
+
+        ctx.fillStyle = '#FF9800';
+        roundRect(ctx, nextX, nextY, nextW, nextH, 6);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 13px ' + Theme.font.family + '';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('下一关', nextX + nextW / 2, nextY + nextH / 2);
+        ctx.restore();
+        } else {
+          this._trialNextBtn = null;
+        }
       }
       // 5. 底部栏（UIManager）
       this._uiBottomBar.render(ctx);
