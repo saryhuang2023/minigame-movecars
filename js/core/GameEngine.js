@@ -501,8 +501,22 @@ class GameEngine {
         levelName: cp.levelName,
         levelIndex: cp.levelIndex,
         onConfirm: function() {
-          console.log('[LOG] 用户确认恢复存档');
-          self.startLastLevel();
+          console.log('[LOG] 用户确认恢复存档: level=' + cp.levelName + ' index=' + cp.levelIndex);
+          // 用存档的关卡信息，而非 lastLevelIndex（可能已更新到更后面的关卡）
+          var totalLevels = self._getTotalLevelCount();
+          var lv = self._getLevelEntry(cp.levelIndex);
+          if (!lv) {
+            console.warn('[LOG] 存档关卡不存在，降级到 startLastLevel');
+            self.startLastLevel();
+            return;
+          }
+          databus.currentLevel = { name: lv.name, data: null };
+          databus.currentLevelIndex = cp.levelIndex;
+          databus.returnState = 'menu';
+          databus.gameState = 'playing';
+          databus._checkpointResume = true;  // 标记需要恢复
+          self._hasLeftMenu = true;
+          self._buildProjectLevels(totalLevels);
         },
         onCancel: function() {
           console.log('[LOG] 用户放弃恢复，清理存档');

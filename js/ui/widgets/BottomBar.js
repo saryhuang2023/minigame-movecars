@@ -88,6 +88,7 @@ function BottomBar(opts) {
   this._cardW = opts.cardW;
   this._buttonPress = opts.buttonPress;
   this._hintActive = false;
+  this._hintShowing = false;  // 提示正在展示中（灰化按钮）
   this._hintHidden = false;   // 通关后隐藏提示/移除按钮
   this._currentSteps = 0;
 
@@ -105,6 +106,10 @@ BottomBar.prototype.constructor = BottomBar;
 
 BottomBar.prototype.setHintActive = function (active) {
   this._hintActive = !!active;
+};
+
+BottomBar.prototype.setHintShowing = function (showing) {
+  this._hintShowing = !!showing;
 };
 
 BottomBar.prototype.setHintHidden = function (hidden) {
@@ -144,6 +149,8 @@ BottomBar.prototype.hitTest = function (px, py) {
  * 判断具体点中了哪个按钮
  */
 BottomBar.prototype.getHitType = function (px, py) {
+  // 提示展示中：提示按钮灰化，不可点击
+  if (this._hintShowing && !this._hintActive) return null;
   if (this.hintBtnRect) {
     var h = this.hintBtnRect;
     if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
@@ -225,6 +232,12 @@ BottomBar.prototype.render = function (ctx) {
     var stepTextX = hintX + 66 - textW / 2 + 10;  // 水平居中后右移10px
     var stepTextY = hintY + 63 - 7 - 13;     // bottom: 4px, textH: 13px
     ctx.fillText(stepText, stepTextX, stepTextY);
+  }
+
+  // 提示展示中：灰化遮罩
+  if (this._hintShowing && !this._hintActive) {
+    ctx.fillStyle = 'rgba(180,180,180,0.55)';
+    ctx.fillRect(hintX, hintY, HINT_W, HINT_H);
   }
 
   ctx.restore();

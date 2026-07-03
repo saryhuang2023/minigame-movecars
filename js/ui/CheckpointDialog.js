@@ -283,7 +283,7 @@ function render(ctx) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('发现您上次玩到了', pCenterX, p.y + 158);
-  ctx.fillText('第' + chapterNum + '章  第' + stepsVal + '步', pCenterX, p.y + 186);
+  ctx.fillText('第' + (li + 1) + '关  第' + stepsVal + '步', pCenterX, p.y + 186);
   ctx.fillText('是否接着玩？', pCenterX, p.y + 214);
 
   // 6. 按钮行（stagger 入场）

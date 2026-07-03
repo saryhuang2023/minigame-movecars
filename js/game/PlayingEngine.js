@@ -358,8 +358,14 @@ class PlayingEngine {
     }
     if (this._uiGoldWidget) this._uiGoldWidget.setData(goldDisplay);
 
-    // BottomBar
-    this._uiBottomBar.setHintActive(this._hint.isActive());
+    // BottomBar — 试玩模式隐藏移除按钮（始终保持提示按钮状态）
+    var hintShowing = this._hint.isActive();
+    if (databus.returnState === 'editor') {
+      this._uiBottomBar.setHintActive(false);
+    } else {
+      this._uiBottomBar.setHintActive(hintShowing);
+    }
+    this._uiBottomBar.setHintShowing(hintShowing);
     this._uiBottomBar.setCurrentSteps(this.steps);
 
     // MasterPanel
@@ -542,8 +548,14 @@ class PlayingEngine {
     // 关卡预下载：仅最新关卡触发（非试玩模式）
     this._tryPreloadNext();
 
-    // 自动开启录制（正式模式 + 试玩模式统一逻辑）
-    this._trialStartRecord();
+    // 自动开启录制（断点续玩且棋盘不完整时跳过）
+    var isResume = this._escapedCount > 0;
+    if (this._escapedCount === 0) {
+      console.log('[RecHint] 进入关卡: level=' + this.levelName + ' 模式=' + (databus.returnState === 'editor' ? '试玩' : '正式') + ' 断点续玩=' + isResume + ' → 启动录制+提示收集');
+      this._trialStartRecord();
+    } else {
+      console.log('[RecHint] 进入关卡: level=' + this.levelName + ' 模式=' + (databus.returnState === 'editor' ? '试玩' : '正式') + ' 断点续玩=' + isResume + ' escapedCount=' + this._escapedCount + ' → 跳过录制+提示收集(棋盘不完整)');
+    }
   }
 
   /** 如果是"最新关卡"，触发预下载后续5关 */
@@ -627,7 +639,6 @@ class PlayingEngine {
     var key = 'trial_record_' + this.levelName;
     wx.setStorageSync(key, JSON.stringify(this._recordEntries));
     console.log('[TrialRec] 录制结束，保存 ' + this._recordEntries.length + ' 条操作 → ' + key);
-    wx.showToast({ title: '已保存 ' + this._recordEntries.length + ' 条操作', icon: 'success', duration: 1500 });
   }
 
   _trialStartPlayback() {
@@ -755,9 +766,9 @@ class PlayingEngine {
     this.gp.pigs = (data && data.pigs ? data.pigs : []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       type: p.type || 'pig', skinId: p.skinId || 0,
-      // 试玩模式：不加载旧 hintId，本局重新收集；正式模式：加载已保存的 hint
-      hintId: databus.returnState === 'editor' ? null : (p.hintId != null ? p.hintId : null),
-      hintAngle: databus.returnState === 'editor' ? p.angle : (p.hintAngle != null ? p.hintAngle : p.angle)
+      // 统一加载已有 hint（试玩/正式一致），通关后由 _mergeAndUploadHints 全量覆盖
+      hintId: p.hintId != null ? p.hintId : null,
+      hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
     }));
     var EntityTypes = require('../entity/EntityTypes.js');
     this._totalPigsInLevel = this.gp.pigs.filter(function(p) {
@@ -1317,12 +1328,15 @@ class PlayingEngine {
       // 统一逻辑：猪逃脱时缓存提示数据（通关后统一写入关卡配置）
       if (!this._hintMerged) {
         this._gameplayHintCache.push({ pigId: pigId, angle: pig.angle });
+        console.log('[RecHint] 猪逃脱: pigId=' + pigId + ' hintCache=' + this._gameplayHintCache.length + ' → 收集提示');
         // 试玩模式：实时设 hintId/hintAngle 供显示（写盘延后到通关）
         if (databus.returnState === 'editor' && pig.hintId == null) {
           pig.hintId = this._trialHintNextId++;
           pig.hintAngle = pig.angle;
           this._hintedTrialCount++;
         }
+      } else {
+        console.log('[RecHint] 猪逃脱: pigId=' + pigId + ' → 跳过提示收集(_hintMerged=true)');
       }
 
       // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算）
@@ -1330,12 +1344,18 @@ class PlayingEngine {
       if (canEscapeRemaining === 0) {
         // 统一逻辑：通关后保存录制
         if (this._isRecording) {
+          console.log('[RecHint] 通关: 保存录像 (isRecording=true)');
           this._trialStopRecord(true);
+        } else {
+          console.log('[RecHint] 通关: 跳过录像保存 (isRecording=false)');
         }
         // 统一逻辑：通关后保存提示数据（正式+试玩）
         if (!this._hintMerged && this._gameplayHintCache.length > 0) {
           this._hintMerged = true;
+          console.log('[RecHint] 通关: 上传提示 (hintCache=' + this._gameplayHintCache.length + ')');
           this._mergeAndUploadHints();
+        } else {
+          console.log('[RecHint] 通关: 跳过提示上传 (hintMerged=' + this._hintMerged + ' hintCache=' + this._gameplayHintCache.length + ')');
         }
         if (databus.returnState !== 'editor') {
           // 正式模式：走结算流程
@@ -2087,17 +2107,6 @@ class PlayingEngine {
           ctx.restore();
         }
 
-        // --- 录制中提示文字 ---
-        if (this._isRecording) {
-          ctx.save();
-          ctx.fillStyle = '#E53935';
-          ctx.font = 'bold 10px ' + Theme.font.family + '';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'top';
-          ctx.fillText('录制中', playX + playW / 2, infoY + btnH + 2);
-          ctx.restore();
-        }
-
         // --- 下一关 ---
         if (!this._isTrialLastLevel()) {
           this._trialNextBtn = { x: nextX, y: infoY, w: nextW, h: btnH };
@@ -2237,6 +2246,65 @@ class PlayingEngine {
         this._settleCoinsAndStartVictory();
       }
     }
+
+    // ===== 录制/提示状态指示器（左上角） =====
+    this._renderStatusIndicators();
+  }
+
+  /** 左上角录制/提示状态指示器（水平排列） */
+  _renderStatusIndicators() {
+    var showRec = this._isRecording;
+    var showHint = !this._hintMerged;
+    if (!showRec && !showHint) return;
+    // 设置面板打开时不显示（避免遮挡）
+    if (settingsPanel.isOpen()) return;
+
+    var indX = 5;
+    var indY = 5;
+    var iconR = 4;
+    var itemH = 14;
+    var cy = indY + itemH / 2;
+    var gap = 10;
+
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 11px ' + Theme.font.family;
+
+    var cursorX = indX;
+
+    if (showRec) {
+      // 录制图标：红色圆点 + 脉冲
+      var pulse = 0.55 + 0.45 * Math.sin(Date.now() / 280);
+      ctx.fillStyle = 'rgba(229,57,53,' + pulse.toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.arc(cursorX + iconR, cy, iconR, 0, Math.PI * 2);
+      ctx.fill();
+      // 红色描边圈
+      ctx.strokeStyle = '#E53935';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cursorX + iconR, cy, iconR + 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+      // 文字
+      ctx.fillStyle = '#E53935';
+      ctx.fillText('rec...', cursorX + iconR * 2 + 4, cy);
+      cursorX += iconR * 2 + 4 + ctx.measureText('rec...').width + gap;
+    }
+
+    if (showHint) {
+      // 提示图标：琥珀色灯泡形（小圆 + 底部短柄）
+      ctx.fillStyle = '#FFC107';
+      ctx.beginPath();
+      ctx.arc(cursorX + iconR, cy - 1, iconR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(cursorX + iconR - 2, cy + iconR - 1, 4, 2.5);
+      // 文字
+      ctx.fillStyle = '#FFC107';
+      ctx.fillText('hint...', cursorX + iconR * 2 + 4, cy);
+    }
+
+    ctx.restore();
   }
 
   // ============================================================
@@ -2254,7 +2322,18 @@ class PlayingEngine {
     }
     this.steps += 5;
     databus.currentStep += 5;
-    // 试玩中使用移除：仅移除猪本身，不改变其他猪的提示数据
+
+    // 使用移除功能 → 取消录像和提示收集（正式+试玩统一）
+    if (this._isRecording) {
+      this._trialStopRecord(false);  // 停止录制，不保存
+      console.log('[RecHint] 使用移除功能 → 取消录像');
+    }
+    if (!this._hintMerged) {
+      this._hintMerged = true;       // 跳过后续提示收集和通关上传
+      this._gameplayHintCache = [];
+      console.log('[RecHint] 使用移除功能 → 取消提示收集');
+    }
+
     this._saveCheckpoint();         // 立档存盘，确保断点恢复
     this._hint.clear();
 
@@ -2397,6 +2476,15 @@ class PlayingEngine {
 
     console.log('[LOG] 恢复猪: 更新=' + this.gp.pigs.length + ' 剔除=' + removedCount);
     this.gp.rebuildOccupancy();
+
+    // 断点续玩且棋盘不完整：跳过录制和提示收集
+    if (removedCount > 0) {
+      this._escapedCount = removedCount;  // 标记棋盘不完整，_allPigsOnBoard() 返回 false
+      this._hintMerged = true;            // 跳过提示收集，避免残缺 hint 覆盖旧数据
+      console.log('[RecHint] 断点续玩: 棋盘不完整(removed=' + removedCount + ') → 跳过录制+提示收集');
+    } else {
+      console.log('[RecHint] 断点续玩: 棋盘完整(removed=0) → 正常启动录制+提示收集');
+    }
 
     // 恢复完成后不清理存档 — 由 30 秒定时器自然覆盖
     console.log('[LOG] 存档已恢复 steps=' + this.steps + ' pigs=' + this.gp.pigs.length);
