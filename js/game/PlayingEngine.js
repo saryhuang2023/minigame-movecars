@@ -1133,14 +1133,12 @@ class PlayingEngine {
           lastCollideTime: 0,
           isValidNow: true
         };
-        // 试玩模式：长按 600ms 清除提示
+        // 试玩模式：长按 5000ms 清除提示
         if (databus.returnState === 'editor' && pig.hintId != null) {
           var self2 = this;
-          this._longPressPigId = pig.id;
-          console.log('[DEBUG] 启动长按计时 pigId=' + pig.id + ' hintId=' + pig.hintId);
-          this._clearLongPressTimer();
+          this._clearLongPressTimer();   // 先清旧计时
+          this._longPressPigId = pig.id; // 再设新 ID
           this._longPressTimer = setTimeout(function () {
-            console.log('[DEBUG] 长按计时器触发 pigId=' + pig.id + ' stored=' + self2._longPressPigId);
             if (self2._longPressPigId !== pig.id) return;
             self2._clearLongPressTimer();
             wx.showModal({
@@ -1163,7 +1161,7 @@ class PlayingEngine {
                 }
               }
             });
-          }, 600);
+          }, 5000);
         }
       }
     }
@@ -1201,12 +1199,7 @@ class PlayingEngine {
         this._rotateHandle = audio.playLooped('rotate_loop');
       }
       var boardPos = this.gp.screenToBoard(x, y);
-      var prevAngle = this.gp.dragState.displayAngle;
       this.gp.handleRotateDrag(boardPos.x, boardPos.y);
-      // 猪角度变了 → 取消长按（微动不取消）
-      if (this.gp.dragState.displayAngle !== prevAngle) {
-        this._clearLongPressTimer();
-      }
     }
   }
 

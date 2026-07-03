@@ -180,7 +180,7 @@ class BugReporter {
       },
       device: this._getDeviceInfo(),
       game: this._getGameState(),
-      error: error ? { message: error.message || '', stack: error.stack || '' } : null,
+      error: error ? { message: error.message || String(error).substring(0, 500), stack: error.stack || '' } : null,
       replay: this._actionLog.slice(-CONFIG.MAX_ACTION_LOG),
       perf: this._getPerf(),
       logs: this._logBuffer.slice(-CONFIG.MAX_LOG_BUFFER)
@@ -302,6 +302,12 @@ class BugReporter {
 
   /** 崩溃上报 */
   _onCrash(err, trigger) {
+    // wx.onError 传的是字符串，标准化为 Error-like 对象
+    if (typeof err === 'string') {
+      err = { message: err, stack: '' };
+    } else if (!err) {
+      err = { message: '', stack: '' };
+    }
     // 频率限制
     if (this._sessionReportCount >= CONFIG.MAX_REPORTS_PER_SESSION) {
       console.warn('[BugReporter] 已达单次启动上报上限，丢弃本条');
