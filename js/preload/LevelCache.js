@@ -129,14 +129,38 @@ LevelCache.prototype._saveLevelFile = function (name, data, version) {
 };
 
 LevelCache.prototype._decodeBase64 = function (b64) {
-  // wx.base64ToArrayBuffer 不存在于基础库，用 atob 手动解码
-  var binaryStr = atob(b64);
-  var bytes = new Uint8Array(binaryStr.length);
-  for (var i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
+  // WeChat 小游戏没有 atob 和 TextDecoder
+  if (typeof wx !== 'undefined' && wx.base64ToArrayBuffer) {
+    var buf = wx.base64ToArrayBuffer(b64);
+    var bytes = new Uint8Array(buf);
+    return this._bytesToStr(bytes);
   }
-  var decoder = new TextDecoder('utf-8');
-  return decoder.decode(bytes);
+  // 本地 base64 解码
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  var output = '';
+  var i = 0;
+  b64 = (b64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  while (i < b64.length) {
+    var e1 = chars.indexOf(b64.charAt(i++));
+    var e2 = chars.indexOf(b64.charAt(i++));
+    var e3 = chars.indexOf(b64.charAt(i++));
+    var e4 = chars.indexOf(b64.charAt(i++));
+    var c1 = (e1 << 2) | (e2 >> 4);
+    var c2 = ((e2 & 15) << 4) | (e3 >> 2);
+    var c3 = ((e3 & 3) << 6) | e4;
+    output += String.fromCharCode(c1);
+    if (e3 !== 64) output += String.fromCharCode(c2);
+    if (e4 !== 64) output += String.fromCharCode(c3);
+  }
+  return decodeURIComponent(escape(output));
+};
+
+LevelCache.prototype._bytesToStr = function (bytes) {
+  var str = '';
+  for (var i = 0; i < bytes.length; i++) {
+    str += '%' + ('0' + bytes[i].toString(16)).slice(-2);
+  }
+  return decodeURIComponent(str);
 };
 
 module.exports = new LevelCache();

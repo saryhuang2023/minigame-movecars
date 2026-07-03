@@ -145,10 +145,6 @@ class PlayingEngine {
     this._playbackDotPos = null;  // { x, y } 回放触控位置指示
     this._playbackTimer = null;
 
-    // 长按清除提示（试玩模式）
-    this._longPressTimer = null;
-    this._longPressPigId = null;
-
     // 场景背景图
     this._sceneBgImg = wx.createImage();
     this._sceneBgLoaded = false;
@@ -168,6 +164,7 @@ class PlayingEngine {
     databus.currentStep = 0;
     this._victory = false;
     this._victoryTime = 0;
+    this.gp.fadeAlpha = 1;  // 重置孔洞透明度
     this._showVictoryPanel = false;
     this._victoryAnimStart = 0;
     this._victoryAnimator.close();  // 立即关闭（无动画）
@@ -213,7 +210,6 @@ class PlayingEngine {
     this._recordEntries = [];
     this._isPlayingBack = false;
     if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
-    this._clearLongPressTimer();
     // 正式玩：通关后保存 hint 数据缓存
     this._gameplayHintCache = [];
     this._hintMerged = false;
@@ -732,7 +728,6 @@ class PlayingEngine {
     if (this._isRecording) this._trialStopRecord();
     this._isPlayingBack = false;
     if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
-    this._clearLongPressTimer();
   }
 
   loadLevel(data) {
@@ -1133,47 +1128,10 @@ class PlayingEngine {
           lastCollideTime: 0,
           isValidNow: true
         };
-        // 试玩模式：长按 5000ms 清除提示
-        if (databus.returnState === 'editor' && pig.hintId != null) {
-          var self2 = this;
-          this._clearLongPressTimer();   // 先清旧计时
-          this._longPressPigId = pig.id; // 再设新 ID
-          this._longPressTimer = setTimeout(function () {
-            if (self2._longPressPigId !== pig.id) return;
-            self2._clearLongPressTimer();
-            wx.showModal({
-              title: '清除提示信息',
-              content: '是否清除该猪的提示信息？',
-              success: function (res) {
-                if (res.confirm) {
-                  var p = self2.gp.pigs.find(function (p2) { return p2.id === pig.id; });
-                  if (p) {
-                    p.hintId = null;
-                    p.hintAngle = null;
-                    self2._hintedTrialCount = Math.max(0, self2._hintedTrialCount - 1);
-                    // 同步到关卡数据
-                    if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
-                      var orig = databus.currentLevel.data.pigs.find(function (p3) { return p3.id === pig.id; });
-                      if (orig) { orig.hintId = undefined; orig.hintAngle = undefined; }
-                    }
-                    wx.showToast({ title: '提示已清除', icon: 'success', duration: 1500 });
-                  }
-                }
-              }
-            });
-          }, 5000);
-        }
       }
     }
     // 录制：棋盘操作（只录板子上的触摸）
     this._recordTouch('touchstart', x, y);
-    // 未命中猪 → 取消长按计时
-    if (!hit) this._clearLongPressTimer();
-  }
-
-  _clearLongPressTimer() {
-    if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
-    this._longPressPigId = null;
   }
 
   _recordTouch(type, x, y) {
@@ -1205,7 +1163,6 @@ class PlayingEngine {
 
   onTouchEnd(x, y) {
     this._guide.onPlayerAction();  // 松手操作 → 重置空闲计时
-    this._clearLongPressTimer();   // 松手 → 不是长按
     this._recordTouch('touchend', x, y);
 
     if (!this.gp.dragState) return;
@@ -2045,6 +2002,11 @@ class PlayingEngine {
     this._checkMasterAnimWaiting();
     this._victoryAnim.setLayout(this._boardCardX, this._boardCardY, this._boardCardW, SCREEN_WIDTH, SCREEN_HEIGHT);
     this._victoryAnim.update();
+    // 通关后孔洞渐隐（1s 内 alpha 1→0）
+    if (this._victory) {
+      var elapsed = Date.now() - this._victoryTime;
+      this.gp.fadeAlpha = Math.max(0, 1 - elapsed / 1000);
+    }
 
     // ---- UI 渲染（受入场动画控制）----
     if (!entranceActive) {

@@ -533,7 +533,7 @@ VictoryPopup.prototype.render = function (ctx) {
   var REPLAY_BTN_X = px + 66;                              // left: 66
   var REPLAY_BTN_Y = py + ph - 31 - REPLAY_BTN_H;        // bottom: 31
 
-  var _renderContinueBtn = function (anim) {
+  var _renderContinueBtn = (anim) => {
     ctx.save();
     ctx.globalAlpha = anim.alpha;
     var cx = CONT_BTN_X + CONT_BTN_W / 2;

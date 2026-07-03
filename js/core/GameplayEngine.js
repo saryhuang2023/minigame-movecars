@@ -43,6 +43,7 @@ class GameplayEngine {
     this.vSpacing = 0;
     this.holes = [];
     this.holeOccupied = [];
+    this.fadeAlpha = 1;          // 孔洞渐隐 alpha（通关后 1→0）
 
     // ===== 小猪 =====
     this.pigs = [];
@@ -989,7 +990,7 @@ class GameplayEngine {
 
     const r = this.scaledHalfDiameter;
 
-    // 孔位（纯色填充）
+    // 孔位（纯色填充；通关后渐隐）
     for (let i = 0; i < this.holes.length; i++) {
       const h = this.holes[i];
       const occ = this.holeOccupied[i];
@@ -999,11 +1000,14 @@ class GameplayEngine {
       ctx.arc(hx, hy, r, 0, Math.PI * 2);
 
       if (occ !== -1) {
+        ctx.save();
+        ctx.globalAlpha = this.fadeAlpha;
         ctx.fillStyle = BC.holeOccupied;
         ctx.fill();
+        ctx.restore();
       } else {
         ctx.save();
-        ctx.globalAlpha = BC.holeEmptyAlpha;
+        ctx.globalAlpha = BC.holeEmptyAlpha * this.fadeAlpha;
         ctx.fillStyle = BC.holeEmpty;
         ctx.fill();
         ctx.restore();

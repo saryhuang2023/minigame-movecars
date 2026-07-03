@@ -791,38 +791,43 @@ class EditorEngine {
     console.log('[Editor] 从 databus 构建关卡列表: ' + this.levelList.length + ' 关');
   }
 
-  /** 兜底：从本地文件系统扫描关卡文件（合并 USER_DATA_PATH + assets/levels） */
+  /** 兜底：从本地 index.json 构建关卡列表（readdir 在真机上不可靠） */
   _scanLocalLevelFiles() {
     var fs = wx.getFileSystemManager();
-    var seen = {};
     var entries = [];
 
-    // 扫描 USER_DATA_PATH/levels/
+    // 方式1：读取 assets/levels/index.json（范围模式）
     try {
-      var dir = wx.env.USER_DATA_PATH + '/levels';
-      try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
-      var files = fs.readdirSync(dir);
-      for (var i = 0; i < files.length; i++) {
-        var f = files[i];
-        if (f === 'index.json' || f === '.meta' || !f.endsWith('.json')) continue;
-        var name = f.replace('.json', '');
-        seen[name] = true;
-        entries.push({ name: name, fileName: f, data: null, isDirty: false, _cloudId: null, _version: 0 });
+      var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
+      var indexData = JSON.parse(indexRaw);
+      var max = 0;
+      if (typeof indexData.maxLevel === 'number') {
+        max = indexData.maxLevel;
+      } else if (Array.isArray(indexData)) {
+        max = indexData.length;
       }
-    } catch (e) { /* empty */ }
-
-    // 扫描 assets/levels/（内置关卡，去重）
-    try {
-      var afs = fs.readdirSync('assets/levels');
-      for (var j = 0; j < afs.length; j++) {
-        var af = afs[j];
-        if (af === 'index.json' || af === '.meta' || af === 'chapter.json' || !af.endsWith('.json')) continue;
-        var aName = af.replace('.json', '');
-        if (seen[aName]) continue;
-        seen[aName] = true;
-        entries.push({ name: aName, fileName: af, data: null, isDirty: false, _cloudId: null, _version: 0 });
+      // 合并云端最大关卡数（同 LevelSelectEngine.loadProjectLevels）
+      var cloudMax = databus._cloudMaxLevel || 0;
+      max = Math.max(max, cloudMax);
+      for (var i = 0; i < max; i++) {
+        var name = String(i + 1).padStart(4, '0');
+        entries.push({ name: name, fileName: name + '.json', data: null, isDirty: false, _cloudId: null, _version: 0 });
       }
-    } catch (e) { /* empty */ }
+      console.log('[Editor] 从 index.json 构建关卡列表: ' + entries.length + ' 关');
+    } catch (e) {
+      // 方式2：readdir 扫描（开发工具兼容）
+      try {
+        var dir = wx.env.USER_DATA_PATH + '/levels';
+        try { fs.accessSync(dir); } catch (_) { fs.mkdirSync(dir, true); }
+        var files = fs.readdirSync(dir);
+        for (var j = 0; j < files.length; j++) {
+          var f = files[j];
+          if (f === 'index.json' || f === '.meta' || !f.endsWith('.json')) continue;
+          var fName = f.replace('.json', '');
+          entries.push({ name: fName, fileName: f, data: null, isDirty: false, _cloudId: null, _version: 0 });
+        }
+      } catch (_) { /* empty */ }
+    }
 
     // 排序
     entries.sort(function(a, b) {
@@ -1965,8 +1970,9 @@ class EditorEngine {
     x += syncW + 4;
 
     // 发布按钮：toggle ready 0↔1
-    const ready = (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length)
-      ? (this.levelList[this.currentLevelIdx].data.ready || 0) : 0;
+    const entry = (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length)
+      ? this.levelList[this.currentLevelIdx] : null;
+    const ready = (entry && entry.data) ? (entry.data.ready || 0) : 0;
     const publishW = 50;
     const publishColor = ready === 1 ? '#E91E63' : '#9E9E9E';
     this._drawBtn('lvl:publish', x, btnY2, publishW, btnH, function() {
