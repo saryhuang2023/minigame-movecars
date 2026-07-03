@@ -97,6 +97,17 @@ class EditorEngine {
     // 从试玩返回时不重置状态，仅恢复输入监听
     if (databus.returnState === 'editor') {
       this.input.on('editor', (e) => this.handleEvent(e));
+
+      // 试玩中切换了关卡 → 加载对应关卡数据
+      if (databus._trialReturnLevelIdx != null) {
+        var returnIdx = databus._trialReturnLevelIdx;
+        delete databus._trialReturnLevelIdx;
+        if (returnIdx >= 0 && returnIdx < this.levelList.length) {
+          this.currentLevelIdx = returnIdx;
+          this._ensureAndLoadLevel(this.levelList[returnIdx]);
+        }
+      }
+
       // 试玩返回：从关卡数据同步 hintId/hintAngle 到编辑器猪
       if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
         var dataPigs = databus.currentLevel.data.pigs;

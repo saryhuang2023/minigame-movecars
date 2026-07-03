@@ -36,6 +36,25 @@ function _hitRect(px, py, rect) {
   return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
 }
 
+// 试玩模式小按钮绘制（带按压缩放）
+function _drawTrialBtn(ctx, x, y, w, h, label, color, scale) {
+  scale = scale || 1;
+  var cx = x + w / 2, cy = y + h / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.translate(-cx, -cy);
+  ctx.fillStyle = color;
+  roundRect(ctx, x, y, w, h, 6);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px ' + Theme.font.family + '';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, cx, cy);
+  ctx.restore();
+}
+
 // 布局常量（来自 Ardot 设计稿 375×812）
 const TOP_BAR_H = 48;
 const BOTTOM_BAR_H = 90;
@@ -118,6 +137,18 @@ class PlayingEngine {
     this._settlementTriggered = false; // 结算已触发（防重入）
     this._settlementTimer = null;      // 2.5s 兜底定时器
 
+    // 录制回放系统（试玩模式）
+    this._isRecording = false;
+    this._recordingStart = 0;
+    this._recordEntries = [];      // [{ type, x, y, dt }]
+    this._isPlayingBack = false;
+    this._playbackDotPos = null;  // { x, y } 回放触控位置指示
+    this._playbackTimer = null;
+
+    // 长按清除提示（试玩模式）
+    this._longPressTimer = null;
+    this._longPressPigId = null;
+
     // 场景背景图
     this._sceneBgImg = wx.createImage();
     this._sceneBgLoaded = false;
@@ -171,7 +202,18 @@ class PlayingEngine {
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
     // 试玩模式：实时提示记录计数器
     this._trialHintNextId = 0;
+    this._escapedCount = 0;        // 逃逸猪数（只增不减，判断录制/回放前置条件）
+    this._hintedTrialCount = 0;   // 试玩模式已标记 hint 的猪数（不随逃逸减少）
     this._trialNextBtn = null;
+    this._trialRecBtn = null;
+    this._trialPlayBtn = null;
+    this._trialResetBtn = null;
+    this._isRecording = false;
+    this._recordingStart = 0;
+    this._recordEntries = [];
+    this._isPlayingBack = false;
+    if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
+    this._clearLongPressTimer();
     // 正式玩：通关后保存 hint 数据缓存
     this._gameplayHintCache = [];
     this._hintMerged = false;
@@ -532,9 +574,10 @@ class PlayingEngine {
       return;
     }
 
-    // 更新 databus
+    // 更新 databus（编辑器下次 activate 时读取）
     databus.currentLevel = { name: nextEntry.name, data: data };
     databus.trialCurrentIdx = idx + 1;
+    databus._trialReturnLevelIdx = idx + 1;
 
     // 重启 PlayingEngine
     this.startLevel(nextEntry.name, { resume: false });
@@ -545,6 +588,103 @@ class PlayingEngine {
     var list = databus.trialLevelList;
     var idx = databus.trialCurrentIdx;
     return !list || idx < 0 || idx + 1 >= list.length;
+  }
+
+  /** 棋盘猪是否全部在棋盘上（是否有猪逃逸过） */
+  _allPigsOnBoard() {
+    return this._escapedCount === 0;
+  }
+
+  // ===== 录制回放（游戏动作） =====
+
+  _recordAction(action) {
+    if (this._isRecording) this._recordEntries.push(action);
+  }
+
+  _trialStartRecord() {
+    if (!this._allPigsOnBoard()) {
+      wx.showToast({ title: '请先重置关卡', icon: 'none', duration: 1500 });
+      return;
+    }
+    this._isRecording = true;
+    this._recordingStart = Date.now();
+    this._recordEntries = [];
+    console.log('[TrialRec] 开始录制');
+  }
+
+  _trialStopRecord() {
+    this._isRecording = false;
+    if (this._recordEntries.length === 0) {
+      console.log('[TrialRec] 无操作，不保存');
+      return;
+    }
+    var key = 'trial_record_' + this.levelName;
+    wx.setStorageSync(key, JSON.stringify(this._recordEntries));
+    console.log('[TrialRec] 录制结束，保存 ' + this._recordEntries.length + ' 条操作 → ' + key);
+    wx.showToast({ title: '已保存 ' + this._recordEntries.length + ' 条操作', icon: 'success', duration: 1500 });
+  }
+
+  _trialStartPlayback() {
+    if (!this._allPigsOnBoard()) {
+      wx.showToast({ title: '请先重置关卡', icon: 'none', duration: 1500 });
+      return;
+    }
+    var key = 'trial_record_' + this.levelName;
+    var raw = wx.getStorageSync(key);
+    if (!raw) return;
+
+    var events = JSON.parse(raw);
+    if (!events || events.length === 0) return;
+
+    this._isPlayingBack = true;
+    console.log('[TrialRec] 开始回放 ' + events.length + ' 条触控');
+
+    // 计算回放延迟：事件间隔超过 500ms 则压缩
+    var MAX_GAP = 500;
+    var delayed = 0;  // 累积延迟
+    var lastDt = 0;
+    var self = this;
+    for (var i = 0; i < events.length; i++) {
+      var gap = events[i].dt - lastDt;
+      if (gap > MAX_GAP) gap = MAX_GAP;
+      lastDt = events[i].dt;
+      delayed += gap;
+      (function (evt, playDt) {
+        setTimeout(function () {
+          if (!self._isPlayingBack) return;
+          var xf = self.gp._xform;
+          var sx, sy;
+          if (xf) {
+            sx = xf.screenCX + (evt.bx - xf.boardCX) * xf.scale;
+            sy = xf.screenCY + (evt.by - xf.boardCY) * xf.scale;
+          } else {
+            sx = evt.bx;
+            sy = evt.by;
+          }
+          self._playbackDotPos = { x: sx, y: sy };
+          if (evt.type === 'touchstart') self.onTouchStart(sx, sy);
+          else if (evt.type === 'touchmove') self.onTouchMove(sx, sy);
+          else if (evt.type === 'touchend') self.onTouchEnd(sx, sy);
+        }, playDt);
+      })(events[i], delayed);
+    }
+
+    // 回放结束清理 + Toast
+    var doneTimer = setTimeout(function () {
+      self._isPlayingBack = false;
+      console.log('[TrialRec] 回放完成');
+      wx.showToast({ title: '回放完成', icon: 'success', duration: 1500 });
+    }, delayed + 1000);
+    this._playbackTimer = doneTimer;
+  }
+
+  /** 强制移除无法推出的猪（回放用） */
+  _forceRemovePig(pigId) {
+    var idx = this.gp.pigs.findIndex(function (p) { return p.id === pigId; });
+    if (idx < 0) return false;
+    this.gp.pigs.splice(idx, 1);
+    this.gp.clearPigOccupancy(pigId);
+    return true;
   }
 
   /** 正式模式是否已是最后一关 */
@@ -588,6 +728,11 @@ class PlayingEngine {
     this._guide.reset();         // 退出关卡时强制结束引导
     this._destroyAuthBtn(true);  // 立即关闭，无动画
     this._clearCheckpoint();     // 任何退出关卡路径都清理存档
+    // 清理录制/回放状态
+    if (this._isRecording) this._trialStopRecord();
+    this._isPlayingBack = false;
+    if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
+    this._clearLongPressTimer();
   }
 
   loadLevel(data) {
@@ -632,6 +777,13 @@ class PlayingEngine {
         if (hid != null && hid > maxId) maxId = hid;
       }
       this._trialHintNextId = maxId + 1;
+    }
+    // 试玩模式：初始已标记 hint 的猪数
+    if (databus.returnState === 'editor') {
+      this._hintedTrialCount = 0;
+      for (var i = 0; i < this.gp.pigs.length; i++) {
+        if (this.gp.pigs[i].hintId != null) this._hintedTrialCount++;
+      }
     }
     // 正式玩法：关卡无 hint 数据则隐藏提示按钮
     if (databus.returnState !== 'editor' && this._uiBottomBar) {
@@ -718,8 +870,8 @@ class PlayingEngine {
         return; // 通关后屏蔽其他触控
       }
 
-      // 右上角奖杯（覆盖奖杯+步数整个区域）
-      if (_hitRect(t.x, t.y, { x: SCREEN_WIDTH - 78, y: 65, w: 73, h: 80 })) {
+      // 右上角奖杯（覆盖奖杯+步数整个区域，试玩模式跳过）
+      if (databus.returnState !== 'editor' && _hitRect(t.x, t.y, { x: SCREEN_WIDTH - 78, y: 65, w: 73, h: 80 })) {
         this._uiCrownPig.triggerBreathe();
         return;
       }
@@ -741,19 +893,65 @@ class PlayingEngine {
         return;
       }
 
-      // 顶部关卡徽章（仅呼吸反馈，不触发功能）
-      var badgeX = (SCREEN_WIDTH - 80) / 2;
-      if (_hitRect(t.x, t.y, { x: badgeX, y: 86, w: 80, h: 32 })) {
-        this._uiTopBar.triggerBreathe();
-        return;
-      }
-
       // 试玩"下一关"按钮
       if (databus.returnState === 'editor' && this._trialNextBtn && _hitRect(t.x, t.y, this._trialNextBtn)) {
+        this._stopPlaybackIfNeeded();
         this._btnPress.press('trialNext');
         this._btnPress.breathe('trialNext');
         audio.play('button_click');
         this._trialGoNext();
+        return;
+      }
+
+      // 试玩"重置"按钮
+      if (databus.returnState === 'editor' && this._trialResetBtn && _hitRect(t.x, t.y, this._trialResetBtn)) {
+        this._stopPlaybackIfNeeded();
+        this._btnPress.press('trialReset');
+        this._btnPress.breathe('trialReset');
+        audio.play('button_click');
+        var data = this._readLocalLevel(this.levelName);
+        if (data) databus.currentLevel.data = data;
+        this.restartLevel();
+        return;
+      }
+
+      // 试玩"录制"按钮
+      if (databus.returnState === 'editor' && this._trialRecBtn && _hitRect(t.x, t.y, this._trialRecBtn)) {
+        if (this._isPlayingBack) return; // 回放中不可操作
+        this._btnPress.press('trialRec');
+        this._btnPress.breathe('trialRec');
+        audio.play('button_click');
+        if (this._isRecording) {
+          this._trialStopRecord();
+        } else {
+          this._trialStartRecord();
+        }
+        return;
+      }
+
+      // 试玩"回放"按钮
+      if (databus.returnState === 'editor' && this._trialPlayBtn && _hitRect(t.x, t.y, this._trialPlayBtn)) {
+        if (this._isRecording) return; // 录制中不可回放
+        if (this._isPlayingBack) {
+          // 播放中 → 停止回放
+          this._isPlayingBack = false;
+          if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
+          wx.showToast({ title: '回放已停止', icon: 'none', duration: 1500 });
+          return;
+        }
+        var hasRec = !!wx.getStorageSync('trial_record_' + this.levelName);
+        if (!hasRec) return;
+        this._btnPress.press('trialPlay');
+        this._btnPress.breathe('trialPlay');
+        audio.play('button_click');
+        this._trialStartPlayback();
+        return;
+      }
+
+      // 顶部关卡徽章（仅呼吸反馈，不触发功能，trial 模式下无徽章但 hit rect 可能误触）
+      var badgeX = (SCREEN_WIDTH - 80) / 2;
+      if (databus.returnState !== 'editor' && _hitRect(t.x, t.y, { x: badgeX, y: 86, w: 80, h: 32 })) {
+        this._uiTopBar.triggerBreathe();
         return;
       }
 
@@ -831,9 +1029,11 @@ class PlayingEngine {
 
   onTouchStart(x, y) {
     this._guide.onPlayerAction();  // 棋盘操作 → 重置空闲计时
+    this._recordTouch('touchstart', x, y);
 
+    // === 按钮检测（回放中跳过） ===
+    if (!this._isPlayingBack) {
     var self = this;
-
     // 顶栏按钮（试玩模式返回编辑器，其他打开设置面板）
     if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
         y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
@@ -908,6 +1108,7 @@ class PlayingEngine {
         return;
       }
     }
+    }  // !this._isPlayingBack
 
     // 棋盘区域：找小猪，按下即激活拖拽
     var boardPos = this.gp.screenToBoard(x, y);
@@ -932,12 +1133,67 @@ class PlayingEngine {
           lastCollideTime: 0,
           isValidNow: true
         };
+        // 试玩模式：长按 600ms 清除提示
+        if (databus.returnState === 'editor' && pig.hintId != null) {
+          var self2 = this;
+          this._longPressPigId = pig.id;
+          console.log('[DEBUG] 启动长按计时 pigId=' + pig.id + ' hintId=' + pig.hintId);
+          this._clearLongPressTimer();
+          this._longPressTimer = setTimeout(function () {
+            console.log('[DEBUG] 长按计时器触发 pigId=' + pig.id + ' stored=' + self2._longPressPigId);
+            if (self2._longPressPigId !== pig.id) return;
+            self2._clearLongPressTimer();
+            wx.showModal({
+              title: '清除提示信息',
+              content: '是否清除该猪的提示信息？',
+              success: function (res) {
+                if (res.confirm) {
+                  var p = self2.gp.pigs.find(function (p2) { return p2.id === pig.id; });
+                  if (p) {
+                    p.hintId = null;
+                    p.hintAngle = null;
+                    self2._hintedTrialCount = Math.max(0, self2._hintedTrialCount - 1);
+                    // 同步到关卡数据
+                    if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
+                      var orig = databus.currentLevel.data.pigs.find(function (p3) { return p3.id === pig.id; });
+                      if (orig) { orig.hintId = undefined; orig.hintAngle = undefined; }
+                    }
+                    wx.showToast({ title: '提示已清除', icon: 'success', duration: 1500 });
+                  }
+                }
+              }
+            });
+          }, 600);
+        }
       }
+    }
+    // 录制：棋盘操作（只录板子上的触摸）
+    this._recordTouch('touchstart', x, y);
+    // 未命中猪 → 取消长按计时
+    if (!hit) this._clearLongPressTimer();
+  }
+
+  _clearLongPressTimer() {
+    if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
+    this._longPressPigId = null;
+  }
+
+  _recordTouch(type, x, y) {
+    if (!this._isRecording || this._isPlayingBack) return;
+    var bp = this.gp.screenToBoard(x, y);
+    this._recordEntries.push({ type: type, bx: bp.x, by: bp.y, dt: Date.now() - this._recordingStart });
+  }
+
+  _stopPlaybackIfNeeded() {
+    if (this._isPlayingBack) {
+      this._isPlayingBack = false;
+      if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
     }
   }
 
   onTouchMove(x, y) {
     this._guide.onPlayerAction();  // 棋盘拖拽 → 重置空闲计时
+    this._recordTouch('touchmove', x, y);
 
     if (this.gp.dragState && this.gp.dragState.type === 'rotate') {
       // 旋转持续音效（首次播放）
@@ -945,12 +1201,19 @@ class PlayingEngine {
         this._rotateHandle = audio.playLooped('rotate_loop');
       }
       var boardPos = this.gp.screenToBoard(x, y);
+      var prevAngle = this.gp.dragState.displayAngle;
       this.gp.handleRotateDrag(boardPos.x, boardPos.y);
+      // 猪角度变了 → 取消长按（微动不取消）
+      if (this.gp.dragState.displayAngle !== prevAngle) {
+        this._clearLongPressTimer();
+      }
     }
   }
 
   onTouchEnd(x, y) {
     this._guide.onPlayerAction();  // 松手操作 → 重置空闲计时
+    this._clearLongPressTimer();   // 松手 → 不是长按
+    this._recordTouch('touchend', x, y);
 
     if (!this.gp.dragState) return;
 
@@ -1018,7 +1281,7 @@ class PlayingEngine {
     opts = opts || {};
     const result = this.gp.canPushPig(pigId);
     const pig = this.gp.pigs.find(p => p.id === pigId);
-    if (!pig) return;
+    if (!pig) return false;
 
     if (result.canPush) {
       // 逃脱音效
@@ -1045,6 +1308,7 @@ class PlayingEngine {
       this.gp.flyingPigs.push(this.gp.pigs[idx]);
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
+      this._escapedCount++;
       // 如果推出的是提示目标 → 清除提示
       this._hint.onPigExited(pigId);
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
@@ -1109,6 +1373,7 @@ class PlayingEngine {
         if (pig.hintId == null) {
           pig.hintId = this._trialHintNextId++;
           pig.hintAngle = pig.angle;
+          this._hintedTrialCount++;
           // 立即写回关卡数据并持久化到本地文件，防止杀进程丢数据
           if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
             var orig = databus.currentLevel.data.pigs.find(function(p) { return p.id === pig.id; });
@@ -1134,6 +1399,10 @@ class PlayingEngine {
       // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算，试玩模式不做任何处理）
       var canEscapeRemaining = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
       if (canEscapeRemaining === 0) {
+        // 试玩模式：所有猪跑完 → 自动完成录制
+        if (databus.returnState === 'editor' && this._isRecording) {
+          this._trialStopRecord();
+        }
         if (databus.returnState !== 'editor') {
         this._markCleared();
         this._victory = true;
@@ -1148,11 +1417,13 @@ class PlayingEngine {
         this.gp.flyingPigs = this.gp.flyingPigs.filter(p => p.id !== pigId);
         this.gp.animations = this.gp.animations.filter(a => a.pigId !== pigId);
       }, animDuration + 200);
+      return true;
     } else if (result.collidedPigId !== undefined) {
       if (!opts.silentBlock) {
         this.gp.triggerCollisionEffect(result.collidedPigId);
       }
     }
+    return false;
   }
 
   restartLevel() {
@@ -1797,52 +2068,103 @@ class PlayingEngine {
       if (!this._showVictoryPanel && this._uiGoldWidget) {
         this._uiGoldWidget.render(ctx);
       }
-      // 试玩模式：左上角提示信息进度
+      // 试玩模式：关卡标题 + 顶栏按钮
       if (databus.returnState === 'editor') {
+        // 关卡标题（居中）
+        var levelN = (databus.trialCurrentIdx >= 0) ? (databus.trialCurrentIdx + 1) : '?';
         ctx.save();
-        var infoX = 12, infoY = safeTop + 34, infoW = 150, infoH = 24;
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.fillRect(infoX, infoY, infoW, infoH);
-        ctx.fillStyle = '#FFD700';
-        ctx.font = 'bold 12px ' + Theme.font.family + '';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        var hinted = 0;
-        for (var hi = 0; hi < this.gp.pigs.length; hi++) {
-          if (this.gp.pigs[hi].hintId != null) hinted++;
-        }
-        for (var fi = 0; fi < this.gp.flyingPigs.length; fi++) {
-          if (this.gp.flyingPigs[fi].hintId != null) hinted++;
-        }
-        ctx.fillText('提示进度：' + hinted + '/' + this._totalPigsInLevel, infoX + infoW / 2, infoY + infoH / 2);
-        ctx.restore();
-
-        // "下一关"按钮（右上角，最后一关隐藏）
-        if (!this._isTrialLastLevel()) {
-        var nextW = 60, nextH = 32;
-        var nextX = SCREEN_WIDTH - PADDING - nextW;
-        var nextY = infoY;
-        this._trialNextBtn = { x: nextX, y: nextY, w: nextW, h: nextH };
-
-        var nextScale = this._btnPress.getScale('trialNext');
-        var nextCX = nextX + nextW / 2;
-        var nextCY = nextY + nextH / 2;
-        ctx.save();
-        ctx.translate(nextCX, nextCY);
-        ctx.scale(nextScale, nextScale);
-        ctx.translate(-nextCX, -nextCY);
-
-        ctx.fillStyle = '#FF9800';
-        roundRect(ctx, nextX, nextY, nextW, nextH, 6);
+        var titleW = 80, titleH = 24;
+        var titleX = (SCREEN_WIDTH - titleW) / 2;
+        var titleY = safeTop + 4;
+        roundRect(ctx, titleX, titleY, titleW, titleH, 6);
         ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 13px ' + Theme.font.family + '';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('下一关', nextX + nextW / 2, nextY + nextH / 2);
+        ctx.fillText('第 ' + levelN + ' 关', titleX + titleW / 2, titleY + titleH / 2);
         ctx.restore();
+
+        var infoY = safeTop + 34, infoH = 24;
+        var btnH = infoH;
+
+        // 布局：固定从右边界排列，下一关隐藏时空位保留
+        var recW = 48, playW = 48, nextW = 60, resetW = 48;
+        var btnGap = 6;
+        var nextX = SCREEN_WIDTH - PADDING - nextW;
+        var playX = nextX - btnGap - playW;
+        var recX = playX - btnGap - recW;
+        var resetX = recX - btnGap - resetW;
+
+        // --- 提示进度 ---
+        ctx.save();
+        var infoW = resetX - 12 - btnGap;  // 左边界到重置按钮之间
+        if (infoW < 70) infoW = 70;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(12, infoY, infoW, infoH);
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 12px ' + Theme.font.family + '';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('提示进度：' + this._hintedTrialCount + '/' + this._totalPigsInLevel, 12 + infoW / 2, infoY + infoH / 2);
+        ctx.restore();
+
+        // --- 重置按钮 ---
+        this._trialResetBtn = { x: resetX, y: infoY, w: resetW, h: btnH };
+        _drawTrialBtn(ctx, resetX, infoY, resetW, btnH, '重置', '#607D8B',
+          this._btnPress.getScale('trialReset'));
+
+        // --- 录制按钮 ---
+        var recLabel = this._isRecording ? '记录中' : '录制';
+        var recColor = this._isPlayingBack ? '#999' : (this._isRecording ? '#E53935' : '#4CAF50');
+        this._trialRecBtn = { x: recX, y: infoY, w: recW, h: btnH };
+        _drawTrialBtn(ctx, recX, infoY, recW, btnH, recLabel, recColor,
+          this._btnPress.getScale('trialRec'));
+
+        // --- 回放按钮 ---
+        var hasRecord = !!wx.getStorageSync('trial_record_' + this.levelName);
+        var playDisabled = this._isRecording;  // 只录制中灰化，回放中可点击
+        var playLabel = this._isPlayingBack ? '回放中' : (hasRecord ? '回放' : '暂无回放');
+        var playColor = (hasRecord && !playDisabled) ? '#FF9800' : (this._isPlayingBack ? '#FF9800' : '#999');
+        this._trialPlayBtn = { x: playX, y: infoY, w: playW, h: btnH };
+        var playScale = this._btnPress.getScale('trialPlay');
+        if (hasRecord && !playDisabled) {
+          _drawTrialBtn(ctx, playX, infoY, playW, btnH, playLabel, playColor, playScale);
+        } else {
+          ctx.save();
+          var pcx = playX + playW / 2, pcy = infoY + btnH / 2;
+          ctx.translate(pcx, pcy); ctx.scale(playScale, playScale); ctx.translate(-pcx, -pcy);
+          ctx.fillStyle = '#555';
+          roundRect(ctx, playX, infoY, playW, btnH, 6);
+          ctx.fill();
+          ctx.fillStyle = '#999';
+          ctx.font = 'bold 10px ' + Theme.font.family + '';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(playLabel, pcx, pcy);
+          ctx.restore();
+        }
+
+        // --- 下一关 ---
+        if (!this._isTrialLastLevel()) {
+          this._trialNextBtn = { x: nextX, y: infoY, w: nextW, h: btnH };
+          _drawTrialBtn(ctx, nextX, infoY, nextW, btnH, '下一关', '#FF9800',
+            this._btnPress.getScale('trialNext'));
         } else {
           this._trialNextBtn = null;
+        }
+
+        // 回放触控位置指示圆点
+        if (this._isPlayingBack && this._playbackDotPos) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(255, 87, 34, 0.7)';
+          ctx.beginPath();
+          ctx.arc(this._playbackDotPos.x, this._playbackDotPos.y, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.restore();
         }
       }
       // 5. 底部栏（UIManager）
