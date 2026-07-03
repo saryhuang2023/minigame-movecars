@@ -197,12 +197,14 @@ class PlayingEngine {
     this._lastGoldLog = -1;  // 诊断日志去重用
     // 清除兜底定时器
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
+    // 提示收集状态（每局重置）
+    this._gameplayHintCache = [];
+    this._hintMerged = false;
     // 试玩模式：实时提示记录计数器
     this._trialHintNextId = 0;
     this._escapedCount = 0;        // 逃逸猪数（只增不减，判断录制/回放前置条件）
     this._hintedTrialCount = 0;   // 试玩模式已标记 hint 的猪数（不随逃逸减少）
     this._trialNextBtn = null;
-    this._trialRecBtn = null;
     this._trialPlayBtn = null;
     this._trialResetBtn = null;
     this._isRecording = false;
@@ -539,6 +541,9 @@ class PlayingEngine {
 
     // 关卡预下载：仅最新关卡触发（非试玩模式）
     this._tryPreloadNext();
+
+    // 自动开启录制（正式模式 + 试玩模式统一逻辑）
+    this._trialStartRecord();
   }
 
   /** 如果是"最新关卡"，触发预下载后续5关 */
@@ -608,8 +613,13 @@ class PlayingEngine {
     console.log('[TrialRec] 开始录制');
   }
 
-  _trialStopRecord() {
+  // save=false: 仅停止录制不保存；save=true: 保存录制到本地存储
+  _trialStopRecord(save) {
     this._isRecording = false;
+    if (!save) {
+      console.log('[TrialRec] 录制取消，不保存');
+      return;
+    }
     if (this._recordEntries.length === 0) {
       console.log('[TrialRec] 无操作，不保存');
       return;
@@ -725,7 +735,7 @@ class PlayingEngine {
     this._destroyAuthBtn(true);  // 立即关闭，无动画
     this._clearCheckpoint();     // 任何退出关卡路径都清理存档
     // 清理录制/回放状态
-    if (this._isRecording) this._trialStopRecord();
+    if (this._isRecording) this._trialStopRecord(false);  // 退出关卡不保存录制
     this._isPlayingBack = false;
     if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
   }
@@ -745,8 +755,9 @@ class PlayingEngine {
     this.gp.pigs = (data && data.pigs ? data.pigs : []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       type: p.type || 'pig', skinId: p.skinId || 0,
-      hintId: p.hintId != null ? p.hintId : null,
-      hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
+      // 试玩模式：不加载旧 hintId，本局重新收集；正式模式：加载已保存的 hint
+      hintId: databus.returnState === 'editor' ? null : (p.hintId != null ? p.hintId : null),
+      hintAngle: databus.returnState === 'editor' ? p.angle : (p.hintAngle != null ? p.hintAngle : p.angle)
     }));
     var EntityTypes = require('../entity/EntityTypes.js');
     this._totalPigsInLevel = this.gp.pigs.filter(function(p) {
@@ -787,10 +798,6 @@ class PlayingEngine {
         if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
       }
       if (!hasAnyHint) this._uiBottomBar.setHintHidden(true);
-      // 所有猪都有 hint → 无需再收集，通关后不重复上传
-      if (hasAnyHint && this._allPigsHaveHints()) {
-        this._hintMerged = true;  // 标记已完成，跳过 merge
-      }
     }
   }
 
@@ -910,23 +917,8 @@ class PlayingEngine {
         return;
       }
 
-      // 试玩"录制"按钮
-      if (databus.returnState === 'editor' && this._trialRecBtn && _hitRect(t.x, t.y, this._trialRecBtn)) {
-        if (this._isPlayingBack) return; // 回放中不可操作
-        this._btnPress.press('trialRec');
-        this._btnPress.breathe('trialRec');
-        audio.play('button_click');
-        if (this._isRecording) {
-          this._trialStopRecord();
-        } else {
-          this._trialStartRecord();
-        }
-        return;
-      }
-
       // 试玩"回放"按钮
       if (databus.returnState === 'editor' && this._trialPlayBtn && _hitRect(t.x, t.y, this._trialPlayBtn)) {
-        if (this._isRecording) return; // 录制中不可回放
         if (this._isPlayingBack) {
           // 播放中 → 停止回放
           this._isPlayingBack = false;
@@ -939,6 +931,10 @@ class PlayingEngine {
         this._btnPress.press('trialPlay');
         this._btnPress.breathe('trialPlay');
         audio.play('button_click');
+        // 录制中则停止录制（不保存），再走回放
+        if (this._isRecording) {
+          this._trialStopRecord(false);
+        }
         this._trialStartPlayback();
         return;
       }
@@ -1318,48 +1314,38 @@ class PlayingEngine {
         }
       }
 
-      // 试玩模式：实时写入提示数据（已有则跳过，拒绝覆盖）
-      if (databus.returnState === 'editor') {
-        if (pig.hintId == null) {
+      // 统一逻辑：猪逃脱时缓存提示数据（通关后统一写入关卡配置）
+      if (!this._hintMerged) {
+        this._gameplayHintCache.push({ pigId: pigId, angle: pig.angle });
+        // 试玩模式：实时设 hintId/hintAngle 供显示（写盘延后到通关）
+        if (databus.returnState === 'editor' && pig.hintId == null) {
           pig.hintId = this._trialHintNextId++;
           pig.hintAngle = pig.angle;
           this._hintedTrialCount++;
-          // 立即写回关卡数据并持久化到本地文件，防止杀进程丢数据
-          if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
-            var orig = databus.currentLevel.data.pigs.find(function(p) { return p.id === pig.id; });
-            if (orig) {
-              orig.hintId = pig.hintId;
-              orig.hintAngle = pig.hintAngle;
-            }
-            try {
-              var path = wx.env.USER_DATA_PATH + '/levels/' + this.levelName + '.json';
-              wx.getFileSystemManager().writeFileSync(path, JSON.stringify(databus.currentLevel.data, null, 2), 'utf8');
-            } catch (e) {
-              console.warn('[Trial] 持久化提示数据失败:', e && e.message);
-            }
-          }
         }
       }
 
-      // 正式玩法：缓存逃脱顺序（通关后写入关卡配置；已全都有 hint 则跳过）
-      if (databus.returnState !== 'editor' && !this._hintMerged) {
-        this._gameplayHintCache.push({ pigId: pigId, angle: pig.angle });
-      }
-
-      // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算，试玩模式不做任何处理）
+      // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算）
       var canEscapeRemaining = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
       if (canEscapeRemaining === 0) {
-        // 试玩模式：所有猪跑完 → 自动完成录制
-        if (databus.returnState === 'editor' && this._isRecording) {
-          this._trialStopRecord();
+        // 统一逻辑：通关后保存录制
+        if (this._isRecording) {
+          this._trialStopRecord(true);
+        }
+        // 统一逻辑：通关后保存提示数据（正式+试玩）
+        if (!this._hintMerged && this._gameplayHintCache.length > 0) {
+          this._hintMerged = true;
+          this._mergeAndUploadHints();
         }
         if (databus.returnState !== 'editor') {
-        this._markCleared();
-        this._victory = true;
-        this._victoryTime = Date.now();
-        this._uiBottomBar.setHintHidden(true);  // 通关后隐藏提示按钮
-        console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
+          // 正式模式：走结算流程
+          this._markCleared();
+          this._victory = true;
+          this._victoryTime = Date.now();
+          this._uiBottomBar.setHintHidden(true);  // 通关后隐藏提示按钮
+          console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
         }
+        // 试玩模式：不弹结算面板，数据已保存，停留在关卡界面
       }
       // 猪飞出屏幕后清理（动画结束时猪已离开屏幕，无需继续渲染）
       var animDuration = result.totalDist / ESCAPE_SPEED * 1000;
@@ -1472,15 +1458,23 @@ class PlayingEngine {
     }
   }
 
-  /** 正式玩法通关：合并 hint 缓存到关卡 JSON 并上传云端 */
+  /** 通关后合并 hint 缓存到关卡 JSON 并上传云端（正式+试玩统一逻辑） */
   _mergeAndUploadHints() {
     var self = this;
     var cache = this._gameplayHintCache;
     if (cache.length === 0) return;
+    var isTrial = databus.returnState === 'editor';
     try {
-      var path = wx.env.USER_DATA_PATH + '/levels/' + this.levelName + '.json';
-      var fs = wx.getFileSystemManager();
-      var data = JSON.parse(fs.readFileSync(path, 'utf8'));
+      var data;
+      if (isTrial && databus.currentLevel && databus.currentLevel.data) {
+        // 试玩模式：数据在内存中，直接操作
+        data = databus.currentLevel.data;
+      } else {
+        // 正式模式：从本地文件读取
+        var path = wx.env.USER_DATA_PATH + '/levels/' + this.levelName + '.json';
+        var fs = wx.getFileSystemManager();
+        data = JSON.parse(fs.readFileSync(path, 'utf8'));
+      }
       var pigs = data.pigs;
       if (pigs) {
         for (var i = 0; i < cache.length; i++) {
@@ -1490,9 +1484,11 @@ class PlayingEngine {
             p.hintAngle = cache[i].angle;
           }
         }
-        fs.writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+        // 写回本地文件
+        var writePath = wx.env.USER_DATA_PATH + '/levels/' + this.levelName + '.json';
+        wx.getFileSystemManager().writeFileSync(writePath, JSON.stringify(data, null, 2), 'utf8');
         console.log('[Hint] 关卡已写入 ' + cache.length + ' 条提示: ' + this.levelName);
-        // 上传云端
+        // 上传云端（已发布关卡也直接覆盖）
         cloud.uploadLevel(this.levelName, data, data.version || 0, null).then(function() {
           console.log('[Hint] 云端上传成功: ' + self.levelName);
         }).catch(function(e) {
@@ -2045,12 +2041,11 @@ class PlayingEngine {
         var btnH = infoH;
 
         // 布局：固定从右边界排列，下一关隐藏时空位保留
-        var recW = 48, playW = 48, nextW = 60, resetW = 48;
+        var playW = 48, nextW = 60, resetW = 48;
         var btnGap = 6;
         var nextX = SCREEN_WIDTH - PADDING - nextW;
         var playX = nextX - btnGap - playW;
-        var recX = playX - btnGap - recW;
-        var resetX = recX - btnGap - resetW;
+        var resetX = playX - btnGap - resetW;
 
         // --- 提示进度 ---
         ctx.save();
@@ -2070,21 +2065,13 @@ class PlayingEngine {
         _drawTrialBtn(ctx, resetX, infoY, resetW, btnH, '重置', '#607D8B',
           this._btnPress.getScale('trialReset'));
 
-        // --- 录制按钮 ---
-        var recLabel = this._isRecording ? '记录中' : '录制';
-        var recColor = this._isPlayingBack ? '#999' : (this._isRecording ? '#E53935' : '#4CAF50');
-        this._trialRecBtn = { x: recX, y: infoY, w: recW, h: btnH };
-        _drawTrialBtn(ctx, recX, infoY, recW, btnH, recLabel, recColor,
-          this._btnPress.getScale('trialRec'));
-
         // --- 回放按钮 ---
         var hasRecord = !!wx.getStorageSync('trial_record_' + this.levelName);
-        var playDisabled = this._isRecording;  // 只录制中灰化，回放中可点击
         var playLabel = this._isPlayingBack ? '回放中' : (hasRecord ? '回放' : '暂无回放');
-        var playColor = (hasRecord && !playDisabled) ? '#FF9800' : (this._isPlayingBack ? '#FF9800' : '#999');
+        var playColor = hasRecord ? '#FF9800' : '#999';
         this._trialPlayBtn = { x: playX, y: infoY, w: playW, h: btnH };
         var playScale = this._btnPress.getScale('trialPlay');
-        if (hasRecord && !playDisabled) {
+        if (hasRecord) {
           _drawTrialBtn(ctx, playX, infoY, playW, btnH, playLabel, playColor, playScale);
         } else {
           ctx.save();
@@ -2097,6 +2084,17 @@ class PlayingEngine {
           ctx.font = 'bold 10px ' + Theme.font.family + '';
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(playLabel, pcx, pcy);
+          ctx.restore();
+        }
+
+        // --- 录制中提示文字 ---
+        if (this._isRecording) {
+          ctx.save();
+          ctx.fillStyle = '#E53935';
+          ctx.font = 'bold 10px ' + Theme.font.family + '';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillText('录制中', playX + playW / 2, infoY + btnH + 2);
           ctx.restore();
         }
 
