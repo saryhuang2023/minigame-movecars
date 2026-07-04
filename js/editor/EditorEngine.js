@@ -1315,6 +1315,7 @@ class EditorEngine {
     this.gp.pigs = [];
     this.gp.selectedPigId = null;
     this.gp.dragState = null;
+    this.gp.nextPigId = 0;
     this.gp.rebuildOccupancy();
     this.markCurrentDirty();
     this.showToast(`已清空 ${count} 只小猪`);
