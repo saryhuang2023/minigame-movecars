@@ -1,7 +1,7 @@
 // 推猪消除 — SFX 播放池
 // 管理 InnerAudioContext 池，支持 8 并发、优先级抢占、playbackRate 变调
 
-var config = require('./AudioConfig.js');
+var config = require('./AudioDefine.js');
 var loader = require('./AudioLoader.js');
 
 // 池中每个槽位

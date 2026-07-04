@@ -2,7 +2,7 @@
 // PlayingEngine 中使用，取代旧版小金猪图标 + 进度环
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var { SCREEN_WIDTH } = require('../../render.js');
 
 // 布局常量（相对屏幕右上角）

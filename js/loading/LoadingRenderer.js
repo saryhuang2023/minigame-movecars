@@ -4,7 +4,7 @@
 
 var PigRenderer = require('../render/PigRenderer.js');
 var { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
-var Theme = require('../ui/Theme.js');
+var Theme = require('../define/GameDefine.js').THEME;
 
 // 进度条尺寸常量
 var BAR_LEFT = 20;

@@ -1,7 +1,7 @@
 // 云同步加载遮罩 — EditorEngine 同步时显示
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 /**

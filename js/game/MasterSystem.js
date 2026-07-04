@@ -2,6 +2,9 @@
 // 职责：关主数据获取、夺位判定、个人记录管理、用户信息缓存
 // 不依赖 PlayingEngine，仅需云函数 API + 微信存储 + 头像加载回调
 
+var GameDefine = require('../define/GameDefine.js');
+var SK = GameDefine.GAME.STORAGE_KEYS;
+
 function MasterSystem(avatarLoader) {
   this._levelMaster = null;       // { masterUserId, masterSteps, masterNickname, masterAvatarUrl, avatarImg }
   this._myRecord = null;          // 个人最好步数 | null
@@ -19,12 +22,12 @@ function MasterSystem(avatarLoader) {
 /** 绑定关卡，读取本地个人记录 */
 MasterSystem.prototype.init = function (levelName) {
   this._levelName = levelName;
-  this._myRecord = wx.getStorageSync('record_' + levelName) || null;
+  this._myRecord = wx.getStorageSync(SK.RECORD_PREFIX + levelName) || null;
 };
 
 /** 从本地缓存加载用户信息 */
 MasterSystem.prototype.loadUserInfo = function () {
-  var cached = wx.getStorageSync('userinfo_cache');
+  var cached = wx.getStorageSync(SK.USERINFO_CACHE);
   this._userInfo = (cached && cached.avatarUrl) ? cached : null;
 };
 
@@ -73,9 +76,9 @@ MasterSystem.prototype.fetchMaster = function () {
 
 /** 更新本地个人最好成绩（仅当本次步数更优时写入） */
 MasterSystem.prototype.updateMyRecord = function (steps) {
-  var prev = wx.getStorageSync('record_' + this._levelName);
+  var prev = wx.getStorageSync(SK.RECORD_PREFIX + this._levelName);
   if (prev == null || prev === '' || steps < parseInt(prev)) {
-    wx.setStorageSync('record_' + this._levelName, steps);
+    wx.setStorageSync(SK.RECORD_PREFIX + this._levelName, steps);
     this._myRecord = steps;
   }
 };
@@ -141,7 +144,7 @@ MasterSystem.prototype.tryClaim = function (params) {
  */
 MasterSystem.prototype.retryClaimWithRealInfo = function (steps, nickName, avatarUrl) {
   this._userInfo = { nickName: nickName, avatarUrl: avatarUrl };
-  wx.setStorageSync('userinfo_cache', this._userInfo);
+  wx.setStorageSync(SK.USERINFO_CACHE, this._userInfo);
   var self = this;
   return require('../cloud.js').claimLevelMaster(this._levelName, steps, avatarUrl, nickName)
     .then(function (result) {
@@ -164,7 +167,7 @@ MasterSystem.prototype._getUserInfo = function () {
   if (this._userInfo) return Promise.resolve(this._userInfo);
   // 尝试从缓存读取（loading 阶段已预加载）
   var cached = null;
-  try { cached = wx.getStorageSync('userinfo_cache'); } catch (e) {}
+  try { cached = wx.getStorageSync(SK.USERINFO_CACHE); } catch (e) {}
   if (cached && (cached.avatarUrl || cached.nickName)) {
     this._userInfo = { nickName: cached.nickName || '', avatarUrl: cached.avatarUrl || '' };
     return Promise.resolve(this._userInfo);

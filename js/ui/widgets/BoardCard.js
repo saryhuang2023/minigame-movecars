@@ -2,7 +2,7 @@
 
 var UIComponent = require('../base/UIComponent.js');
 var Panel = require('../primitives/Panel.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 /**
  * @param {Object} opts

@@ -1,7 +1,7 @@
 // 关主授权对话框 — PlayingEngine 夺关主后弹出
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 /**

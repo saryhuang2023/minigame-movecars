@@ -1,7 +1,7 @@
 // 面板容器 — 带背景、阴影、内高光的通用卡片面板
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 /**
  * @param {Object} opts

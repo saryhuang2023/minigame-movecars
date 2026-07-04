@@ -2,7 +2,7 @@
 // 弹簧入场动画 + 内容错开显示 + 内嵌金币奖励/双倍按钮
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var Easing = require('../../core/Easing.js');
 var AssetPreloader = require('../AssetPreloader.js');
 var audio = require('../../audio/AudioManager.js');

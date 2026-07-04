@@ -1,7 +1,8 @@
 // 微信云开发工具模块
 
-const CLOUD_ENV = 'cloud1-4gmoyu9g16089510'; // TODO: 替换为你的云环境 ID
-const CLOUD_DATA_PREFIX = 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/';
+var CloudDefine = require('./define/CloudDefine.js');
+var CLOUD_ENV = CloudDefine.CLOUD.ENV;
+var CLOUD_DATA_PREFIX = CloudDefine.CLOUD.DATA_PREFIX;
 
 /**
  * 初始化云开发

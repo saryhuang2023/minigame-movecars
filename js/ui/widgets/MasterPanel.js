@@ -3,7 +3,7 @@
 // v123: 背景图替代手绘，只保留文字
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 var MUTED = Theme.colors.muted;

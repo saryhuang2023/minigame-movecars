@@ -2,7 +2,7 @@
 // 纯 Canvas 2D 渲染，无 DOM 依赖
 // require/module.exports，wx API，InputManager 事件路由
 
-const { entityProps, entityKey, entityLabel } = require('../entity/EntityTypes.js');
+const ENT = require('../define/GameDefine.js').ENTITY;
 
 // wxfile://usr 在开发者工具中对应真实文件系统路径
 // 仅用于日志输出，fs.writeFileSync 仍走 wxfile 协议
@@ -21,11 +21,12 @@ const cloud = require('../cloud.js');
 const LevelCache = require('../preload/LevelCache.js');
 const audio = require('../audio/AudioManager.js');
 const ButtonPress = require('../anim/ButtonPress.js');
-const SceneDefaults = require('../game/SceneDefaults.js');
-const Theme = require('../ui/Theme.js');
+const SceneDefaults = require('../define/GameDefine.js').SCENE;
+const Theme = require('../define/GameDefine.js').THEME;
+var EditDefine = require('../define/EditorDefine.js');
 
 
-const DRAG_THRESHOLD = 20; // 最小移动距离（px），低于此值视为点击
+var DRAG_THRESHOLD = EditDefine.EDITOR.DRAG_THRESHOLD; // 最小移动距离（px），低于此值视为点击
 
 class EditorEngine {
   constructor(inputManager) {
@@ -53,9 +54,9 @@ class EditorEngine {
     this._selectedEntityType = 'pig';       // 当前选中精灵类型
     this._presetLength = null;        // null=灵活, 70/125/205/280/380=固定长度
     // 前7个猪模板可自定义，后2个（灵活/石头）不参与
-    this._presetLabels = ['70', '125', '205', '275', '342', '397', '468', '灵活', '石头'];
-    this._presetValues = [70, 125, 205, 275, 342, 397, 468, null, 44];
-    this._presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
+    this._presetLabels = EditDefine.EDITOR.PRESETS.LABELS;
+    this._presetValues = EditDefine.EDITOR.PRESETS.VALUES;
+    this._presetTypes  = EditDefine.EDITOR.PRESETS.TYPES;
 
     // ===== Toast =====
     this.toastText = '';
@@ -133,7 +134,7 @@ class EditorEngine {
       return;
     }
 
-    this.gp.bottomStripH = 92;
+    this.gp.bottomStripH = EditDefine.EDITOR.LAYOUT.BOTTOM_STRIP_H;
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.dirty = false;
@@ -285,7 +286,7 @@ class EditorEngine {
   // 移动超过阈值 → 激活拖拽（原 handleEditTouchStart 中拖拽初始化逻辑）
   _activatePigDrag(pig, pigInfo) {
     // 非可拖拽类型（如 rock）不进入拖拽
-    var props = entityProps(pig);
+    var props = ENT.props(pig);
     if (!props.draggable) return;
 
     const isHead = pigInfo.offset >= pigInfo.totalLen - this.gp.scaledHeadZone;
@@ -739,18 +740,19 @@ class EditorEngine {
     this.gp.flashingPigs = {};
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
+    this.gp.applyBoardWidthConstraint(SCREEN_WIDTH);
     this.gp.recomputeBoard();
     var corrected = this.gp.snapAllPigsAngles();
     // 与 render() 中的布局对齐（无白色卡片，直接渲染棋盘在背景上）
     var safeTop = databus.safeTop || 0;
     this.gp.topBarH = safeTop + 116 + 4;  // 48+68 两行顶栏
-    this.gp.bottomStripH = 92;
+    this.gp.bottomStripH = EditDefine.EDITOR.LAYOUT.BOTTOM_STRIP_H;
     this.gp.recenterBoard();
     this.dirty = corrected > 0;  // 角度有修正则标记脏，交给用户决定是否保存
     // 切换关卡时重置预设模板为默认值
-    this._presetLabels = ['70', '125', '205', '275', '342', '397', '468', '灵活', '石头'];
-    this._presetValues = [70, 125, 205, 275, 342, 397, 468, null, 44];
-    this._presetTypes  = ['pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'pig', 'rock'];
+    this._presetLabels = EditDefine.EDITOR.PRESETS.LABELS;
+    this._presetValues = EditDefine.EDITOR.PRESETS.VALUES;
+    this._presetTypes  = EditDefine.EDITOR.PRESETS.TYPES;
   }
 
   // ============================================================
@@ -1109,13 +1111,7 @@ class EditorEngine {
   }
 
   getDefaultLevelData() {
-    return {
-      board: { rows: 5, oddCols: 3, boardWidth: 375, boardRate: 2.74 },
-      pigs: [],
-      crownSteps: 0,
-      ready: 0,
-      version: 0
-    };
+    return JSON.parse(JSON.stringify(EditDefine.EDITOR.DEFAULT_LEVEL));
   }
 
   // ---- 云端操作 ----
@@ -1469,7 +1465,7 @@ class EditorEngine {
     var safeTop = databus.safeTop || 0;
     var barH = 116;  // 48 原顶栏 + 68 预设按钮两行
     this.gp.topBarH = safeTop + barH + 4;
-    this.gp.bottomStripH = 92;
+    this.gp.bottomStripH = EditDefine.EDITOR.LAYOUT.BOTTOM_STRIP_H;
 
     // 计算提示文字（提示模式下不显示操作提示）
     var opts = { showSelection: true, showAllCollisionBoxes: this._showAllCollisionBoxes };
@@ -1509,7 +1505,7 @@ class EditorEngine {
     var xf = this.gp._xform;
     var offX = xf ? 0 : this.gp.boardOffsetX;
     var offY = xf ? 0 : (this.gp.topBarH + this.gp.boardOffsetY);
-    var arrowLen = 38;
+    var arrowLen = EditDefine.EDITOR.HINT_ARROW.LEN;
 
     for (var i = 0; i < this.gp.pigs.length; i++) {
       var pig = this.gp.pigs[i];
@@ -1547,7 +1543,7 @@ class EditorEngine {
         ctx.setLineDash([]);
 
         // 箭头
-        var arrowSize = 8;
+        var arrowSize = EditDefine.EDITOR.HINT_ARROW.SIZE;
         var arrowRad = rad + Math.PI;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
@@ -1661,7 +1657,7 @@ class EditorEngine {
     var presetTypes  = this._presetTypes;
     var presetValues = this._presetValues;
     const gap = 8;
-    const maxPerRow = 6;
+    const maxPerRow = EditDefine.EDITOR.PRESETS.MAX_PER_ROW;
 
     // 每个按钮宽度按 6 个一行计算
     const presetBtnW = Math.floor((SCREEN_WIDTH - 24 - (maxPerRow - 1) * gap) / maxPerRow);
@@ -2165,7 +2161,7 @@ class EditorEngine {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       const infoY = sheetY + 56;
-      ctx.fillText(`类型: ${entityLabel(pig.type || 'pig')}  编号: #${pig.id}`, 28, infoY);
+      ctx.fillText(`类型: ${ENT.label(pig.type || 'pig')}  编号: #${pig.id}`, 28, infoY);
 
       // 长度 + [-]/[+]
       ctx.fillText(`长度: ${Math.round(pig.length)}px`, 28, infoY + 26);
@@ -2359,7 +2355,7 @@ class EditorEngine {
 
     // Row 2: boardWidth（棋盘总宽）
     bx = 12;
-    bx = this._drawCompactStepper(bx, boardY2, stepperH, '宽', this.gp.boardWidth, 100, SCREEN_WIDTH - GameplayEngine.BOARD_MARGIN * 2,
+    bx = this._drawCompactStepper(bx, boardY2, stepperH, '宽', this.gp.boardWidth, 100, SCREEN_WIDTH,
       (v) => {
         this.gp.boardWidth = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();

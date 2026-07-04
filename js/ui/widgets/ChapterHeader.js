@@ -1,6 +1,6 @@
 // 关卡选择 — 章节标题行组件
 
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 var COLORS = {
   primary: '#EC4899',

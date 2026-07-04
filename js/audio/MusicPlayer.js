@@ -1,7 +1,7 @@
 // 推猪消除 — 背景音乐播放器
 // 使用独享 InnerAudioContext，支持淡入淡出和场景切换
 
-var config = require('./AudioConfig.js');
+var config = require('./AudioDefine.js');
 var loader = require('./AudioLoader.js');
 
 var _ctx = null;

@@ -11,7 +11,7 @@ const { roundRect } = require('../render/PigRenderer.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 
 // === UI 层 ===
-const Theme = require('../ui/Theme.js');
+const Theme = require('../define/GameDefine.js').THEME;
 const UIManager = require('../ui/UIManager.js');
 const TopBar = require('../ui/widgets/TopBar.js');
 const BottomBar = require('../ui/widgets/BottomBar.js');
@@ -28,7 +28,9 @@ const GoldWidget = require('../ui/widgets/GoldWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
 const GoldSystem = require('./GoldSystem.js');
 const SkinSystem = require('./SkinSystem.js');
-const SceneDefaults = require('./SceneDefaults.js');
+const SceneDefaults = require('../define/GameDefine.js').SCENE;
+var PlayDefine = require('../define/PlayingDefine.js');
+var GAME_DEF = require('../define/GameDefine.js').GAME;
 
 // 矩形碰撞检测辅助
 function _hitRect(px, py, rect) {
@@ -56,15 +58,9 @@ function _drawTrialBtn(ctx, x, y, w, h, label, color, scale) {
 }
 
 // 布局常量（来自 Ardot 设计稿 375×812）
-const TOP_BAR_H = 48;
-const BOTTOM_BAR_H = 90;
-const PADDING = 16;         // 内容区外边距
-const CARD_GAP = 8;         // 卡片之间的间距
-const CARD_PADDING = 12;    // 棋盘卡片内边距
+var ESCAPE_SPEED = PlayDefine.PLAY.ESCAPE_SPEED;  // 正常逃脱速度（逻辑像素/秒）
 
-const ESCAPE_SPEED = 120;  // 正常逃脱速度（逻辑像素/秒）
-
-const SNAP_ANGLE_PUSH_THRESHOLD = 90;
+var SNAP_ANGLE_PUSH_THRESHOLD = PlayDefine.PLAY.SNAP_ANGLE_PUSH_THRESHOLD;
 
 class PlayingEngine {
   constructor(input) {
@@ -287,7 +283,7 @@ class PlayingEngine {
       // Layer 2 — BottomBar
       this._uiBottomBar = new BottomBar({
         zIndex: UIManager.LAYER.CONTROL,
-        cardW: SCREEN_WIDTH - PADDING * 2,
+        cardW: SCREEN_WIDTH - Theme.spacing.padding * 2,
         buttonPress: this._btnPress,
         onHintClick: function () {
           var best = self._hint.show();
@@ -456,7 +452,7 @@ class PlayingEngine {
       } else {
         // 本地无 → 尝试云端
         console.log('[Playing] startLevel name=' + name + ' 本地无配置，尝试云端...');
-        var TIMEOUT_MS = 5000;
+        var TIMEOUT_MS = PlayDefine.PLAY.LOAD_TIMEOUT;
         var pullPromise = cloud.downloadLevel(null, name, true);
         var timeoutPromise = new Promise(function(_, reject) {
           setTimeout(function() { reject(new Error('timeout')); }, TIMEOUT_MS);
@@ -522,11 +518,11 @@ class PlayingEngine {
     this._entranceState = {
       startTime: Date.now(),
       phase: 'board',        // board → pigs → ui → done
-      pigFadeDelay: 300,     // 300ms 后开始猪渐显
-      pigFadeDur: 500,       // 猪渐显 500ms (ease-out)
-      uiStart: 800,           // 800ms 后开始 UI 飞入
-      uiDur: 500,             // UI 飞入 500ms (ease-out cubic)
-      totalDuration: 1300,     // 总时长 1300ms
+      pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,     // 300ms 后开始猪渐显
+      pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,       // 猪渐显 500ms (ease-out)
+      uiStart: PlayDefine.PLAY.ENTRANCE.UI_START,           // 800ms 后开始 UI 飞入
+      uiDur: PlayDefine.PLAY.ENTRANCE.UI_DUR,             // UI 飞入 500ms (ease-out cubic)
+      totalDuration: PlayDefine.PLAY.ENTRANCE.TOTAL_DURATION,     // 总时长 1300ms
     };
     this.loadLevel(data);
     this._loading = false;
@@ -657,7 +653,7 @@ class PlayingEngine {
     console.log('[TrialRec] 开始回放 ' + events.length + ' 条触控');
 
     // 计算回放延迟：事件间隔超过 500ms 则压缩
-    var MAX_GAP = 500;
+    var MAX_GAP = PlayDefine.PLAY.REPLAY.MAX_GAP;
     var delayed = 0;  // 累积延迟
     var lastDt = 0;
     var self = this;
@@ -770,17 +766,18 @@ class PlayingEngine {
       hintId: p.hintId != null ? p.hintId : null,
       hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
     }));
-    var EntityTypes = require('../entity/EntityTypes.js');
+    var ENT = require('../define/GameDefine.js').ENTITY;
     this._totalPigsInLevel = this.gp.pigs.filter(function(p) {
-      return EntityTypes.entityProps(p).canEscape;
+      return ENT.props(p).canEscape;
     }).length;
     this.gp.dragState = null;
     this.gp.flashingPigs = {};
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
     this.gp.flyingPigs = [];
-    this.gp.topBarH = databus.safeTop + PADDING + TOP_BAR_H + CARD_GAP + CARD_PADDING;
-    this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
+    this.gp.topBarH = databus.safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap + Theme.spacing.cardPadding;
+    this.gp.bottomStripH = Theme.layout.bottomBarH + Theme.spacing.padding + Theme.spacing.cardGap + Theme.spacing.cardPadding;
+    this.gp.applyBoardWidthConstraint(SCREEN_WIDTH);
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
     this.gp.snapAllPigsAngles();
@@ -958,7 +955,7 @@ class PlayingEngine {
       }
 
       // 顶部返回/设置按钮
-      if (_hitRect(t.x, t.y, { x: PADDING, y: 26, w: 49, h: 47 })) {
+      if (_hitRect(t.x, t.y, { x: Theme.spacing.padding, y: 26, w: 49, h: 47 })) {
         this._btnPress.press('settings');
         this._btnPress.breathe('settings');
         audio.play('button_click');
@@ -1304,8 +1301,8 @@ class PlayingEngine {
           }
 
           // 金币区硬币中心（GoldWidget 在 (0,0)，COIN_X=16 COIN_SIZE=32）
-          var goldCX = 16 + 16;  // = 32
-          var goldCY = 90 + 16;  // = 106
+          var goldCX = PlayDefine.PLAY.GOLD_FLY_TARGET.cx;  // = 32
+          var goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;  // = 106
 
           // 猪飞出动画用 easeOutCubic：猪在动画前半段就覆盖了大部分距离
           // 计算猪尾部到达屏幕边缘的实际时间（而非动画总时长）
@@ -1468,7 +1465,7 @@ class PlayingEngine {
         console.log('[LOG_victory] 超时兜底触发，强弹面板！');
         self._finishVictorySequence();
       }
-    }, 6000);
+    }, PlayDefine.PLAY.LOAD_TIMEOUT);
     }
 
     // 正式玩法：通关后合并 hint 数据到关卡配置并上传云端
@@ -1947,11 +1944,11 @@ class PlayingEngine {
     const safeTop = databus.safeTop;
 
     // 计算布局参数
-    this._boardCardX = PADDING;
-    this._boardCardY = safeTop + PADDING + TOP_BAR_H + CARD_GAP - 30;
-    this._boardCardW = SCREEN_WIDTH - PADDING * 2;
-    this._bottomBarY = SCREEN_HEIGHT - BOTTOM_BAR_H - PADDING;
-    this._boardCardH = this._bottomBarY - CARD_GAP - this._boardCardY;
+    this._boardCardX = Theme.spacing.padding;
+    this._boardCardY = safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap - 30;
+    this._boardCardW = SCREEN_WIDTH - Theme.spacing.padding * 2;
+    this._bottomBarY = SCREEN_HEIGHT - Theme.layout.bottomBarH - Theme.spacing.padding;
+    this._boardCardH = this._bottomBarY - Theme.spacing.cardGap - this._boardCardY;
 
     // 同步引擎数据 → UI 组件
     this._syncUIData();
@@ -2005,8 +2002,8 @@ class PlayingEngine {
     }
 
     // 1. 棋盘主体
-    this.gp.topBarH = this._boardCardY + CARD_PADDING;
-    this.gp.bottomStripH = BOTTOM_BAR_H + PADDING + CARD_GAP + CARD_PADDING;
+    this.gp.topBarH = this._boardCardY + Theme.spacing.cardPadding;
+    this.gp.bottomStripH = Theme.layout.bottomBarH + Theme.spacing.padding + Theme.spacing.cardGap + Theme.spacing.cardPadding;
     this.gp.renderBoard(ctx, {
       hintPigId: this._hint.getTargetId(),
       guidePigId: this._guide.getActiveGuidePigId(),
@@ -2063,7 +2060,7 @@ class PlayingEngine {
         // 布局：固定从右边界排列，下一关隐藏时空位保留
         var playW = 48, nextW = 60, resetW = 48;
         var btnGap = 6;
-        var nextX = SCREEN_WIDTH - PADDING - nextW;
+        var nextX = SCREEN_WIDTH - Theme.spacing.padding - nextW;
         var playX = nextX - btnGap - playW;
         var resetX = playX - btnGap - resetW;
 
@@ -2424,7 +2421,7 @@ class PlayingEngine {
       }
       console.log('[LOG] === 定时器触发，检测到变化，准备存档 ===');
       self._saveCheckpoint();
-    }, 10000);
+    }, PlayDefine.PLAY.CHECKPOINT_INTERVAL);
   }
 
   /** 从存档恢复关卡状态（在 loadLevel 之后调用） */

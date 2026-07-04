@@ -3,28 +3,28 @@
 
 const audio = require('../audio/AudioManager.js');
 const Easing = require('../core/Easing.js');
+var PlayDefine = require('../define/PlayingDefine.js');
+var PV = PlayDefine.PLAY.VICTORY;
 
-const GROW_DURATION = 1600;   // 0→1.2x 缩放 ms
-const HOLD_DURATION = 500;   // 1.2x 停留 ms（原 1000，减少 500ms）
-const SUCK_DURATION = 530;    // 吸入目的地 ms (原 800，缩短 1/3)
-const MAX_SCALE = 1.2;        // 中央亮相最大缩放
+var GROW_DURATION = PV.GROW_DURATION;
+var HOLD_DURATION = PV.HOLD_DURATION;
+var SUCK_DURATION = PV.SUCK_DURATION;
+var MAX_SCALE = PV.MAX_SCALE;
 
 // 奖杯目标位置（与 CrownPigWidget 对齐）
-const TROPHY_SIZE = 44;
-const TROPHY_TOP = 70;
-const TROPHY_RIGHT = 20;
-const TROPHY_IMG = 'assets/images/levels/leftStep_1.png';
+var TROPHY_SIZE = PV.TROPHY_SIZE;
+var TROPHY_TOP = PV.TROPHY_TOP;
+var TROPHY_RIGHT = PV.TROPHY_RIGHT;
+var TROPHY_IMG = PV.TROPHY_IMG;
 
 // 关主头像目标位置（左下角 MasterPanel）
-const AVATAR_SIZE = 33;
-const AVATAR_LEFT = 40;
-const AVATAR_BOTTOM = 43;
+var AVATAR_SIZE = PV.AVATAR_SIZE;
+var AVATAR_LEFT = PV.AVATAR_LEFT;
+var AVATAR_BOTTOM = PV.AVATAR_BOTTOM;
 
-// 双元素并排间距
-const DUAL_GAP = 50;
-// 中央亮相时尺寸
-const SHOW_TROPHY_SIZE = 88;
-const SHOW_AVATAR_SIZE = 66;
+var DUAL_GAP = PV.DUAL_GAP;
+var SHOW_TROPHY_SIZE = PV.SHOW_TROPHY_SIZE;
+var SHOW_AVATAR_SIZE = PV.SHOW_AVATAR_SIZE;
 
 function VictoryAnimation(options) {
   this._onCrownDone = options.onCrownDone || function () {};

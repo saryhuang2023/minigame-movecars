@@ -7,31 +7,28 @@ const { PigRenderer, roundRect, AnimType } = require('../render/PigRenderer.js')
 const databus = require('../databus');
 const audio = require('../audio/AudioManager.js');
 const Easing = require('./Easing.js');
-const SceneDefaults = require('../game/SceneDefaults.js');
+const SceneDefaults = require('../define/GameDefine.js').SCENE;
+var GameDefine = require('../define/GameDefine.js');
 
-// 棋盘到屏幕边缘的最小距离（像素）
-const BOARD_MARGIN = 15;
-
-// ========== 常量 ==========
-// 孔位颜色从场景配置获取
-const BC = SceneDefaults.boardColors;
-const BG_COLOR = '#1a1a2e';
-const PUSH_ANIM_DURATION = 6400;
-const CHASE_SPEED = 12;
-const HEAD_ZONE_MULT = 1;  // 头部区域 = HEAD_ZONE_MULT × diameter 像素
-const REFERENCE_DIAMETER = 50;  // boardScale 参考直径
+var BD = GameDefine.GAME.BOARD;
+var BC = SceneDefaults.boardColors;
+var BG_COLOR = '#1a1a2e';
+var PUSH_ANIM_DURATION = BD.PUSH_ANIM_DURATION;
+var CHASE_SPEED = BD.CHASE_SPEED;
+var HEAD_ZONE_MULT = BD.HEAD_ZONE_MULT;
+var REFERENCE_DIAMETER = BD.REFERENCE_DIAMETER;
 
 class GameplayEngine {
   constructor() {
     // ===== 布局常量 =====
-    this.topBarH = 48;
-    this.bottomStripH = 175;
+    this.topBarH = BD.TOP_BAR_H;
+    this.bottomStripH = BD.BOTTOM_STRIP_H_DEFAULT;
 
     // ===== 棋盘参数（蜂窝六边形网格，纵向排列） =====
-    this.rows = 5;          // 完整列（贴边列）孔数（决定棋盘高度）
-    this.oddCols = 3;       // 完整列数量 → 总列数 = 2*oddCols-1（完整/交错/完整/.../完整，两侧贴边）
-    this.boardWidth = 375;  // 棋盘目标总宽度（屏幕像素）
-    this.boardRate = 2.74;  // dt/r 比例（孔间距与半径比），可调节正六边形密度
+    this.rows = BD.DEFAULT_ROWS;          // 完整列（贴边列）孔数（决定棋盘高度）
+    this.oddCols = BD.DEFAULT_ODD_COLS;       // 完整列数量 → 总列数 = 2*oddCols-1（完整/交错/完整/.../完整，两侧贴边）
+    this.boardWidth = BD.DEFAULT_BOARD_WIDTH;  // 棋盘目标总宽度（屏幕像素）
+    this.boardRate = BD.DEFAULT_BOARD_RATE;  // dt/r 比例（孔间距与半径比），可调节正六边形密度
     // ===== 动态计算 =====
     this.boardScale = 1;
     this.scaledDiameter = 30;
@@ -128,19 +125,25 @@ class GameplayEngine {
   // 棋盘居中对齐
   // ============================================================
   recenterBoard() {
-    // 如果棋盘宽度超过可用宽度，自动缩窄（关卡数据可能过宽）
-    const maxBoardW = SCREEN_WIDTH - BOARD_MARGIN * 2;
-    if (this.boardWidth > maxBoardW) {
-      this.boardWidth = maxBoardW;
-      this.recomputeBoard();  // 重算孔位，确保棋盘不溢出
-    }
-
-    const visualW = this.boardWidth;               // 完整列总宽 = boardWidth
+    const visualW = this.boardWidth;
     const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
-    const availW = SCREEN_WIDTH - BOARD_MARGIN * 2;      // 左右各留 BOARD_MARGIN
     const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
-    this.boardOffsetX = BOARD_MARGIN + Math.max(0, Math.round((availW - visualW) / 2));
+    this.boardOffsetX = Math.max(0, Math.round((SCREEN_WIDTH - visualW) / 2));
     this.boardOffsetY = Math.max(0, Math.round((availH - visualH) / 2));
+  }
+
+  /**
+   * 应用棋盘宽度约束：boardWidth = max(SCREEN_WIDTH * percent(oddCols), boardWidth)
+   * 在所有模式（正式/试玩/编辑器）中加载关卡数据后调用
+   * @param {number} [screenWidth] 屏幕宽度，默认 SCREEN_WIDTH
+   */
+  applyBoardWidthConstraint(screenWidth) {
+    var sw = screenWidth || SCREEN_WIDTH;
+    var percent = GameDefine.getBoardWidthPercent(this.oddCols);
+    var minW = sw * percent;
+    if (minW > this.boardWidth) {
+      this.boardWidth = minW;
+    }
   }
   rebuildOccupancy() {
     this.holeOccupied = new Array(this.holes.length).fill(-1);
@@ -190,7 +193,7 @@ class GameplayEngine {
 
     // rock 精灵：圆心对齐孔洞中心，碰撞区 = 以孔心为圆心、直径/4 为半径的圆
     if (entityType === 'rock') {
-      const capRadius = this.scaledDiameter / 4;
+      const capRadius = this.scaledDiameter * BD.BODY_RATIOS.ROCK_RADIUS;
       return {
         cx: tail.x, cy: tail.y,
         hw: 0,
@@ -216,19 +219,19 @@ class GameplayEngine {
     const sinP = Math.cos(rad);
     // 胶囊碰撞体（矩形身体 + 两端半圆，消除 OBB 旋转尖角误判）
     // 占用判定半径 = 孔直径 * 2/3（宽于碰撞半径，确保身体覆盖孔心即判定占用）
-    const capRadius = this.scaledDiameter * 2 / 3;
+    const capRadius = this.scaledDiameter * BD.BODY_RATIOS.CAP_RADIUS;
     // 猪间碰撞半宽 = 孔直径 * 2/5（全宽 = d * 4/5）
-    const collisionCapRadius = this.scaledDiameter * 2 / 5;
+    const collisionCapRadius = this.scaledDiameter * BD.BODY_RATIOS.COLLISION_CAP;
     // 胶囊线段端点：尾部收缩孔直径的 1/6（减少尾部碰撞区）
-    const tailShrink = this.scaledDiameter * 1 / 5;
+    const tailShrink = this.scaledDiameter * BD.BODY_RATIOS.TAIL_SHRINK;
     const capTailX = tail.x + tailShrink * cosL;
     const capTailY = tail.y + tailShrink * sinL;
     const capHeadX = cx + hw * cosL;
     const capHeadY = cy + hw * sinL;
     // 触控区：半高 = 孔半径 × 1.5（孔直径的1.5倍宽，方便手指点选）
-    const touchHh = this.scaledHalfDiameter * 1.5;
+    const touchHh = this.scaledHalfDiameter * BD.BODY_RATIOS.TOUCH_HH;
     // 触控区头部额外延伸 = 1/4 孔直径
-    const touchHeadExt = this.scaledHalfDiameter * 0.5;
+    const touchHeadExt = this.scaledHalfDiameter * BD.BODY_RATIOS.TOUCH_HEAD_EXT;
     // 保留 OBB 数据供触控和兼容代码使用
     const collisionHw = hw + collisionCapRadius - tailShrink / 2;
     const collisionHh = this.scaledDiameter * 2 / 5;  // 猪间碰撞半高
@@ -664,7 +667,7 @@ class GameplayEngine {
     const r = this.getPigRect(tailIndex, length, angle);
     if (!r) return -1;
     const center = this._headSquareCenter(r);
-    const thresh = this.scaledDiameter * 2 / 3;  // 孔的直径 * 2/3
+    const thresh = this.scaledDiameter * BD.BODY_RATIOS.HEAD_HOLE_THRESHOLD;  // 孔的直径 * 2/3
     const thresh2 = thresh * thresh;
     let bestIdx = -1, bestDist2 = Infinity;
     for (let i = 0; i < this.holes.length; i++) {
@@ -690,7 +693,7 @@ class GameplayEngine {
     if (diff > 180) { lo += 360; }
     if (diff < -180) { hi += 360; }
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < BD.BINARY_SEARCH_ROUNDS; i++) {
       const mid = ((lo + hi) / 2);
       const midNorm = ((mid % 360) + 360) % 360;
       const check = this.checkAngleValid(tailIndex, length, excludeId, midNorm, false);
@@ -714,7 +717,7 @@ class GameplayEngine {
     const now = Date.now();
     const toDelete = [];
     for (const [pid, st] of Object.entries(this.flashingPigs)) {
-      if (now - st > 500) toDelete.push(pid);
+      if (now - st > BD.COLLISION_FLASH.TOTAL) toDelete.push(pid);
     }
     for (const pid of toDelete) delete this.flashingPigs[pid];
   }
@@ -724,11 +727,12 @@ class GameplayEngine {
     const start = this.flashingPigs[pigId];
     if (!start) return 0;
     const elapsed = Date.now() - start;
-    if (elapsed > 500) return 0;
+    if (elapsed > BD.COLLISION_FLASH.TOTAL) return 0;
     // fade-in 0-80ms, hold 80-380ms, fade-out 380-500ms
-    if (elapsed < 80) return 0.7 * Easing.smoothstep(elapsed / 80);
-    if (elapsed > 380) return 0.7 * (1 - Easing.smoothstep((elapsed - 380) / 120));
-    return 0.7;
+    var maxAlpha = BD.COLLISION_FLASH.MAX_ALPHA;
+    if (elapsed < BD.COLLISION_FLASH.FADE_IN) return maxAlpha * Easing.smoothstep(elapsed / BD.COLLISION_FLASH.FADE_IN);
+    if (elapsed > (BD.COLLISION_FLASH.TOTAL - BD.COLLISION_FLASH.FADE_OUT)) return maxAlpha * (1 - Easing.smoothstep((elapsed - (BD.COLLISION_FLASH.TOTAL - BD.COLLISION_FLASH.FADE_OUT)) / BD.COLLISION_FLASH.FADE_OUT));
+    return maxAlpha;
   }
 
   // ============================================================
@@ -850,7 +854,7 @@ class GameplayEngine {
       if (check.collidedId !== ds.lastCollidedId) {
         this.triggerCollisionEffect(check.collidedId);
         var now = Date.now();
-        if (!ds.lastCollideTime || now - ds.lastCollideTime > 250) {
+        if (!ds.lastCollideTime || now - ds.lastCollideTime > BD.COLLISION_SOUND_CD) {
           audio.play('collide');
           ds.lastCollideTime = now;
         }
@@ -885,7 +889,7 @@ class GameplayEngine {
     const rad = pig.angle * Math.PI / 180;
     const dirX = Math.cos(rad), dirY = -Math.sin(rad);
     const stepSize = this.collisionStep;
-    const maxSteps = 100;
+    const maxSteps = BD.MAX_PUSH_STEPS;
 
     for (let step = 1; step <= maxSteps; step++) {
       const dx = step * stepSize * dirX;
@@ -1128,6 +1132,5 @@ class GameplayEngine {
 }
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
 GameplayEngine.HEAD_ZONE_MULT = HEAD_ZONE_MULT;
-GameplayEngine.BOARD_MARGIN = BOARD_MARGIN;
 
 module.exports = GameplayEngine;

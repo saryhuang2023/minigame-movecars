@@ -3,7 +3,7 @@
 
 var UIComponent = require('../base/UIComponent.js');
 var AssetPreloader = require('../AssetPreloader.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var Easing = require('../../core/Easing.js');
 var audio = require('../../audio/AudioManager.js');
 

@@ -2,7 +2,7 @@
 // 简易模态弹窗，不依赖 PopupAnimator
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 /**

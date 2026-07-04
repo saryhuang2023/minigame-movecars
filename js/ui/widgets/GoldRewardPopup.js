@@ -3,7 +3,7 @@
 // BUILD: v3 — ES6 class extends UIComponent
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var Easing = require('../../core/Easing.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 

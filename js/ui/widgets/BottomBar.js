@@ -3,7 +3,7 @@
 // v125: 提示按钮底框改为 Canvas 2D 绘制（3层叠加：白色外框 → 渐变填充+棕色边框 → 内高光），不再加载背景图
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var AssetPreloader = require('../AssetPreloader.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 var { roundRect } = require('../../render/PigRenderer.js');

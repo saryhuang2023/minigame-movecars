@@ -5,20 +5,21 @@
 
 var GoldSystem = require('./GoldSystem');
 var cloud = require('../cloud.js');
+var SkinDefine = require('../define/SkinDefine.js');
 
-const STORAGE_OWNED = 'player_owned_skins';
-const STORAGE_EQUIPPED = 'player_equipped_skin';
-const STORAGE_CONFIG_VERSION = 'skin_config_version';
-const DEFAULT_SKIN_ID = 0;
+var STORAGE_OWNED = SkinDefine.SKIN.STORAGE_OWNED;
+var STORAGE_EQUIPPED = SkinDefine.SKIN.STORAGE_EQUIPPED;
+var STORAGE_CONFIG_VERSION = SkinDefine.SKIN.STORAGE_CONFIG_VERSION;
+var DEFAULT_SKIN_ID = SkinDefine.SKIN.DEFAULT_SKIN_ID;
 
 // 云端皮肤图片路径前缀（代码写死，不存数据库 — v120 设计决策）
 // 格式: cloud://{env-id}.{dirHash}-{appid}/data/skins/{skinId}/{animType}/{frame}.png
-const CLOUD_SKINS_PREFIX = 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/skins/';
+var CLOUD_SKINS_PREFIX = SkinDefine.SKIN.SKINS_CLOUD_PREFIX;
 
 // 配置文件路径
-const LOCAL_CONFIG_PATH = 'assets/skins/skinConfig.json';
-const CLOUD_CONFIG_PATH = 'skins/skinConfig.json';
-const CACHE_CONFIG_FILE = 'skinConfig.json';
+var LOCAL_CONFIG_PATH = SkinDefine.SKIN.LOCAL_CONFIG_PATH;
+var CLOUD_CONFIG_PATH = SkinDefine.SKIN.CLOUD_CONFIG_PATH;
+var CACHE_CONFIG_FILE = SkinDefine.SKIN.CACHE_CONFIG_FILE;
 
 // 皮肤配置缓存
 var _skinsConfig = null;
@@ -32,7 +33,7 @@ var _chaptersCache = null;
 
 // 奖杯计数缓存
 var _goldenPigsCache = { count: -1, timestamp: 0 };
-var GOLDEN_PIGS_CACHE_TTL = 2000;
+var GOLDEN_PIGS_CACHE_TTL = SkinDefine.SKIN.GOLDEN_PIGS_CACHE_TTL;
 
 var SkinSystem = {
   DEFAULT_SKIN_ID: DEFAULT_SKIN_ID,
@@ -174,13 +175,13 @@ var SkinSystem = {
   getAllSkins: function () {
     var list = _skinsConfig || [];
     // 默认猪硬编码（不在 skinConfig.json 中）
-    var defaultSkin = { skinId: 0, name: '经典粉', quality: '普通', price: 0, sortOrder: 0, unlockCondition: {} };
+    var defaultSkin = SkinDefine.SKIN.DEFAULT_SKIN;
     return [defaultSkin].concat(list);
   },
 
   /** 获取单个皮肤配置 */
   getSkin: function (skinId) {
-    if (skinId === 0) return { skinId: 0, name: '经典粉', quality: '普通', price: 0, sortOrder: 0, unlockCondition: {} };
+    if (skinId === 0) return SkinDefine.SKIN.DEFAULT_SKIN;
     if (!_skinsConfig) return null;
     for (var i = 0; i < _skinsConfig.length; i++) {
       if (_skinsConfig[i].skinId === skinId) return _skinsConfig[i];

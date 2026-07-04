@@ -2,15 +2,9 @@
 // 引擎只和 UIManager 对话，不知道任何具体 UI 组件
 
 var UIComponent = require('./base/UIComponent.js');
+var GameDefine = require('../define/GameDefine.js');
 
-// 固定层级常量
-var LAYER = {
-  BOARD_CARD: 0,    // 棋盘卡片背景
-  INFO: 1,          // 信息面板（关主、奖杯）
-  CONTROL: 2,       // 控制按钮（顶部栏、底部栏）
-  OVERLAY: 3,       // 叠加层（提示方向指示器）
-  MODAL: 4,         // 模态弹窗（结算、授权、Toast）
-};
+var LAYER = GameDefine.GAME.UI.LAYER;
 
 function UIManager(theme) {
   this.theme = theme;
@@ -27,7 +21,7 @@ function UIManager(theme) {
   /** @type {UIComponent|null} 长按计时器对应的组件 */
   this._longPressTarget = null;
   this._longPressTimer = null;
-  this._longPressThreshold = 500;  // ms
+  this._longPressThreshold = GameDefine.GAME.UI.LONG_PRESS_THRESHOLD;  // ms
 
   /** @type {boolean} 是否有激活的模态层（屏蔽底层事件） */
   this._modalActive = false;

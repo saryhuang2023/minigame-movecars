@@ -6,7 +6,7 @@ const BugReporter = require('./BugReporter.js');
 const cloud = require('../cloud.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
-const Theme = require('../ui/Theme.js');
+const Theme = require('../define/GameDefine.js').THEME;
 
 // ========== 配置 ==========
 const CONFIG = {

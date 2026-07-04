@@ -6,7 +6,7 @@ var databus = require('../databus.js');
 var Easing = require('../core/Easing.js');
 var PopupAnimator = require('./PopupAnimator.js');
 var AssetPreloader = require('./AssetPreloader.js');
-var Theme = require('./Theme.js');
+var Theme = require('../define/GameDefine.js').THEME;
 
 // ===== 继续按钮手绘（3层 Figma 设计，与 SettingsPanel/VictoryPopup 完全一致）=====
 function _roundRect(ctx, x, y, w, h, r) {

@@ -7,7 +7,7 @@ var COLORS = {
   white: '#FFFFFF',
 };
 
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 function LevelSelectTopBar(opts) {
   this._safeTop = 0;

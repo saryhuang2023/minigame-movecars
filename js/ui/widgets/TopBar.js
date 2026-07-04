@@ -2,7 +2,7 @@
 // PlayingEngine 专用
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 var commonIcons = require('../commonIcons.js');
 var databus = require('../../databus.js');
 var { SCREEN_WIDTH } = require('../../render.js');

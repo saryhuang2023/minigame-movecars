@@ -6,7 +6,7 @@ var IMG_ACTIVE = 'assets/images/levels/leftStep_1.png';
 var IMG_INACTIVE = 'assets/images/levels/leftStep_2.png';
 var MEDAL_SIZE = 16;
 
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 // 卡片配色（与引擎内 C 常量同步）
 var CARD = {

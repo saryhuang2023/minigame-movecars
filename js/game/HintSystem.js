@@ -2,8 +2,9 @@
 // PlayingEngine 通过此模块控制提示生命周期
 
 const audio = require('../audio/AudioManager.js');
+var PlayDefine = require('../define/PlayingDefine.js');
 
-const GHOST_SPEED = 100; // 幽灵提示速度（正常速度的一半）
+var GHOST_SPEED = PlayDefine.PLAY.HINT.GHOST_SPEED; // 幽灵提示速度（正常速度的一半）
 
 class HintSystem {
   /**
@@ -84,7 +85,7 @@ class HintSystem {
 
   _startGhostTimer() {
     if (this._timer) clearInterval(this._timer);
-    this._timer = setInterval(this._tick, 2000);
+    this._timer = setInterval(this._tick, PlayDefine.PLAY.HINT.INTERVAL);
     this._tick(); // 立即播放第一次
   }
 

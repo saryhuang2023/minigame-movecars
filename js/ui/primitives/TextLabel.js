@@ -1,7 +1,7 @@
 // 文本标签 — 单行或多行文本显示
 
 var UIComponent = require('../base/UIComponent.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 /**
  * @param {Object} opts

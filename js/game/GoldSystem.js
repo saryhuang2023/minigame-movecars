@@ -1,8 +1,11 @@
 // 金币系统 — 纯逻辑模块
 // 管理金币余额的本地读写、计算和云端同步
 
-const STORAGE_KEY = 'player_gold';
-const CLAIMED_KEY = 'player_gold_claimed';  // 已领取金币的关卡 ID 数组
+var GameDefine = require('../define/GameDefine.js');
+var SK = GameDefine.GAME.STORAGE_KEYS;
+
+var STORAGE_KEY = SK.GOLD;
+var CLAIMED_KEY = SK.GOLD_CLAIMED;  // 已领取金币的关卡 ID 数组
 
 var GoldSystem = {
   _chapters: null,  // 章节数据引用（setChapters 注入）
@@ -86,7 +89,7 @@ var GoldSystem = {
     if (claimed.indexOf(levelId) !== -1) return true;
     // 兼容旧版 first_gold_XXX 标记
     try {
-      var v = wx.getStorageSync('first_gold_' + levelId);
+      var v = wx.getStorageSync(SK.FIRST_GOLD_PREFIX + levelId);
       if (v) return true;
     } catch (e) {}
     return false;

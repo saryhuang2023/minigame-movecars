@@ -6,19 +6,20 @@
 
 const databus = require('../databus');
 const SkinLoader = require('../entity/SkinLoader.js');
-const { entityKey } = require('../entity/EntityTypes.js');
+const ENT = require('../define/GameDefine.js').ENTITY;
+var PR = require('../define/GameDefine.js').GAME.PIG_RENDER;
 
-const PIG_COLOR = '#FFD700';
-const PIG_STROKE = '#FFB300';
-const SELECTED_COLOR = '#2196F3';
+var PIG_COLOR = PR.COLORS.PIG;
+var PIG_STROKE = PR.COLORS.STROKE;
+var SELECTED_COLOR = PR.COLORS.SELECTED;
 
 // ============================================================
 // === 三宫格切片比例 ===
 // ============================================================
 // 单张猪图中：尾部占比 / 头部占比，中段 = 1 - TAIL_SLICE - HEAD_SLICE
-const TAIL_SLICE = 0.37;
-const HEAD_SLICE = 0.51;
-const WIDTH_HEIGHT_RATE_MIN = 1.8; // 猪的长宽比的最小值
+var TAIL_SLICE = PR.TAIL_SLICE;
+var HEAD_SLICE = PR.HEAD_SLICE;
+var WIDTH_HEIGHT_RATE_MIN = PR.WIDTH_HEIGHT_RATE_MIN; // 猪的长宽比的最小值
 
 // ============================================================
 // === canvas 工具 ===
@@ -53,19 +54,19 @@ function roundRect(ctx, x, y, w, h, r, topOnly) {
 // 动画类型枚举（未来可扩展 JUMP、DIE 等）
 const AnimType = Object.freeze({ IDLE: 'idle', RUN: 'run', ESCAPE: 'escape', HINT: 'hint' });
 
-const IDLE_FRAME_COUNT = 11;
-const RUN_FRAME_COUNT = 8;
-const ESCAPE_FRAME_COUNT = 8;
-const HINT_FRAME_COUNT = 8;
-const IDLE_FRAME_INTERVAL = 600 / IDLE_FRAME_COUNT;
-const RUN_FRAME_INTERVAL = 300 / RUN_FRAME_COUNT;
-const ESCAPE_FRAME_INTERVAL = 200 / ESCAPE_FRAME_COUNT;
-const HINT_FRAME_INTERVAL = 200 / HINT_FRAME_COUNT;  // 受击快速播放
-const WOBBLE_FREQ = 10;           // 身体摆动：每秒次数
-const WOBBLE_AMPLITUDE = 0.005;  // 身体摆动：幅度（弧度）
-const WOBBLE_PIVOT = 0.75;       // 身体摆动轴心位置（0=尾部端点, 1=中心）
-const TAIL_WOBBLE_FREQ = 5;      // 尾部甩动：每秒次数（比身体快）
-const TAIL_WOBBLE_AMPLITUDE = 0.015; // 尾部甩动：幅度（弧度，约0.86°）
+var IDLE_FRAME_COUNT = PR.IDLE_FRAME_COUNT;
+var RUN_FRAME_COUNT = PR.RUN_FRAME_COUNT;
+var ESCAPE_FRAME_COUNT = PR.ESCAPE_FRAME_COUNT;
+var HINT_FRAME_COUNT = PR.HINT_FRAME_COUNT;
+var IDLE_FRAME_INTERVAL = PR.IDLE_FRAME_INTERVAL;
+var RUN_FRAME_INTERVAL = PR.RUN_FRAME_INTERVAL;
+var ESCAPE_FRAME_INTERVAL = PR.ESCAPE_FRAME_INTERVAL;
+var HINT_FRAME_INTERVAL = PR.HINT_FRAME_INTERVAL;  // 受击快速播放
+var WOBBLE_FREQ = PR.WOBBLE.FREQ;           // 身体摆动：每秒次数
+var WOBBLE_AMPLITUDE = PR.WOBBLE.AMPLITUDE;  // 身体摆动：幅度（弧度）
+var WOBBLE_PIVOT = PR.WOBBLE.PIVOT;       // 身体摆动轴心位置（0=尾部端点, 1=中心）
+var TAIL_WOBBLE_FREQ = PR.WOBBLE.TAIL_FREQ;      // 尾部甩动：每秒次数（比身体快）
+var TAIL_WOBBLE_AMPLITUDE = PR.WOBBLE.TAIL_AMPLITUDE; // 尾部甩动：幅度（弧度，约0.86°）
 
 class PigRenderer {
   constructor(engine) {
@@ -386,7 +387,7 @@ class PigRenderer {
 
     ctx.save();
     ctx.setLineDash([6, 4]);
-    ctx.strokeStyle = '#8B6914';
+    ctx.strokeStyle = PR.COLORS.COLLISION_BOX;
     ctx.lineWidth = 2;
     ctx.beginPath();
     // 尾部底端 → 尾部左半圆（底→顶，逆时针） → 头部顶边 → 头部右半圆（顶→底） → 尾部底边闭合

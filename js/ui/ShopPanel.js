@@ -7,7 +7,7 @@ var SkinSystem = require('../game/SkinSystem.js');
 var GoldSystem = require('../game/GoldSystem.js');
 var databus = require('../databus.js');
 var PopupAnimator = require('./PopupAnimator.js');
-var Theme = require('./Theme.js');
+var Theme = require('../define/GameDefine.js').THEME;
 var { drawComposedPig, getComposedPigSize } = require('../render/PigRenderer.js');
 
 // ===== PopupAnimator =====

@@ -3,7 +3,7 @@
 
 var UIComponent = require('../base/UIComponent.js');
 var { PressAnim } = require('../base/Animation.js');
-var Theme = require('../Theme.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 /**
  * @param {Object} opts

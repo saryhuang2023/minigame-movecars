@@ -2,7 +2,7 @@
 // 三层查找: 主包 assets/audio/ → 本地缓存 USER_DATA_PATH/audio/ → 云存储下载
 // 失败不阻塞游戏，静默降级
 
-var config = require('./AudioConfig.js');
+var config = require('./AudioDefine.js');
 
 var _fs = wx.getFileSystemManager();
 var _downloading = false;

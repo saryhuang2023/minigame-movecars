@@ -1,7 +1,7 @@
 // 推猪消除 — 音频管理器（单例门面）
 // 统一对外接口，内部组合 SfxPlayer + MusicPlayer + AudioLoader
 
-var config = require('./AudioConfig.js');
+var config = require('./AudioDefine.js');
 var loader = require('./AudioLoader.js');
 var sfx = require('./SfxPlayer.js');
 var music = require('./MusicPlayer.js');
