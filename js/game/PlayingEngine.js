@@ -2354,43 +2354,7 @@ class PlayingEngine {
   // PlayingEngine 仅保留 _removeHintedPig（涉及 board 操作 + victory 触发）
   // ============================================================
   _removeHintedPig() {
-    var pig = this._hint.getTarget();
-    if (!pig) return;
-    // 从棋盘移除（消耗 5 步数，保留关主/奖杯资格）
-    var idx = this.gp.pigs.indexOf(pig);
-    if (idx >= 0) {
-      this.gp.pigs.splice(idx, 1);
-      this.gp.clearPigOccupancy(pig.id);
-    }
-    this.steps += 5;
-    databus.currentStep += 5;
-
-    // 使用移除功能 → 取消录像和提示收集（正式+试玩统一）
-    if (this._isRecording) {
-      this._trialStopRecord(false);  // 停止录制，不保存
-      console.log('[RecHint] 使用移除功能 → 取消录像');
-    }
-    if (!this._hintMerged) {
-      this._hintMerged = true;       // 跳过后续提示收集和通关上传
-      this._gameplayHintCache = [];
-      console.log('[RecHint] 使用移除功能 → 取消提示收集');
-    }
-
-    this._saveCheckpoint();         // 立档存盘，确保断点恢复
-    this._hint.clear();
-
-    // 所有猪都消失 → 通关（试玩模式不做处理）
-    var canEscapeRemaining2 = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
-    if (canEscapeRemaining2 === 0) {
-      if (databus.returnState !== 'editor') {
-      this._markCleared();
-      this._victory = true;
-      this._victoryTime = Date.now();
-      this._uiBottomBar.setHintHidden(true);
-      console.log('[LOG_victory] 通关(remove)！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
-      }
-    }
-    wx.showToast({ title: '已移除', icon: 'none', duration: 1000 });
+    wx.showToast({ title: '广告位招租', icon: 'none', duration: 1500 });
   }
 
   // ============================================================
