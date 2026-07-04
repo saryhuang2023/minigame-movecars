@@ -84,8 +84,8 @@ var GAME = {
 
     // ---------- 布局常量 ----------
     layout: {
-      topBarH: 48,
-      bottomBarH: 90,
+      topBarH: 68,
+      bottomBarH: 80,
     },
   },
 

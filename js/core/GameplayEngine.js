@@ -129,7 +129,7 @@ class GameplayEngine {
     const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
     const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
     this.boardOffsetX = Math.max(0, Math.round((SCREEN_WIDTH - visualW) / 2));
-    this.boardOffsetY = Math.max(0, Math.round((availH - visualH) / 2));
+    this.boardOffsetY = Math.max(0, Math.floor((availH - visualH) / 2));
   }
 
   /**
@@ -958,11 +958,10 @@ class GameplayEngine {
   // 渲染完整棋盘：孔位 + 小猪 + 预览高亮 + 动画
   // options: { drawHint }
   renderBoard(ctx, options = {}) {
-    const BA = SceneDefaults.boardArea;
     const visualW = this.boardWidth;
     const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
-    const availW = SCREEN_WIDTH - BA.hMargin * 2;
-    const availH = SCREEN_HEIGHT - BA.top - BA.bottom;
+    const availW = SCREEN_WIDTH;
+    const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
 
     // 自适应缩放：棋盘超出可用区域时等比缩小
     const autoScale = Math.min(availW / visualW, availH / visualH, 1.0);
@@ -974,7 +973,7 @@ class GameplayEngine {
       const boardCX = this.boardOffsetX + visualW / 2;
       const boardCY = offY + visualH / 2;
       const screenCX = SCREEN_WIDTH / 2;
-      const screenCY = BA.top + availH / 2;
+      const screenCY = this.topBarH + availH / 2;
 
       this._xform = {
         scale: autoScale,
@@ -1129,6 +1128,7 @@ class GameplayEngine {
       ctx.restore();
     }
   }
+
 }
 GameplayEngine.CHASE_SPEED = CHASE_SPEED;
 GameplayEngine.HEAD_ZONE_MULT = HEAD_ZONE_MULT;

@@ -181,9 +181,9 @@ VictoryAnimation.prototype._renderElement = function (ctx, type) {
   var fx, fy, scale;
 
   if (phase === 'grow') {
-    // 0 → MAX_SCALE, easeOutBack
+    // 0 → MAX_SCALE, easeOutCubic（顺滑亮相，无回弹）
     var t = Math.min(elapsed / GROW_DURATION, 1);
-    scale = Easing.easeOutBack(t, 1.5) * MAX_SCALE;
+    scale = Easing.easeOutCubic(t) * MAX_SCALE;
     fx = centerX;
     fy = centerY;
   } else if (phase === 'hold') {
@@ -192,9 +192,9 @@ VictoryAnimation.prototype._renderElement = function (ctx, type) {
     fx = centerX;
     fy = centerY;
   } else if (phase === 'suck') {
-    // 吸入目标：center → target, easeInCubic
+    // 吸入目标：center → target, easeInOutCubic（匀加→匀减，柔和着陆）
     var st = Math.min(elapsed / SUCK_DURATION, 1);
-    var t2 = Easing.easeInCubic(st);
+    var t2 = Easing.easeInOutCubic(st);
     fx = centerX + (targetX - centerX) * t2;
     fy = centerY + (targetY - centerY) * t2;
     scale = MAX_SCALE + (targetSize / showSize - MAX_SCALE) * t2;

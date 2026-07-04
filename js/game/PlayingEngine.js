@@ -814,7 +814,16 @@ class PlayingEngine {
     // 加载中：阻止所有用户操作（云端关卡拉取中）
     if (this._loading) return;
     // 入场动画期间：猪渐显完成前（board/pigs 阶段），阻止所有操作
-    if (this._entranceState && this._entranceState.phase !== 'done' && this._entranceState.phase !== 'ui') return;
+    if (this._entranceState && this._entranceState.phase !== 'done' && this._entranceState.phase !== 'ui') {
+      // 测试按钮例外：开发调试用，所有阶段均可操作
+      const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+      if (t && e.type === 'touchstart') {
+        if (databus.DEBUG_TEST_BUTTONS) {
+          if (this._testBtn && _hitRect(t.x, t.y, this._testBtn)) { this._testPlayAll(); return; }
+        }
+      }
+      return;
+    }
 
     var self = this;
     const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
@@ -887,13 +896,8 @@ class PlayingEngine {
       }
 
       // 步数飞币测试按钮
-      if (this._testBurstBtn && _hitRect(t.x, t.y, this._testBurstBtn)) {
-        this._testBurstEffect();
-        return;
-      }
-      // 奖杯测试按钮
-      if (this._testAwardBtn && _hitRect(t.x, t.y, this._testAwardBtn)) {
-        this._testAwardEffect();
+      if (this._testBtn && _hitRect(t.x, t.y, this._testBtn)) {
+        this._testPlayAll();
         return;
       }
 
@@ -1728,24 +1732,49 @@ class PlayingEngine {
     }
     // 新关主：从缓存加载头像
     var cache = wx.getStorageSync('userinfo_cache');
-    if (cache && cache.avatarPath) {
-      console.log('[LOG_victory] 新关主！启动头像飞行（并行, 缓存路径=' + cache.avatarPath + '）');
+    var self = this;
+    var tryPath = cache && cache.avatarPath ? cache.avatarPath : null;
+    var fallbackUrl = cache && cache.avatarUrl ? cache.avatarUrl : null;
+
+    function onLoadFail() {
+      // avatarPath 失败 → 尝试从 avatarUrl 重新下载
+      if (fallbackUrl) {
+        console.log('[LOG_victory] 头像缓存失效，从URL重新下载: ' + fallbackUrl);
+        wx.downloadFile({
+          url: fallbackUrl,
+          success: function (res) {
+            if (res.statusCode === 200) {
+              var saved = cache || {};
+              saved.avatarPath = res.tempFilePath;
+              wx.setStorageSync('userinfo_cache', saved);
+              var img = wx.createImage();
+              img.onload = function () { self._victoryAnim.startMaster(img); };
+              img.onerror = onLoadFailDone;
+              img.src = res.tempFilePath;
+            } else { onLoadFailDone(); }
+          },
+          fail: onLoadFailDone,
+        });
+      } else { onLoadFailDone(); }
+    }
+
+    function onLoadFailDone() {
+      console.log('[LOG_victory] 关主头像加载失败 → 标记完成');
+      self._masterAnimFinished = true;
+      self._tryFinishParallel();
+    }
+
+    if (tryPath) {
+      console.log('[LOG_victory] 新关主！启动头像飞行（并行, 缓存路径=' + tryPath + '）');
       var img = wx.createImage();
-      var self = this;
       img.onload = function () {
         console.log('[LOG_victory] 关主头像加载成功，启动飞行');
         self._victoryAnim.startMaster(img);
       };
-      img.onerror = function () {
-        console.log('[LOG_victory] 关主头像加载失败 → 标记完成');
-        self._masterAnimFinished = true;
-        self._tryFinishParallel();
-      };
-      img.src = cache.avatarPath;
+      img.onerror = onLoadFail;
+      img.src = tryPath;
     } else {
-      console.log('[LOG_victory] 无缓存头像 → 标记关主完成');
-      this._masterAnimFinished = true;
-      this._tryFinishParallel();
+      onLoadFail();
     }
   }
 
@@ -1823,19 +1852,45 @@ class PlayingEngine {
     // 启动奖杯
     this._victoryAnim.startCrown();
     this._crownAnimFinished = false;
-    // 模拟关主头像（如果有缓存）
+    // 关主头像：优先缓存，无则从 URL 下载
     var cache = wx.getStorageSync('userinfo_cache');
-    if (cache && cache.avatarPath) {
+    var self = this;
+    var tryPath = cache && cache.avatarPath ? cache.avatarPath : null;
+    var fallbackUrl = cache && cache.avatarUrl ? cache.avatarUrl : null;
+
+    function loadMasterFromPath(path) {
       var img = wx.createImage();
-      var self = this;
-      img.onload = function () {
-        self._victoryAnim.startMaster(img);
-      };
-      img.src = cache.avatarPath;
-      this._masterAnimFinished = false;
+      img.onload = function () { self._victoryAnim.startMaster(img); };
+      img.onerror = function () { self._masterAnimFinished = true; };
+      img.src = path;
+    }
+
+    if (tryPath) {
+      loadMasterFromPath(tryPath);
+    } else if (fallbackUrl) {
+      wx.downloadFile({
+        url: fallbackUrl,
+        success: function (res) {
+          if (res.statusCode === 200) {
+            var saved = cache || {};
+            saved.avatarPath = res.tempFilePath;
+            wx.setStorageSync('userinfo_cache', saved);
+            loadMasterFromPath(res.tempFilePath);
+          } else { self._masterAnimFinished = true; }
+        },
+        fail: function () { self._masterAnimFinished = true; },
+      });
     } else {
       this._masterAnimFinished = true;
     }
+  }
+
+  /**
+   * 测试按钮"画"：同时播金币炸开 + 奖杯 + 关主飞行动画
+   */
+  _testPlayAll() {
+    this._testBurstEffect();
+    this._testAwardEffect();
   }
 
   /**
@@ -2002,7 +2057,7 @@ class PlayingEngine {
     }
 
     // 1. 棋盘主体
-    this.gp.topBarH = this._boardCardY + Theme.spacing.cardPadding;
+    this.gp.topBarH = safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap + Theme.spacing.cardPadding;
     this.gp.bottomStripH = Theme.layout.bottomBarH + Theme.spacing.padding + Theme.spacing.cardGap + Theme.spacing.cardPadding;
     this.gp.renderBoard(ctx, {
       hintPigId: this._hint.getTargetId(),
@@ -2026,8 +2081,6 @@ class PlayingEngine {
       // 动画结束：正常渲染所有 UI
       // 3. 关主卡片（先渲染，作为底层）
       this._uiMasterPanel.render(ctx);
-      // 3.5 通关飞行特效（后渲染，浮在面板之上）
-      this._victoryAnim.render(ctx);
       // 3.8 奖杯（UIManager）
       this._uiCrownPig.render(ctx);
       // 4. 顶栏（UIManager）
@@ -2169,31 +2222,21 @@ class PlayingEngine {
       // board 或 pigs 阶段：不渲染任何 UI 控件
     }
 
-    // 5.5 测试按钮（飞币 + 奖杯）— 由 databus.DEBUG_TEST_BUTTONS 控制
+    // 5.5 测试按钮 — 由 databus.DEBUG_TEST_BUTTONS 控制
     if (databus.DEBUG_TEST_BUTTONS) {
-    var testBx = SCREEN_WIDTH - 118, testBy = 90, testBw = 30, testBh = 30;
-    var awardBx = testBx - testBw - 6;
-    // "奖" 按钮
-    ctx.fillStyle = 'rgba(255,152,0,0.7)';
+    var testBx = 10, testBy = 120, testBw = 30, testBh = 30;
+    ctx.fillStyle = 'rgba(33,150,243,0.6)';
     ctx.beginPath();
-    ctx.arc(awardBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+    ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 12px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('奖', awardBx + testBw / 2, testBy + testBh / 2);
-    // "币" 按钮
-    ctx.fillStyle = 'rgba(33,150,243,0.6)';
-    ctx.beginPath();
-    ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillText('币', testBx + testBw / 2, testBy + testBh / 2);
-    this._testBurstBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
-    this._testAwardBtn = { x: awardBx, y: testBy, w: testBw, h: testBh };
+    ctx.fillText('画', testBx + testBw / 2, testBy + testBh / 2);
+    this._testBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
     } else {
-      this._testBurstBtn = null;
-      this._testAwardBtn = null;
+      this._testBtn = null;
     }
 
     // 6. 通关弹窗（UIManager）
@@ -2209,11 +2252,13 @@ class PlayingEngine {
     }
 
     // 8. 设置面板（保持原有）
-    settingsPanel.render(ctx);
+    settingsPanel.render(ctx);  
 
     // 9. 金币磁吸飞行动画（推猪时触发，飞向金币区）—— 最高层级，不被任何 UI 遮挡
     var coinArrived = this._coinFlyEffect.update();
     this._coinFlyEffect.render(ctx);
+    // 奖杯/关主飞行动画（最高图层，覆盖所有 UI）
+    this._victoryAnim.render(ctx);
     // 金币到达 → 播放音效 + 触发 GoldWidget 呼吸 + "+1" 浮字
     if (coinArrived > 0 && this._uiGoldWidget) {
       // 结算已入库 → 不再累加计数（保留视觉效果）
