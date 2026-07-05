@@ -35,6 +35,9 @@ var PHASE2 = {
     'assets/images/levels/master_bg.png',
     'assets/images/levels/master_hat.png',
     'assets/images/levels/0/bg.jpg',
+    'assets/images/chapter/chapter_bg.jpg',
+    'assets/images/chapter/back.png',
+    'assets/images/chapter/lock.png',
   ],
   // 非 idle 动画帧 (run 8 + escape 8 + hint 8 = 24)
   animationTotalFrames: 24,
@@ -62,13 +65,17 @@ var ASSET_PRELOADER_MAP = {
   icon_music:  'assets/images/common/icon_music.png',
   icon_sound:  'assets/images/common/icon_sound.png',
   leftStep:    'assets/images/levels/leftStep_1.png',
+  leftStep_2:  'assets/images/levels/leftStep_2.png',
   master_hat:  'assets/images/levels/master_hat.png',
+  chapter_bg:  'assets/images/chapter/chapter_bg.jpg',
+  chapter_back:'assets/images/chapter/back.png',
+  chapter_lock:'assets/images/chapter/lock.png',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====
 var PHASE3 = {
   // 云端接口：getPlayerData、listLevels、chapterConfig、skinConfig
-  endpointCount: 4,
+  endpointCount: 2,
 };
 
 // ===== 阶段权重（影响进度条视觉分段） =====

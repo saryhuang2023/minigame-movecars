@@ -1,5 +1,5 @@
-// 关卡选择界面引擎
-// 正式关卡：读取 assets/levels/index.json，按 chapter.json 分组展示
+// 关卡选择界面引擎 v2 — 垂直滚动 + 章节卡片
+// 使用本地 chapter.json，云端背景图按需加载
 
 var databus = require('../databus.js');
 var audio = require('../audio/AudioManager.js');
@@ -7,46 +7,41 @@ var renderModule = require('../render.js');
 var ctx = renderModule.ctx;
 var SCREEN_WIDTH = renderModule.SCREEN_WIDTH;
 var SCREEN_HEIGHT = renderModule.SCREEN_HEIGHT;
-var ButtonPress = require('../anim/ButtonPress.js');
-var GoldSystem = require('./GoldSystem.js');
+var AssetPreloader = require('../ui/AssetPreloader.js');
+var Theme = require('../define/GameDefine.js').THEME;
 
-// UI 组件
-var LevelCard = require('../ui/widgets/LevelCard.js');
-var ChapterHeader = require('../ui/widgets/ChapterHeader.js');
-var LevelSelectTopBar = require('../ui/widgets/LevelSelectTopBar.js');
+var ChapterSection = require('../ui/widgets/ChapterSection.js');
 
 // ========== 布局常量 ==========
-var TOP_BAR_H = 52;
-var CARD_W = 50;
-var CARD_H = 40;
-var GAP = 12;
-var ROW_GAP = 12;
-var COLS = 5;
-var PADDING_X = 20;
-var CARD_RADIUS = 6;
-var SECTION_HEADER_H =28;
-var SECTION_GAP = 4;
-var SECTION_MARGIN = 20;
+var BACK_IMG_W = 32, BACK_IMG_H = 32;
+var BACK_LEFT = 16, BACK_TOP = 45;
+var TITLE_Y = 49;
+
+// ========== 滚动物理 ==========
+var FRICTION = 0.95;
+var BOUNCE_STIFFNESS = 0.2;
+var MIN_VELOCITY = 0.5;
+var OVERSCROLL_MAX = 120;
 
 function LevelSelectEngine(input) {
   this.input = input;
   this.projectLevels = [];
-  this._sections = [];       // [{ chapter, headerY, cards: [{x,y,w,h,level,globalIndex}] }]
-  this._needsRebuild = false; // 云端范围增大后置脏，触发下次 activate 重建
-  this._btnPress = new ButtonPress();
+  this._sections = [];       // ChapterSection[]
+  this._needsRebuild = false;
 
-  // UI 组件
-  this._topBar = null;
-  this._chapterHeaders = [];  // ChapterHeader[]
-  this._levelCards = [];      // LevelCard[][] — [sectionIndex][cardIndex]
-
-  // 滚动
-  this._scrollTop = 0;
-  this._maxScrollTop = 0;
+  // 滚动状态
+  this._scrollY = 0;
+  this._maxScrollY = 0;
   this._touchStartY = 0;
-  this._scrollStartTop = 0;
+  this._scrollStartY = 0;
   this._isDragging = false;
-  this._dragMoved = false;
+  this._velocity = 0;
+  this._lastTouchY = 0;
+  this._lastTouchTime = 0;
+  this._justActivated = false;
+
+  // 当前章节索引
+  this._currentChIdx = 0;
 }
 
 // ============================================================
@@ -54,25 +49,29 @@ function LevelSelectEngine(input) {
 // ============================================================
 LevelSelectEngine.prototype.activate = function () {
   try {
-    this._justActivated = true;  // 防止残留 touchend 误触卡片
+    this._justActivated = true;
 
-    // 首次进入 或 云端范围增大标记脏 → 全量重建 projectLevels / sections / UI
     if (this._sections.length === 0 || this._needsRebuild) {
       this.loadProjectLevels();
-      this._buildChapterSections();
-      this._setupUI();
+      this._buildSections();
       this._needsRebuild = false;
-    } else {
-      // 复用已有 sections，仅重建 UI 组件（input 监听在 deactivate 时已解绑）
-      this._setupUI();
+    }
+
+    // 滚动到当前章节
+    if (this._sections.length > 0) {
+      var chIdx = this._getCurrentChapterIdx();
+      var sy = 0;
+      for (var i = 0; i < chIdx; i++) {
+        sy += this._sections[i].getHeight() + CARD_GAP;
+      }
+      this._scrollY = Math.max(0, sy - 40);
+      if (this._scrollY > this._maxScrollY) this._scrollY = this._maxScrollY;
     }
 
     this.input.on('levelSelect', this._handleEvent.bind(this));
   } catch (e) {
     console.error('[LevelSelectEngine] activate() 失败:', e);
-    this._topBar = null;
-    this._chapterHeaders = [];
-    this._levelCards = [];
+    this._sections = [];
   }
 };
 
@@ -81,74 +80,48 @@ LevelSelectEngine.prototype.deactivate = function () {
 };
 
 // ============================================================
-// 加载正式关卡列表（从本地+云端范围计算，不再依赖显式枚举数组）
+// 关卡列表加载 — 复用 GameEngine 已构建的 projectLevels
 // ============================================================
 LevelSelectEngine.prototype.loadProjectLevels = function () {
-  var callId = Date.now() % 100000; // 短 ID 用于区分多次调用
-  console.log('[LOG] loadProjectLevels #' + callId + ' 开始, _cloudMaxLevel=' + databus._cloudMaxLevel
-    + ', gameState=' + databus.gameState);
-
-  this.projectLevels = [];
-  var fs = wx.getFileSystemManager();
-
-  // 读取本地关卡范围
-  var localMax = 0;
-  var indexFormat = 'unknown';
-  try {
-    var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
-    var indexData = JSON.parse(indexRaw);
-    console.log('[LOG] loadProjectLevels #' + callId + ' index.json 原始内容: ' + indexRaw.trim());
-    if (typeof indexData.maxLevel === 'number') {
-      localMax = indexData.maxLevel;
-      indexFormat = 'range';
-    } else if (Array.isArray(indexData)) {
-      localMax = indexData.length;
-      indexFormat = 'array';
-    }
-    console.log('[LOG] loadProjectLevels #' + callId + ' 本地: format=' + indexFormat + ' localMax=' + localMax);
-  } catch (e) {
-    console.warn('[LevelSelect] 读取 index.json 失败:', e);
-  }
-
-  // 合并云端范围
-  var cloudMax = databus._cloudMaxLevel || 0;
-  var maxLevel = Math.max(localMax, cloudMax);
-  console.log('[LOG] loadProjectLevels #' + callId + ' 合并: localMax=' + localMax
-    + ' cloudMax=' + cloudMax + ' → maxLevel=' + maxLevel);
-  if (maxLevel <= 0) {
-    console.log('[LOG] loadProjectLevels #' + callId + ' maxLevel<=0，直接返回');
+  // 优先使用 databus.projectLevels（GameEngine 加载阶段已完成本地+云端合并）
+  if (databus.projectLevels && databus.projectLevels.length > 0) {
+    this.projectLevels = databus.projectLevels;
     return;
   }
 
+  // 兜底：自己构建
+  this.projectLevels = [];
+  var fs = wx.getFileSystemManager();
+  var localMax = 0;
+  try {
+    var indexRaw = fs.readFileSync('assets/levels/index.json', 'utf8');
+    var indexData = JSON.parse(indexRaw);
+    if (typeof indexData.maxLevel === 'number') localMax = indexData.maxLevel;
+    else if (Array.isArray(indexData)) localMax = indexData.length;
+  } catch (e) {
+    console.warn('[LevelSelect] 读取 index.json 失败:', e);
+  }
+  var cloudMax = databus._cloudMaxLevel || 0;
+  var maxLevel = Math.max(localMax, cloudMax);
+  if (maxLevel <= 0) return;
   for (var i = 0; i < maxLevel; i++) {
     var name = String(i + 1).padStart(4, '0');
     this.projectLevels.push({ name: name, file: name + '.json' });
   }
-  // 同步到 databus，供 PlayingEngine "下一关" 使用
   databus.projectLevels = this.projectLevels;
-  console.log('[LOG] loadProjectLevels #' + callId + ' 完成: projectLevels.length=' + this.projectLevels.length
-    + ', 已同步 databus.projectLevels');
 };
 
 // ============================================================
-// 按章节分组构建卡片布局
+// 构建章节卡片
 // ============================================================
-LevelSelectEngine.prototype._buildChapterSections = function () {
-  var self = this;
-
-  // 优先使用云端章节配置；未就绪则降级到本地
-  if (databus._cloudChapters && Array.isArray(databus._cloudChapters)) {
-    databus.chapters = databus._cloudChapters;
-    GoldSystem.setChapters(databus.chapters);
-  } else if (!databus._chaptersLoaded) {
+LevelSelectEngine.prototype._buildSections = function () {
+  // 加载章节配置
+  if (!databus._chaptersLoaded) {
     databus._chaptersLoaded = true;
     try {
       var raw = wx.getFileSystemManager().readFileSync('assets/levels/chapter.json', 'utf8');
       databus.chapters = JSON.parse(raw);
-      GoldSystem.setChapters(databus.chapters);
-      console.log('[LevelSelect] 章节配置加载成功: ' + databus.chapters.length + '章');
     } catch (e) {
-      console.warn('[LevelSelect] 加载 chapter.json 失败:', e);
       databus.chapters = [];
     }
   }
@@ -159,298 +132,238 @@ LevelSelectEngine.prototype._buildChapterSections = function () {
     return;
   }
 
-  var contentW = CARD_W * COLS + GAP * (COLS - 1);
-  var startX = (SCREEN_WIDTH - contentW) / 2;
+  // 确定当前章节
+  this._currentChIdx = this._getCurrentChapterIdx();
 
-  // 第一步：将关卡分配到对应章节
-  var chapterBuckets = [];
-  for (var c = 0; c < chapters.length; c++) {
-    chapterBuckets.push([]);
-  }
-
+  // 分配关卡到章节
   var prevEnd = -1;
+  this._sections = [];
+  var cardW = SCREEN_WIDTH - 40;  // 卡片宽度 = 屏宽 - 左右各20
+  var cardX = 20;
+
   for (var chIdx = 0; chIdx < chapters.length; chIdx++) {
     var ch = chapters[chIdx];
-    var levelStart = prevEnd + 1;
-    var levelEnd = Math.min(ch.endIndex, this.projectLevels.length - 1);
-    for (var gi = levelStart; gi <= levelEnd; gi++) {
-      chapterBuckets[chIdx].push(gi);
+    var start = prevEnd + 1;
+    var end = Math.min(ch.endIndex, this.projectLevels.length - 1);
+    var levelList = [];
+    for (var gi = start; gi <= end; gi++) {
+      levelList.push(this.projectLevels[gi]);
     }
     prevEnd = ch.endIndex;
-    if (prevEnd >= this.projectLevels.length - 1) break;
-  }
 
-  // 第二步：计算每个章节的 Y 坐标和卡片位置
-  var y = this._getGridTop();
-  this._sections = [];
+    if (levelList.length === 0) continue;
 
-  for (var s = 0; s < chapters.length; s++) {
-    var bucket = chapterBuckets[s];
-    if (bucket.length === 0 && s < chapters.length - 1) {
-      // 空章节也显示标题（让玩家看到锁住的章节区域）
-      // 但至少放半行占位
+    var isCurrent = (chIdx === this._currentChIdx);
+    var isFuture = (chIdx > this._currentChIdx);
+
+    // 计算本章奖杯数（当前+之前章节都用同一规则）
+    var chapterCrowns = 0;
+    for (var ci = start; ci <= end; ci++) {
+      if (wx.getStorageSync('crown_' + ci)) chapterCrowns++;
     }
-    if (bucket.length === 0) continue;
+    var unlocked = chapterCrowns >= (ch.unlock_crown_num || 0);
 
-    var section = {
-      chapter: chapters[s],
-      chapterIndex: s,
-      headerY: y,
-      cards: []
-    };
+    var section = new ChapterSection({
+      chapter: ch,
+      levels: levelList,
+      startIndex: start,
+      chIdx: chIdx,
+      isCurrent: isCurrent,
+      isFuture: isFuture,
+      unlocked: unlocked,
+      cardW: cardW,
+      onLevelTap: this._onLevelTap.bind(this),
+      onDressUp: this._onDressUp.bind(this),
+    });
 
-    y += SECTION_HEADER_H + SECTION_GAP;
+    section.x = cardX;
+    section.y = 0; // 运行时计算
 
-    for (var k = 0; k < bucket.length; k++) {
-      var globalIdx = bucket[k];
-      var col = k % COLS;
-      var row = Math.floor(k / COLS);
-      section.cards.push({
-        x: startX + col * (CARD_W + GAP),
-        y: y + row * (CARD_H + ROW_GAP),
-        w: CARD_W,
-        h: CARD_H,
-        level: self.projectLevels[globalIdx],
-        globalIndex: globalIdx
-      });
+    // 当前和已通过的章节：按需加载背景图
+    if (!isFuture) {
+      section.loadBgImage();
     }
-
-    var rows = Math.ceil(bucket.length / COLS) || 0;
-    y += rows * (CARD_H + ROW_GAP) + SECTION_MARGIN;
 
     this._sections.push(section);
   }
 
-    // 第三步：更新滚动范围
-    var visibleH = SCREEN_HEIGHT - 60;
-    this._maxScrollTop = Math.max(0, y - SECTION_MARGIN - visibleH);
-    if (this._maxScrollTop < 0) this._maxScrollTop = 0;
-    this._scrollTop = 0;
-    console.log('[LevelSelect] _buildChapterSections 完成: ' + this._sections.length + '章节, ' +
-      this._sections.reduce(function(a,s){return a+s.cards.length},0) + '卡片, ' +
-      'cards[0]=' + (this._sections[0] && this._sections[0].cards[0] ? this._sections[0].cards[0].level.name : '?') +
-      ' cards[last]=' + (this._sections[this._sections.length-1] && this._sections[this._sections.length-1].cards.slice(-1)[0] ? this._sections[this._sections.length-1].cards.slice(-1)[0].level.name : '?'));
-};
-
-LevelSelectEngine.prototype._getGridTop = function () {
-  return databus.safeTop + TOP_BAR_H + 16;
-};
-
-// ============================================================
-// UI 组件初始化 & 数据同步
-// ============================================================
-LevelSelectEngine.prototype._setupUI = function () {
-  // 顶栏
-  this._topBar = new LevelSelectTopBar();
-
-  // 按 sections 结构创建组件
-  this._chapterHeaders = [];
-  this._levelCards = [];
-
+  // 计算各节 Y 坐标和总滚动高度
+  var totalY = 103;  // 第一张卡片起始Y
   for (var s = 0; s < this._sections.length; s++) {
-    var section = this._sections[s];
-    var chHeader = new ChapterHeader();
-    this._chapterHeaders.push(chHeader);
-
-    var cardRow = [];
-    for (var i = 0; i < section.cards.length; i++) {
-      var lc = new LevelCard();
-      cardRow.push(lc);
-    }
-    this._levelCards.push(cardRow);
+    this._sections[s].y = totalY;
+    totalY += this._sections[s].getHeight() + CARD_GAP;
   }
+  this._maxScrollY = Math.max(0, totalY - CARD_GAP - SCREEN_HEIGHT + 100);
 };
 
-/** 每帧同步引擎状态 → UI 组件（在 render 之前调用） */
-LevelSelectEngine.prototype._syncUIData = function () {
-  if (!this._topBar) return;
-  // 顶栏
-  this._topBar.setData({
-    safeTop: databus.safeTop,
-    topBarH: TOP_BAR_H,
-    title: '选择关卡',
-    pressScale: this._btnPress.getScale('back'),
-    screenW: SCREEN_WIDTH,
-  });
-
-  var completed = this._getCompletedCount();
-  var PADDING_X = 20;
-  var SECTION_HEADER_H = 28;
-
-  for (var s = 0; s < this._sections.length; s++) {
-    var section = this._sections[s];
-    var ch = section.chapter;
-
-    // 计算章节内已通关数
-    var cleared = 0;
-    for (var c = 0; c < section.cards.length; c++) {
-      if (section.cards[c].globalIndex < completed) cleared++;
+// ============================================================
+// 滚动物理
+// ============================================================
+LevelSelectEngine.prototype._updateScroll = function () {
+  if (!this._isDragging) {
+    if (Math.abs(this._velocity) > MIN_VELOCITY) {
+      this._scrollY += this._velocity;
+      this._velocity *= FRICTION;
+    } else {
+      this._velocity = 0;
     }
-
-    // 章节标题
-    this._chapterHeaders[s].setData({
-      x: PADDING_X,
-      y: section.headerY + SECTION_HEADER_H / 2,
-      w: SCREEN_WIDTH - PADDING_X,
-      icon: ch.icon || '',
-      name: ch.name,
-      themeColor: ch.themeColor || '#EC4899',
-      cleared: cleared,
-      total: section.cards.length,
-    });
-
-    // 卡片
-    for (var i = 0; i < section.cards.length; i++) {
-      var card = section.cards[i];
-      var status = this._getCardStatus(card.globalIndex);
-
-      // 皇冠状态
-      var hasCrown = false;
-      try { hasCrown = !!wx.getStorageSync('crown_' + card.globalIndex); } catch (e) {}
-
-      this._levelCards[s][i].setCardData({
-        x: card.x,
-        y: card.y,
-        w: card.w,
-        h: card.h,
-        radius: CARD_RADIUS,
-        globalIndex: card.globalIndex,
-        status: status,
-        hasCrown: hasCrown,
-        pressScale: this._btnPress.getScale('card_' + card.globalIndex),
-      });
+    // 边界弹性
+    if (this._scrollY < 0) {
+      this._scrollY += (0 - this._scrollY) * BOUNCE_STIFFNESS;
+      this._velocity *= 0.5;
+    } else if (this._scrollY > this._maxScrollY) {
+      this._scrollY += (this._maxScrollY - this._scrollY) * BOUNCE_STIFFNESS;
+      this._velocity *= 0.5;
     }
   }
 };
 
 // ============================================================
-// 关卡状态判断
+// 当前章节索引
 // ============================================================
-LevelSelectEngine.prototype._getCompletedCount = function () {
-  try {
-    var idx = wx.getStorageSync('lastLevelIndex');
-    // lastLevelIndex 是最后完成关卡的全局索引（0-based），已完成数量 = idx + 1
-    if (typeof idx === 'number' && idx >= 0) return idx + 1;
-  } catch (e) { /* ignore */ }
-  return 0;
-};
-
-/**
- * @param {number} globalIndex - 关卡在 projectLevels 中的全局索引
- * @returns {string} 'completed' | 'current' | 'locked'
- */
-LevelSelectEngine.prototype._getCardStatus = function (globalIndex) {
-  var completed = this._getCompletedCount();
-  // 只能选已通关关卡；current（下一关待挑战）归属为 locked
-  if (globalIndex < completed) return 'completed';
-  return 'locked';
+LevelSelectEngine.prototype._getCurrentChapterIdx = function () {
+  var chapters = databus.chapters;
+  if (!chapters || chapters.length === 0) return 0;
+  var li = parseInt(wx.getStorageSync('lastLevelIndex'), 10) || 0;
+  for (var i = 0; i < chapters.length; i++) {
+    if (li <= chapters[i].endIndex) return i;
+  }
+  return chapters.length - 1;
 };
 
 // ============================================================
 // 事件处理
 // ============================================================
 LevelSelectEngine.prototype._handleEvent = function (e) {
-  var t = (e.touches[0] || (e.changedTouches && e.changedTouches[0]));
-  if (!t) return;
-
   if (e.type === 'touchstart') {
-    this._justActivated = false;  // 新触摸序列开始，解除刚激活保护
+    var t = e.touches && e.touches[0];
+    if (!t) return;
     this._isDragging = true;
-    this._dragMoved = false;
     this._touchStartY = t.y;
-    this._scrollStartTop = this._scrollTop;
+    this._scrollStartY = this._scrollY;
+    this._lastTouchY = t.y;
+    this._lastTouchTime = Date.now();
+    this._velocity = 0;
   }
-
-  // 刚激活且没收到过 touchstart → 忽略残留事件（防止从菜单按钮误触卡片）
-  if (this._justActivated) return;
 
   if (e.type === 'touchmove' && this._isDragging) {
-    var dy = t.y - this._touchStartY;
-    if (Math.abs(dy) > 6) {
-      this._dragMoved = true;
-    }
-    if (this._dragMoved) {
-      this._scrollTop = this._scrollStartTop - dy;
-      if (this._scrollTop < 0) this._scrollTop = 0;
-      if (this._scrollTop > this._maxScrollTop) this._scrollTop = this._maxScrollTop;
-    }
+    var tm = e.touches && e.touches[0];
+    if (!tm) return;
+    var now = Date.now();
+    var dy = tm.y - this._lastTouchY;
+    var dt = now - this._lastTouchTime;
+    this._scrollY -= dy;
+    this._lastTouchY = tm.y;
+    this._lastTouchTime = now;
+    if (dt > 0) this._velocity = -dy / dt * 16;
   }
 
-  if (e.type === 'touchend') {
+  if (e.type === 'touchend' && this._isDragging) {
     this._isDragging = false;
-    if (this._dragMoved) return;
-    this._hitTestCards(t);
+    var te = e.changedTouches && e.changedTouches[0];
+    if (!te) return;
+
+    // 判断是否为点击（移动距离小）
+    var dist = Math.abs(te.y - this._touchStartY);
+    if (dist < 8 && this._scrollY > -10 && this._scrollY < this._maxScrollY + 10) {
+      // 点击事件：路由到章节按钮
+      this._routeClick(te.x, te.y);
+    }
+  }
+};
+
+/** 路由点击到关卡按钮或顶部按钮 */
+LevelSelectEngine.prototype._routeClick = function (px, py) {
+  // 固顶层：返回按钮（屏幕坐标，不转换）
+  if (px >= BACK_LEFT && px <= BACK_LEFT + BACK_IMG_W &&
+      py >= BACK_TOP && py <= BACK_TOP + BACK_IMG_H) {
+    audio.play('button_click');
+    databus.gameState = 'menu';
+    return;
   }
 
-  // 返回按钮（不受滚动影响）
-  if (e.type === 'touchstart') {
-    var bb = this._topBar ? this._topBar.backBtnRect : null;
-    if (bb && t.x >= bb.x && t.x <= bb.x + bb.w &&
-        t.y >= bb.y && t.y <= bb.y + bb.h) {
-      audio.play('button_click');
-      this._btnPress.press('back');
-      this._btnPress.breathe('back');
-      databus.gameState = 'menu';
+  // 章节卡片内的关卡按钮（转滚动坐标）
+  var sy = py + this._scrollY;
+  for (var i = 0; i < this._sections.length; i++) {
+    if (this._sections[i].handleTouch(px, sy)) {
       return;
     }
   }
 };
 
-LevelSelectEngine.prototype._hitTestCards = function (t) {
-  var ly = t.y + this._scrollTop;
+/** 关卡按钮点击 */
+LevelSelectEngine.prototype._onLevelTap = function (levelId) {
+  audio.play('button_click');
+  var lv = this.projectLevels[levelId];
+  databus.currentLevel = { name: lv.name, data: null };
+  databus.currentLevelIndex = levelId;
+  databus.returnState = 'levelSelect';
+  databus.gameState = 'playing';
+};
 
-  for (var s = 0; s < this._sections.length; s++) {
-    var section = this._sections[s];
-    for (var i = 0; i < section.cards.length; i++) {
-      var card = section.cards[i];
-      if (t.x >= card.x && t.x <= card.x + card.w &&
-          ly >= card.y && ly <= card.y + card.h) {
-        if (this._getCardStatus(card.globalIndex) === 'locked') return;
-        audio.play('button_click');
-        this._btnPress.press('card_' + card.globalIndex);
-        this._btnPress.breathe('card_' + card.globalIndex);
-        var lv = card.level;
-        console.log('[LevelSelect] 点击卡片 globalIdx=' + card.globalIndex + ' name=' + lv.name);
-        databus.currentLevel = { name: lv.name, data: null };
-        databus.currentLevelIndex = card.globalIndex;
-        databus.returnState = 'levelSelect';
-        databus.gameState = 'playing';
-        return;
-      }
-    }
-  }
+/** "去装扮" 按钮 */
+LevelSelectEngine.prototype._onDressUp = function () {
+  audio.play('button_click');
+  // TODO: 打开装扮面板
 };
 
 // ============================================================
 // 渲染
 // ============================================================
 LevelSelectEngine.prototype.render = function () {
-  if (!this._topBar) return;
-  this._syncUIData();
+  this._updateScroll();
 
-  // 顶栏（固定，不随滚动）
-  this._topBar.render(ctx);
-
-  // 章节内容（随滚动偏移）
   ctx.save();
-  ctx.translate(0, -this._scrollTop);
-  for (var s = 0; s < this._sections.length; s++) {
-    var section = this._sections[s];
-    this._chapterHeaders[s].render(ctx);
-    for (var i = 0; i < section.cards.length; i++) {
-      this._levelCards[s][i].render(ctx);
-    }
+
+  // ===== 全局背景 =====
+  var bgImg = AssetPreloader.get('chapter_bg');
+  if (bgImg && AssetPreloader.isReady('chapter_bg')) {
+    ctx.drawImage(bgImg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
   }
+
+  // ===== 滚动区域 =====
+  ctx.save();
+  ctx.translate(0, -this._scrollY);
+
+  for (var i = 0; i < this._sections.length; i++) {
+    this._sections[i].render(ctx);
+  }
+
+  ctx.restore();
+
+  // ===== 固顶层 =====
+  // 返回按钮
+  var backImg = AssetPreloader.get('chapter_back');
+  if (backImg && AssetPreloader.isReady('chapter_back')) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 3;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 1;
+    ctx.drawImage(backImg, BACK_LEFT, BACK_TOP, BACK_IMG_W, BACK_IMG_H);
+    ctx.restore();
+  }
+
+  // 标题 "关卡"
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '24px ' + Theme.font.family;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1;
+  ctx.strokeText('关卡', SCREEN_WIDTH / 2, TITLE_Y);
+  ctx.fillText('关卡', SCREEN_WIDTH / 2, TITLE_Y);
+
   ctx.restore();
 };
 
-// ========== 辅助函数 ==========
-function cloneObj(obj) {
-  var result = {};
-  for (var key in obj) {
-    if (obj.hasOwnProperty(key)) result[key] = obj[key];
-  }
-  return result;
-}
+// ============================================================
+// 兼容旧 API：标记重建
+// ============================================================
+LevelSelectEngine.prototype.markNeedsRebuild = function () {
+  this._needsRebuild = true;
+};
+
+var CARD_GAP = 40; // 章节间距常量（供外部参考）
 
 module.exports = LevelSelectEngine;

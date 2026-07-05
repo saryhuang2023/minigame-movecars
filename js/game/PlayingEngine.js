@@ -790,6 +790,7 @@ class PlayingEngine {
     this._guide.reset();         // 退出关卡时强制结束引导
     this._destroyAuthBtn(true);  // 立即关闭，无动画
     this._clearCheckpoint();     // 任何退出关卡路径都清理存档
+    this._entranceState = null;  // 清空入场动画，防止下一帧闪现旧猪
     // 清理录制/回放状态
     if (this._isRecording) this._trialStopRecord(false);  // 退出关卡不保存录制
     this._isPlayingBack = false;
@@ -2196,11 +2197,11 @@ class PlayingEngine {
       return 1 - Math.pow(1 - t, 3);
     }
 
-    // 猪 alpha（board 阶段恒为 0；pigs 阶段 0→1；ui/done 恒为 1）
+    // 猪 alpha（无入场状态或 board 阶段恒为 0；pigs 阶段 0→1；ui/done 恒为 1）
     var pigAlpha = 1;
-    if (es && es.phase === 'board') {
+    if (!es || es.phase === 'board') {
       pigAlpha = 0;
-    } else if (es && es.phase === 'pigs') {
+    } else if (es.phase === 'pigs') {
       var t = Math.min(1, (eElapsed - es.pigFadeDelay) / es.pigFadeDur);
       pigAlpha = _easeOut(t);
     }

@@ -334,16 +334,6 @@ class GameEngine {
     }).catch(function(err) {
       console.warn('[Cloud] listLevels 异常（非阻塞）:', err && err.message);
     });
-    // 拉取云端章节配置
-    cloud.downloadCloudFile('level/chapter.json').then(function(chapterData) {
-      if (chapterData && Array.isArray(chapterData)) {
-        databus._cloudChapters = chapterData;
-        GoldSystem.setChapters(chapterData);
-        console.log('[Cloud] 云端章节配置就绪: ' + chapterData.length + ' 章');
-      }
-    }).catch(function(err) {
-      console.warn('[Cloud] chapter.json 异常（非阻塞）:', err && err.message);
-    });
   }
 
   // ===== 用户信息预加载（loading 阶段异步拉取，不阻塞） =====
@@ -472,12 +462,6 @@ class GameEngine {
       }
     } else {
       console.log('[GameEngine] 无预加载云端关卡范围');
-    }
-
-    var chapters = this._preloadedChapters;
-    if (chapters && Array.isArray(chapters)) {
-      databus._cloudChapters = chapters;
-      console.log('[GameEngine] 预加载云端章节配置: ' + chapters.length + ' 章');
     }
   }
 

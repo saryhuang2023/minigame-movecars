@@ -192,19 +192,6 @@ LoadingManager.prototype._startPhase3 = function () {
     self._p3.endpointsDone++;
   });
 
-  // 3. 拉取章节配置
-  cloud.downloadCloudFile('level/chapter.json').then(function (data) {
-    if (data && Array.isArray(data)) {
-      self._chapterData = data;
-      GoldSystem.setChapters(data);
-      console.log('[LoadingManager] 云端章节配置就绪: ' + data.length + ' 章');
-    }
-    self._p3.endpointsDone++;
-  }).catch(function (err) {
-    console.warn('[LoadingManager] chapter.json 失败:', err && err.message);
-    self._p3.endpointsDone++;
-  });
-
   // 4. 皮肤配置（fire-and-forget，不阻塞）
   SkinSystem.loadConfig(function () {
     console.log('[LoadingManager] 皮肤配置就绪');
