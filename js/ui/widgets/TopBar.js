@@ -75,7 +75,7 @@ TopBar.prototype.render = function (ctx) {
   // === 左上角设置按钮 ===
   var backW = 49, backH = 47;
   var backX = PADDING;
-  var backY = 26;  // 离屏幕顶部 26px
+  var backY = PADDING;  // 离屏幕顶部 26px
 
   var setScale = this._buttonPress ? this._buttonPress.getScale('settings') : 1;
   var setCX = backX + backW / 2;
@@ -108,7 +108,7 @@ TopBar.prototype.render = function (ctx) {
   if (this.mode !== 'trial') {
     var badgeW = 80;
     var badgeX = (SCREEN_WIDTH - badgeW) / 2;
-    var badgeY = 90;
+    var badgeY = backY;
     var badgeH = 24;
     var badgeCX = badgeX + badgeW / 2;
     var badgeCY = badgeY + badgeH / 2;

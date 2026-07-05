@@ -21,7 +21,7 @@ class DataBus {
     this.currentStep = 0;       // 当前步数（PlayingEngine 同步）
 
     // 调试开关
-    this.DEBUG_TEST_BUTTONS = true; // 游戏内"奖""币"测试按钮（改 true 显示）
+    this.debugUnlocked = false;  // 编辑器后门解锁后才变为 true
   }
 }
 

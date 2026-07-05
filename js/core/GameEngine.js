@@ -943,6 +943,7 @@ class GameEngine {
           }, 1500);  // 1.5 秒内连击，否则重置
           if (this._cornerTapCount >= 5 && !this._editorUnlocked) {
             this._editorUnlocked = true;
+            databus.debugUnlocked = true;
             this._cornerTapCount = 0;
             clearTimeout(this._cornerTapTimer);
             wx.showToast({ title: '编辑器已解锁', icon: 'none', duration: 1200 });
@@ -1348,6 +1349,8 @@ class GameEngine {
 
   /** 处理开始游戏按钮点击 */
   _onClickPlayBtn() {
+    // 飞行动画进行中 → 忽略
+    if (this._stamina.isFlying()) return;
     var self = this;
     // 先同步体力
     this._stamina.load();

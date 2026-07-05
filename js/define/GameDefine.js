@@ -195,8 +195,8 @@ var GAME = {
     },
 
     // 顶部栏/底栏高度（编辑器/游玩共用）
-    TOP_BAR_H: 48,
-    BOTTOM_STRIP_H_DEFAULT: 175,
+    TOP_BAR_H: 90,
+    BOTTOM_STRIP_H_DEFAULT: 105,
 
     // 棋盘宽度屏幕比例下限（由不包含错落列的 cols=oddCols 决定）
     // boardWidth = max(SCREEN_WIDTH * percent, levelBoardWidth)

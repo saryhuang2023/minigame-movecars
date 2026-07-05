@@ -33,6 +33,8 @@ const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const SceneDefaults = require('../define/GameDefine.js').SCENE;
 var PlayDefine = require('../define/PlayingDefine.js');
 var GAME_DEF = require('../define/GameDefine.js').GAME;
+var BD_TOP = GAME_DEF.BOARD.TOP_BAR_H;
+var BD_BOTTOM = GAME_DEF.BOARD.BOTTOM_STRIP_H_DEFAULT;
 
 // 矩形碰撞检测辅助
 function _hitRect(px, py, rect) {
@@ -131,6 +133,7 @@ class PlayingEngine {
     this._levelAccumulatedGold = 0;  // 本关实时累积金币（猪退出+1，异步递增仅用于 UI 实时显示）
     this._totalPigsInLevel = 0;      // 本关原始猪数量（loadLevel 时快照，结算用，不受 setTimeout 时序影响）
     this._coinFlyEffect = new CoinFlyEffect();  // 金币磁吸飞行动画
+    this._showBoardBounds = false;    // 调试框：棋盘可用区域
     this._goldSettled = false;        // 通关结算已入库（入账后不再累积 _levelAccumulatedGold）
     this._settlementTriggered = false; // 结算已触发（防重入）
     this._settlementTimer = null;      // 2.5s 兜底定时器
@@ -777,8 +780,8 @@ class PlayingEngine {
     this.gp.animations = [];
     this.gp.ghostAnimations = [];
     this.gp.flyingPigs = [];
-    this.gp.topBarH = databus.safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap + Theme.spacing.cardPadding;
-    this.gp.bottomStripH = this.gp.topBarH;  // 与顶部对称，棋盘视觉居中
+    this.gp.topBarH = databus.safeTop + BD_TOP;
+    this.gp.bottomStripH = BD_BOTTOM;
     this.gp.applyBoardWidthConstraint(SCREEN_WIDTH);
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
@@ -820,8 +823,9 @@ class PlayingEngine {
       // 测试按钮例外：开发调试用，所有阶段均可操作
       const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
       if (t && e.type === 'touchstart') {
-        if (databus.DEBUG_TEST_BUTTONS) {
+        if (databus.debugUnlocked) {
           if (this._testBtn && _hitRect(t.x, t.y, this._testBtn)) { this._testPlayAll(); return; }
+          if (this._testBoundBtn && _hitRect(t.x, t.y, this._testBoundBtn)) { this._showBoardBounds = !this._showBoardBounds; return; }
         }
       }
       return;
@@ -906,6 +910,10 @@ class PlayingEngine {
       // 步数飞币测试按钮
       if (this._testBtn && _hitRect(t.x, t.y, this._testBtn)) {
         this._testPlayAll();
+        return;
+      }
+      if (this._testBoundBtn && _hitRect(t.x, t.y, this._testBoundBtn)) {
+        this._showBoardBounds = !this._showBoardBounds;
         return;
       }
 
@@ -1931,16 +1939,58 @@ class PlayingEngine {
    */
   _testBurstEffect() {
     audio.play('coin_fly');
+    var savedAccum = this._levelAccumulatedGold;
+    var self = this;
     var fromX = SCREEN_WIDTH - 41;
     var fromY = 127;
     var toX = 32;
     var toY = 106;
     for (var i = 0; i < 4; i++) {
-      var self = this;
       setTimeout(function () {
         self._coinFlyEffect.trigger(fromX, fromY, toX, toY, true);
       }, i * 80);
     }
+    setTimeout(function () {
+      self._levelAccumulatedGold = savedAccum;
+      if (self._uiGoldWidget) {
+        self._uiGoldWidget.setData(GoldSystem.getGold() + savedAccum);
+      }
+    }, 1200);
+  }
+
+  /** 棋盘可用区域调试框 */
+  _drawBoardBounds(ctx) {
+    var gp = this.gp;
+    var availH = SCREEN_HEIGHT - gp.topBarH - gp.bottomStripH;
+    var offY = gp.topBarH + gp.boardOffsetY;
+    var firstHoleY = offY + gp.scaledHalfDiameter;
+    var lastHoleY = offY + gp.scaledHalfDiameter + (gp.rows - 1) * gp.vSpacing;
+    var topGap = firstHoleY - gp.topBarH;
+    var botGap = (gp.topBarH + availH) - lastHoleY;
+
+    ctx.save();
+
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#FF0000';
+    ctx.fillRect(0, 0, SCREEN_WIDTH, gp.topBarH);
+    ctx.fillStyle = '#FF0000';
+    ctx.fillRect(0, SCREEN_HEIGHT - gp.bottomStripH, SCREEN_WIDTH, gp.bottomStripH);
+
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = '#00FF00';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(gp.boardOffsetX, gp.topBarH, gp.boardWidth, availH);
+    ctx.setLineDash([]);
+
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#FFFF00';
+    var lx = gp.boardOffsetX + gp.boardWidth + 6;
+    ctx.textBaseline = 'middle';
+    ctx.fillText('tGap=' + Math.round(topGap) + ' bGap=' + Math.round(botGap), lx, gp.topBarH + availH / 2);
+    ctx.fillText('rows=' + gp.rows + ' cols=' + gp.oddCols + ' VH=' + Math.round((gp.rows - 1) * gp.vSpacing + gp.scaledDiameter), lx, gp.topBarH + availH / 2 + 14);
+
+    ctx.restore();
   }
 
   /**
@@ -2031,9 +2081,13 @@ class PlayingEngine {
 
     const safeTop = databus.safeTop;
 
-    // 计算布局参数
+    // 计算布局参数 — boardCard 跟随棋盘位置
+    var boardScreenY = this.gp.topBarH + this.gp.boardOffsetY;
     this._boardCardX = Theme.spacing.padding;
-    this._boardCardY = safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap - 30;
+    this._boardCardY = Math.min(
+      safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap - 30,
+      boardScreenY - Theme.spacing.cardPadding
+    );
     this._boardCardW = SCREEN_WIDTH - Theme.spacing.padding * 2;
     this._bottomBarY = SCREEN_HEIGHT - Theme.layout.bottomBarH - Theme.spacing.padding;
     this._boardCardH = this._bottomBarY - Theme.spacing.cardGap - this._boardCardY;
@@ -2089,9 +2143,12 @@ class PlayingEngine {
       return;
     }
 
-    // 1. 棋盘主体
-    this.gp.topBarH = safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap + Theme.spacing.cardPadding;
-    this.gp.bottomStripH = this.gp.topBarH;  // 与顶部对称
+    // 1. 棋盘主体 — 每帧重算偏移，确保与配置值同步
+    this.gp.topBarH = safeTop + BD_TOP;
+    this.gp.bottomStripH = BD_BOTTOM;
+    var availH = SCREEN_HEIGHT - this.gp.topBarH - this.gp.bottomStripH;
+    var visualH = (this.gp.rows - 1) * this.gp.vSpacing + this.gp.scaledDiameter;
+    this.gp.boardOffsetY = Math.max(0, Math.floor((availH - visualH) / 2));
     this.gp.renderBoard(ctx, {
       hintPigId: this._hint.getTargetId(),
       guidePigId: this._guide.getActiveGuidePigId(),
@@ -2255,9 +2312,10 @@ class PlayingEngine {
       // board 或 pigs 阶段：不渲染任何 UI 控件
     }
 
-    // 5.5 测试按钮 — 由 databus.DEBUG_TEST_BUTTONS 控制
-    if (databus.DEBUG_TEST_BUTTONS) {
-    var testBx = 10, testBy = 120, testBw = 30, testBh = 30;
+    // 5.5 测试按钮 — 编辑器后门解锁后出现
+    if (databus.debugUnlocked) {
+    var testBx = 10, testBy = 110, testBw = 30, testBh = 30;
+    // "画" 按钮
     ctx.fillStyle = 'rgba(33,150,243,0.6)';
     ctx.beginPath();
     ctx.arc(testBx + testBw / 2, testBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
@@ -2268,8 +2326,24 @@ class PlayingEngine {
     ctx.textBaseline = 'middle';
     ctx.fillText('画', testBx + testBw / 2, testBy + testBh / 2);
     this._testBtn = { x: testBx, y: testBy, w: testBw, h: testBh };
+
+    // "框" 按钮（棋盘可用区域）
+    var boundBx = testBx + testBw + 8, boundBy = testBy;
+    ctx.fillStyle = this._showBoardBounds ? 'rgba(76,175,80,0.6)' : 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(boundBx + testBw / 2, boundBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText('框', boundBx + testBw / 2, boundBy + testBh / 2);
+    this._testBoundBtn = { x: boundBx, y: boundBy, w: testBw, h: testBh };
     } else {
       this._testBtn = null;
+      this._testBoundBtn = null;
+    }
+
+    // 棋盘可用区域调试框
+    if (this._showBoardBounds) {
+      this._drawBoardBounds(ctx);
     }
 
     // 6. 通关弹窗（UIManager）
