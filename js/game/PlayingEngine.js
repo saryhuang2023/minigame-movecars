@@ -778,7 +778,7 @@ class PlayingEngine {
     this.gp.ghostAnimations = [];
     this.gp.flyingPigs = [];
     this.gp.topBarH = databus.safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap + Theme.spacing.cardPadding;
-    this.gp.bottomStripH = Theme.layout.bottomBarH + Theme.spacing.padding + Theme.spacing.cardGap + Theme.spacing.cardPadding;
+    this.gp.bottomStripH = this.gp.topBarH;  // 与顶部对称，棋盘视觉居中
     this.gp.applyBoardWidthConstraint(SCREEN_WIDTH);
     this.gp.recomputeBoard();
     this.gp.recenterBoard();
@@ -801,8 +801,8 @@ class PlayingEngine {
         if (this.gp.pigs[i].hintId != null) this._hintedTrialCount++;
       }
     }
-    // 正式玩法：关卡无 hint 数据则隐藏提示按钮
-    if (databus.returnState !== 'editor' && this._uiBottomBar) {
+    // 关卡无 hint 数据则隐藏提示按钮（正式 + 试玩统一）
+    if (this._uiBottomBar) {
       var hasAnyHint = false;
       for (var i = 0; i < this.gp.pigs.length; i++) {
         if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
@@ -2091,7 +2091,7 @@ class PlayingEngine {
 
     // 1. 棋盘主体
     this.gp.topBarH = safeTop + Theme.spacing.padding + Theme.layout.topBarH + Theme.spacing.cardGap + Theme.spacing.cardPadding;
-    this.gp.bottomStripH = Theme.layout.bottomBarH + Theme.spacing.padding + Theme.spacing.cardGap + Theme.spacing.cardPadding;
+    this.gp.bottomStripH = this.gp.topBarH;  // 与顶部对称
     this.gp.renderBoard(ctx, {
       hintPigId: this._hint.getTargetId(),
       guidePigId: this._guide.getActiveGuidePigId(),

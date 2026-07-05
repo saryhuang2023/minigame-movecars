@@ -832,12 +832,12 @@ class GameEngine {
     }
     if (databus.gameState === 'levelSelect') return;
 
-    // 读取上次关卡索引
+    // 读取上次关卡索引，开始下一关（lastLevelIndex 是已完成关卡）
     var levelIndex = 0;
     try {
       var saved = wx.getStorageSync('lastLevelIndex');
       if (saved !== '' && saved !== undefined && saved !== null) {
-        levelIndex = Math.min(parseInt(saved, 10), totalLevels - 1);
+        levelIndex = Math.min(parseInt(saved, 10) + 1, totalLevels - 1);
         levelIndex = Math.max(levelIndex, 0);
       }
     } catch (e) {
@@ -1032,11 +1032,11 @@ class GameEngine {
     var debugScale = this._pressedBtnIdx === 5 ? pressScale : 1;
 
     // ===== Frame A（对齐参考，不可见）=====
-    var frameA_Y = 26;
+    var frameA_Y = safeTop - 48;
 
     // ===== 设置按钮（Frame A 内，left: 16px, top: 6px）=====
     var setIconSize = 42;
-    var setBtnX = 16;
+    var setBtnX = 10;
     var setBtnY = frameA_Y + 6;
     var setBtnCX = setBtnX + setIconSize / 2;
     var setBtnCY = setBtnY + setIconSize / 2;
@@ -1238,7 +1238,7 @@ class GameEngine {
   _renderStaminaUI(ctx, safeTop) {
     var ST = require('../define/GameDefine.js').GAME.STAMINA;
     var count = this._stamina.getCount();
-    var x = 16, y = safeTop + 12;
+    var x = 10, y = safeTop + 12;
     var iconSize = ST.ICON_SIZE, gap = ST.ICON_GAP;
     var flips = this._stamina.updateFlips();
 

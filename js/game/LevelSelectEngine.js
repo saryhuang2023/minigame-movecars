@@ -341,9 +341,8 @@ LevelSelectEngine.prototype._getCompletedCount = function () {
  */
 LevelSelectEngine.prototype._getCardStatus = function (globalIndex) {
   var completed = this._getCompletedCount();
+  // 只能选已通关关卡；current（下一关待挑战）归属为 locked
   if (globalIndex < completed) return 'completed';
-  if (globalIndex === completed) return 'current';
-  if (globalIndex === 0 && completed < 0) return 'current';
   return 'locked';
 };
 
