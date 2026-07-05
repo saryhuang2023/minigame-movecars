@@ -99,6 +99,7 @@ function VictoryPopup(opts) {
 
   // 通用按钮
   this._continueBtn = new CommonButton({ w: 160, h: 48, color: 'blue' });
+  this._doubleGoldCommonBtn = new CommonButton({ w: 208, h: 54, color: 'gold', iconKey: 'ad_icon', label: '金币X2' });
 
   // 动画
   this._animStart = 0;
@@ -296,83 +297,30 @@ VictoryPopup.prototype.render = function (ctx) {
   if (showGold && !this._goldClaimed) {
     var goldBtnW = 208, goldBtnH = 54;
     var goldBtnX = px + (pw - goldBtnW) / 2 - 0.5;
-    var goldBtnY = py + ph + 12;  // 面板底部下方 12px
+    var goldBtnY = py + ph + 12;
 
     // 呼吸动画缩放
     var breatheScale = this._getGoldBtnBreatheScale();
-    var goldCenterX = goldBtnX + goldBtnW / 2;
-    var goldCenterY = goldBtnY + goldBtnH / 2;
     if (breatheScale !== 1) {
+      var goldCenterX = goldBtnX + goldBtnW / 2;
+      var goldCenterY = goldBtnY + goldBtnH / 2;
       ctx.save();
       ctx.translate(goldCenterX, goldCenterY);
       ctx.scale(breatheScale, breatheScale);
       ctx.translate(-goldCenterX, -goldCenterY);
     }
 
-    // 设置点击区域（large button）
+    // 设置点击区域
     this._doubleGoldBtn = { x: goldBtnX, y: goldBtnY, w: goldBtnW, h: goldBtnH };
 
-    // 外层暗底 #7C2C04
-    ctx.fillStyle = '#7C2C04';
-    _roundRect(ctx, goldBtnX, goldBtnY, goldBtnW, goldBtnH, 14);
-    ctx.fill();
+    // 通用按钮（gold + ad_icon）
+    this._doubleGoldCommonBtn.x = goldBtnX;
+    this._doubleGoldCommonBtn.y = goldBtnY;
+    this._doubleGoldCommonBtn.w = goldBtnW;
+    this._doubleGoldCommonBtn.h = goldBtnH;
+    this._doubleGoldCommonBtn.render(ctx);
 
-    // 中层橙色 #FFA600 + inner shadows
-    var innerW = 204.02, innerH = 50.46;
-    var innerX = px + (pw - innerW) / 2 - 0.5;
-    var innerY = goldBtnY + 1.77;
-    ctx.save();
-    _roundRect(ctx, innerX, innerY, innerW, innerH, 12);
-    ctx.clip();
-    ctx.fillStyle = '#FFA600';
-    ctx.fillRect(innerX, innerY, innerW, innerH);
-    // inset top shadow
-    var topGrad = ctx.createLinearGradient(innerX, innerY, innerX, innerY + 3);
-    topGrad.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-    topGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = topGrad;
-    ctx.fillRect(innerX, innerY, innerW, 3);
-    // inset bottom shadow
-    var btmGrad = ctx.createLinearGradient(innerX, innerY + innerH - 4, innerX, innerY + innerH);
-    btmGrad.addColorStop(0, 'rgba(144, 78, 0, 0)');
-    btmGrad.addColorStop(1, 'rgba(144, 78, 0, 0.5)');
-    ctx.fillStyle = btmGrad;
-    ctx.fillRect(innerX, innerY + innerH - 4, innerW, 4);
-    ctx.restore();
-
-    // 内层金色描边
-    var strokeW = 204.02, strokeH = 47.8;
-    var strokeX = px + (pw - strokeW) / 2 - 0.5;
-    var strokeY = innerY;
-    ctx.strokeStyle = '#FFC74F';
-    ctx.lineWidth = 1.5;
-    _roundRect(ctx, strokeX, strokeY, strokeW, strokeH, 12);
-    ctx.stroke();
-
-    // 按钮文字 "金币X2"（居中）
-    var btnCenterX = px + pw / 2 - 0.5;
-    var btnCenterY = goldBtnY + goldBtnH / 2;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '24px ' + Theme.font.family;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('金币X2', btnCenterX, btnCenterY);
-    // 文字描边
-    ctx.strokeStyle = '#733C29';
-    ctx.lineWidth = 1.2;
-    ctx.strokeText('金币X2', btnCenterX, btnCenterY);
-
-    // 广告位图标（双倍按钮内，left 27，上下居中）
-    var adIconSize = 32.42;
-    var adIconX = goldBtnX + 27;
-    var adIconY = goldBtnY + (goldBtnH - adIconSize) / 2;
-    if (AssetPreloader.isReady('ad_icon')) {
-      ctx.drawImage(AssetPreloader.get('ad_icon'), adIconX, adIconY, adIconSize, adIconSize);
-    }
-
-    if (breatheScale !== 1) {
-      ctx.restore();
-    }
+    if (breatheScale !== 1) ctx.restore();
   } else {
     this._doubleGoldBtn = null;
   }

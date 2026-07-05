@@ -12,6 +12,7 @@ const StaminaSystem = require('../game/StaminaSystem.js');
 const SkinLoader = require('../entity/SkinLoader.js');
 const ShopPanel = require('../ui/ShopPanel.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
+const CommonButton = require('../ui/widgets/CommonButton.js');
 const Theme = require('../define/GameDefine.js').THEME;
 const Easing = require('./Easing.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -71,6 +72,11 @@ class GameEngine {
     this._staminaIcons = { filled: null, empty: null };
     this._preloadStaminaIcons();
     console.log('[GameEngine] StaminaSystem 初始化完成');
+
+    // 主界面通用按钮
+    this._btnPlay = new CommonButton({ label: '开始游戏', color: 'gold' });
+    this._btnLevels = new CommonButton({ label: '关卡选择', color: 'blue', h: 52 });
+    this._btnArena = new CommonButton({ label: '装扮', color: 'blue', h: 52 });
 
     // 预加载数据占位（LoadingManager 填充）
     this._preloadedPlayerData = null;
@@ -1062,45 +1068,43 @@ class GameEngine {
     var pigTargetW = SCREEN_WIDTH * 2 / 3;
     PigRenderer.drawMenuIdlePig(ctx, pigCX, pigCY, pigTargetW);
 
-    // ===== 主按钮：开始游戏（黏土拟态） =====
-    var btnW = SCREEN_WIDTH - 64; // 两侧各留32px
+    // ===== 主按钮：开始游戏（gold）=====
+    var btnW = SCREEN_WIDTH - 64;
     var btnH = 64;
     var btnX = (SCREEN_WIDTH - btnW) / 2;
     var mainBtnY = SCREEN_HEIGHT - 74 - btnH;
     var mainBtnCX = btnX + btnW / 2;
     var mainBtnCY = mainBtnY + btnH / 2;
 
-    // 入场动画
     var playT = this._getEntranceTransform('play');
     ctx.save();
-    ctx.translate(mainBtnCX + playT.dx, mainBtnCY + playT.dy);
-    ctx.scale(mainScale, mainScale);
-    ctx.translate(-(mainBtnCX + playT.dx), -(mainBtnCY + playT.dy));
     ctx.globalAlpha = playT.alpha;
-    this.drawClayButton(btnX + playT.dx, mainBtnY + playT.dy, btnW, btnH, 32);
+    if (playT.dy !== 0) {
+      ctx.translate(0, playT.dy);
+    }
 
-    // 按钮内体力空图标 + 文字
+    this._btnPlay.x = btnX;
+    this._btnPlay.y = mainBtnY;
+    this._btnPlay.w = btnW;
+    this._btnPlay.h = btnH;
+    this._btnPlay.render(ctx);
+
+    // 体力图标（按钮左侧，垂直居中）
     var iconSize = 24;
-    var textW = ctx.measureText('开始游戏').width || 88;
-    var totalW = iconSize + 8 + textW;
-    var startX = cx + playT.dx - totalW / 2;
-    var iconY = mainBtnY + playT.dy + btnH / 2 - iconSize / 2;
-    // 存储体力图标目标位置（飞行动画终点）
+    var iconX = btnX + 44;
+    var iconY = mainBtnY + btnH / 2 - iconSize / 2;
     this._staminaBtnIconRect = {
-      x: startX, y: iconY, w: iconSize, h: iconSize,
-      cx: startX + iconSize / 2, cy: iconY + iconSize / 2
+      x: iconX, y: iconY, w: iconSize, h: iconSize,
+      cx: iconX + iconSize / 2, cy: iconY + iconSize / 2
     };
     if (this._staminaIcons.empty) {
-      ctx.drawImage(this._staminaIcons.empty, startX, iconY, iconSize, iconSize);
+      ctx.drawImage(this._staminaIcons.empty, iconX, iconY, iconSize, iconSize);
     }
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 22px ' + Theme.font.family + '';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('开始游戏', startX + iconSize + 8, mainBtnY + playT.dy + btnH / 2);
     ctx.restore();
 
-    // ===== 次按钮：关卡选择（开始游戏上方 100px）=====
+    this._playBtnRect = { x: btnX, y: mainBtnY, w: btnW, h: btnH };
+
+    // ===== 次按钮：关卡选择（blue）=====
     var secBtnH = 52;
     var secBtnY = mainBtnY - secBtnH - 50;
     var secBtnCX = btnX + btnW / 2;
@@ -1108,20 +1112,21 @@ class GameEngine {
 
     var lvT = this._getEntranceTransform('levels');
     ctx.save();
-    ctx.translate(secBtnCX + lvT.dx, secBtnCY + lvT.dy);
-    ctx.scale(secScale, secScale);
-    ctx.translate(-(secBtnCX + lvT.dx), -(secBtnCY + lvT.dy));
     ctx.globalAlpha = lvT.alpha;
-    this.drawClaySecondary(btnX + lvT.dx, secBtnY + lvT.dy, btnW, secBtnH, 28);
+    if (lvT.dy !== 0) {
+      ctx.translate(0, lvT.dy);
+    }
 
-    ctx.fillStyle = C.primary;
-    ctx.font = 'bold 18px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('📋 关卡选择', cx + lvT.dx, secBtnY + lvT.dy + secBtnH / 2);
+    this._btnLevels.x = btnX;
+    this._btnLevels.y = secBtnY;
+    this._btnLevels.w = btnW;
+    this._btnLevels.h = secBtnH;
+    this._btnLevels.render(ctx);
     ctx.restore();
 
-    // ===== 次按钮：装扮（关卡选择上方 20px，金色边框）=====
+    this._levelsBtnRect = { x: btnX, y: secBtnY, w: btnW, h: secBtnH };
+
+    // ===== 次按钮：装扮（blue）=====
     var arenaBtnH = 52;
     var arenaBtnY = secBtnY - arenaBtnH - 20;
     var arenaBtnCX = btnX + btnW / 2;
@@ -1129,24 +1134,19 @@ class GameEngine {
 
     var arT = this._getEntranceTransform('arena');
     ctx.save();
-    ctx.translate(arenaBtnCX + arT.dx, arenaBtnCY + arT.dy);
-    ctx.scale(arenaScale, arenaScale);
-    ctx.translate(-(arenaBtnCX + arT.dx), -(arenaBtnCY + arT.dy));
     ctx.globalAlpha = arT.alpha;
-    this.drawClaySecondary(btnX + arT.dx, arenaBtnY + arT.dy, btnW, arenaBtnH, 28);
+    if (arT.dy !== 0) {
+      ctx.translate(0, arT.dy);
+    }
 
-    // 覆盖边框为金色（而非默认粉色）
-    ctx.strokeStyle = '#FBE0B3';
-    ctx.lineWidth = 3;
-    this.roundRect(ctx, btnX + arT.dx, arenaBtnY + arT.dy, btnW, arenaBtnH, 28);
-    ctx.stroke();
-
-    ctx.fillStyle = '#D97706';
-    ctx.font = 'bold 18px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🎨 装扮', cx + arT.dx, arenaBtnY + arT.dy + arenaBtnH / 2);
+    this._btnArena.x = btnX;
+    this._btnArena.y = arenaBtnY;
+    this._btnArena.w = btnW;
+    this._btnArena.h = arenaBtnH;
+    this._btnArena.render(ctx);
     ctx.restore();
+
+    this._arenaBtnRect = { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH };
 
     // ===== 后门按钮（右下角，5 连击解锁后显示）=====
     var editArea = null;
@@ -1282,10 +1282,13 @@ class GameEngine {
       }
     }
 
-    // 存储第一个体力图标位置（飞行动画起点）
+    // 存储右下角体力图标位置（飞行动画起点：刚变成空的那个）
+    var lastEmptyIdx = count;  // count 是当前体力值，index=count 是第一个空图标
     this._staminaFirstIconRect = {
-      x: x, y: y, w: iconSize, h: iconSize,
-      cx: x + iconSize / 2, cy: y + iconSize / 2
+      x: x + lastEmptyIdx * (iconSize + gap), y: y,
+      w: iconSize, h: iconSize,
+      cx: x + lastEmptyIdx * (iconSize + gap) + iconSize / 2,
+      cy: y + iconSize / 2
     };
 
     // "+" 按钮（体力未满时显示）

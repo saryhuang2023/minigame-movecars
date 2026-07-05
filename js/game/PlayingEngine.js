@@ -2404,6 +2404,7 @@ class PlayingEngine {
 
     // "框" 按钮（棋盘可用区域）
     var boundBx = testBx + testBw + 8, boundBy = testBy;
+    ctx.fillStyle = 'rgba(33,150,243,0.6)';
     ctx.beginPath();
     ctx.arc(boundBx + testBw / 2, boundBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
     ctx.fill();
@@ -2415,6 +2416,7 @@ class PlayingEngine {
     var hasReplay = this._hasReplayData();
     if (hasReplay) {
     var autoBx = boundBx + testBw + 8, autoBy = testBy;
+    ctx.fillStyle = 'rgba(33,150,243,0.6)';
     ctx.beginPath();
     ctx.arc(autoBx + testBw / 2, autoBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
     ctx.fill();

@@ -8,6 +8,7 @@ var Easing = require('../core/Easing.js');
 var PopupAnimator = require('./PopupAnimator.js');
 var AssetPreloader = require('./AssetPreloader.js');
 var Theme = require('../define/GameDefine.js').THEME;
+var CommonButton = require('./widgets/CommonButton.js');
 
 // ===== 继续按钮手绘（3层 Figma 设计还原）=====
 function _drawContinueBtnBg(ctx, x, y, w, h) {
@@ -107,6 +108,7 @@ var _toggleSfxDisplay = null;
 
 // 按钮点击压感动画
 var _btnPress = {};  // { btnKey: { startTime, phase: 'pressing'|'releasing' } }
+var _commonBtn = null;         // 通用按钮实例（btn_continue）
 // 按钮呼吸动画
 var _btnBreathe = {}; // { btnKey: startTime }
 
@@ -326,7 +328,7 @@ function _renderAudioRow(ctx, p, opts) {
   var sliderY  = yAbs - 1;
   var sliderW  = 64;
   var sliderH  = 28;
-  var sliderR  = 14;  // 高度一半 → 完全圆角 pill
+  var sliderR  = 20;  // pill radius
 
   // 图标
   var iconImg = AssetPreloader.get(opts.iconKey);
@@ -341,72 +343,61 @@ function _renderAudioRow(ctx, p, opts) {
   ctx.textBaseline = 'top';
   ctx.fillText(opts.text, textLeft, textTop);
 
-  // 滑块底板填充（选中 #CC6F27 ↔ 未选中 #8F4F00 平滑过渡）
-  var fillR = Math.round(143 + (204 - 143) * display);
-  var fillG = Math.round(79  + (111 - 79)  * display);
-  var fillB = Math.round(0   + (39  - 0)   * display);
+  // 滑块底板填充（ON: #FF8E36 ↔ OFF: #C7805A）
+  var fillR = Math.round(255 + (199 - 255) * (1 - display));
+  var fillG = Math.round(142 + (128 - 142) * (1 - display));
+  var fillB = Math.round(54  + (90  - 54)  * (1 - display));
   ctx.fillStyle = 'rgb(' + fillR + ',' + fillG + ',' + fillB + ')';
   _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
   ctx.fill();
 
-  // 内阴影（选中：顶部 #C25E11 / 未选中：底部 rgba(0,0,0,0.25)）
-  // 两套渐变独立叠加，各自用 alpha 控制显隐
+  // 内阴影（两态统一：inset 0px 2px 4px rgba(0,0,0,0.25)）
   ctx.save();
   _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
   ctx.clip();
-
-  // ON 态顶部阴影（y=-2 → 渐变从顶部往下）
-  var onAlpha = display;
-  if (onAlpha > 0.005) {
-    var gradOn = ctx.createLinearGradient(0, sliderY, 0, sliderY + 8);
-    gradOn.addColorStop(0, 'rgba(194, 94, 17, ' + (0.55 * onAlpha).toFixed(3) + ')');
-    gradOn.addColorStop(1, 'rgba(194, 94, 17, 0)');
-    ctx.fillStyle = gradOn;
-    ctx.fillRect(sliderX, sliderY, sliderW, 8);
-  }
-
-  // OFF 态底部阴影（y=2 → 渐变从底部往上）
-  var offAlpha = 1 - display;
-  if (offAlpha > 0.005) {
-    var gradOff = ctx.createLinearGradient(0, sliderY + sliderH - 8, 0, sliderY + sliderH);
-    gradOff.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    gradOff.addColorStop(1, 'rgba(0, 0, 0, ' + (0.25 * offAlpha).toFixed(3) + ')');
-    ctx.fillStyle = gradOff;
-    ctx.fillRect(sliderX, sliderY + sliderH - 8, sliderW, 8);
-  }
-
+  var gradShadow = ctx.createLinearGradient(0, sliderY + 2, 0, sliderY + 6);
+  gradShadow.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradShadow.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
+  ctx.fillStyle = gradShadow;
+  ctx.fillRect(sliderX, sliderY + 2, sliderW, 4);
   ctx.restore();
 
-  // Stroke
-  ctx.strokeStyle = '#FF8E36';
+  // Stroke（两态统一：#FF8628）
+  ctx.strokeStyle = '#FF8628';
   ctx.lineWidth = 1.5;
   _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
   ctx.stroke();
 
-  // 滑块小球 25×25：fill #FFE531, stroke #000 1px, glow rgba(255,255,255,0.25) blur 4
+  // 滑块小球 25×25：fill #FFE531, stroke #000 1px, inset shadow 0 0 4px rgba(255,255,255,0.25)
   var thumbR = 12.5;
-  var thumbTravel = sliderW - thumbR * 2 - 2; // 左右各留 1px
+  var thumbTravel = sliderW - thumbR * 2 - 2;
   var thumbX = sliderX + thumbR + 1 + thumbTravel * display;
   var thumbY = sliderY + sliderH / 2;
 
-  // 白色发光
-  ctx.save();
-  ctx.shadowColor = 'rgba(255, 255, 255, 0.25)';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 0;
+  // 圆球填充
   ctx.fillStyle = '#FFE531';
+  ctx.beginPath();
+  ctx.arc(thumbX, thumbY, thumbR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 内阴影：clip 后画径向渐变
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(thumbX, thumbY, thumbR, 0, Math.PI * 2);
+  ctx.clip();
+  var insetGrad = ctx.createRadialGradient(thumbX, thumbY, thumbR - 4, thumbX, thumbY, thumbR);
+  insetGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+  insetGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0)');
+  insetGrad.addColorStop(1, 'rgba(255, 255, 255, 0.25)');
+  ctx.fillStyle = insetGrad;
   ctx.beginPath();
   ctx.arc(thumbX, thumbY, thumbR, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // 黑色描边（不带发光）
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(thumbX, thumbY, thumbR, 0, Math.PI * 2);
-  ctx.stroke();
+  // 描边（Figma 无黑边，用 #B38600 细线）
+  ctx.strokeStyle = '';
+  ctx.lineWidth = 0;
 
   // 返回热区
   return {
@@ -440,8 +431,7 @@ function _updateToggleSliders() {
 
 var BOTTOM_ICON_CONFIG = {
   btn_home:     { fromLeft: 26,  fromBottomFn: function(ph) { return Math.max(26, Math.floor(ph * 0.112)); }, w: 36, h: 36 },
-  btn_continue: { fromLeft: null, fromBottom: 36, w: 127, h: 48, label: '继续游戏', handDrawn: true,
-    labelStyle: { size: 22, weight: '400', color: '#FFFFFF', spacing: 1, shadowColor: 'rgba(3,48,75,0.6)', shadowBlur: 2 } },
+  btn_continue: { fromLeft: null, fromBottom: 36, w: 127, h: 48, label: '继续', useCommonBtn: 'blue' },
   btn_again:    { fromRight: 26, fromBottomFn: function(ph) { return Math.max(26, Math.floor(ph * 0.112)); }, w: 36, h: 36 },
 };
 var BOTTOM_ICON_SIZE_DEFAULT = 36;
@@ -501,14 +491,19 @@ function _renderBottomIcons(ctx, isEntering) {
     ctx.translate(-cX, -cY);
 
     var img = AssetPreloader.get(iconKey);
-    if (cfg.handDrawn) {
+    if (cfg.useCommonBtn) {
+      if (!_commonBtn) _commonBtn = new CommonButton({ w: iw, h: ih, color: cfg.useCommonBtn || 'blue' });
+      _commonBtn.x = bx; _commonBtn.y = by; _commonBtn.w = iw; _commonBtn.h = ih;
+      _commonBtn.label = cfg.label || '';
+      _commonBtn.render(ctx);
+    } else if (cfg.handDrawn) {
       _drawContinueBtnBg(ctx, bx, by, iw, ih);
     } else if (img && AssetPreloader.isReady(iconKey)) {
       ctx.drawImage(img, bx, by, iw, ih);
     }
 
-    // 按钮文字（如"继续游戏"）
-    if (cfg.label) {
+    // 按钮文字（如"继续游戏"）— CommonButton 自行绘制，跳过
+    if (cfg.label && !cfg.useCommonBtn) {
       var ls = cfg.labelStyle || {};
       ctx.fillStyle = ls.color || '#FFFFFF';
       ctx.font = (ls.weight || '400') + ' ' + (ls.size || 16) + 'px ' + Theme.font.family + '';
@@ -679,6 +674,7 @@ function handleTouch(x, y, type) {
 // ===== 工具 =====
 
 function _roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, Math.floor(w / 2), Math.floor(h / 2));
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);

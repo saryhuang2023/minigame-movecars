@@ -182,9 +182,9 @@ StaminaSystem.prototype.updateFly = function () {
     } else {
       t = 1 - Math.pow(1 - rawT, 3);  // easeOutCubic
     }
-    // 二次贝塞尔弧线：控制点为中点 + 向上偏移 ARC_HEIGHT
-    var cpx = (a.fromX + a.toX) / 2;
-    var cpy = (a.fromY + a.toY) / 2 - FLY.ARC_HEIGHT;
+    // 二次贝塞尔弧线：右上抛出 → 远飞再弧线转回
+    var cpx = a.fromX + (a.toX - a.fromX) * 0.4 + 80;
+    var cpy = Math.min(a.fromY, a.toY) - FLY.ARC_HEIGHT * 2.2;
     var mt = 1 - t;
     var x = mt * mt * a.fromX + 2 * mt * t * cpx + t * t * a.toX;
     var y = mt * mt * a.fromY + 2 * mt * t * cpy + t * t * a.toY;
