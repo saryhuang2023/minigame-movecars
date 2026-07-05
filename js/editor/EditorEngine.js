@@ -1987,7 +1987,7 @@ class EditorEngine {
 
   // ---- 紧凑步进器：label [-][+] — 手指友好 ----
   // 返回绘制后的 x 位置，供调用方精确控制间距
-  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step, targetArray, valueWidth) {
+  _drawCompactStepper(x, btnY, btnH, label, value, min, max, onChange, step, targetArray, valueWidth, decimals) {
     step = step || 1;
     targetArray = targetArray || this.bottomBtns;
     valueWidth = valueWidth || 18;
@@ -2003,10 +2003,11 @@ class EditorEngine {
     x += 30;
 
     // 当前值
+    var displayVal = (decimals != null) ? value.toFixed(decimals) : String(value);
     ctx.fillStyle = '#FF8C00';
     ctx.font = 'bold 13px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
-    ctx.fillText(String(value), x + valueWidth / 2, midY);
+    ctx.fillText(displayVal, x + valueWidth / 2, midY);
     x += valueWidth;
 
     // 减号
@@ -2361,7 +2362,7 @@ class EditorEngine {
         this.gp.boardWidth = v; this.gp.recomputeBoard(); this.gp.recenterBoard();
         this._adaptPigsToBoard();
         this.markCurrentDirty();
-      }, 5, this._levelSheetStepperBtns);
+      }, 5, this._levelSheetStepperBtns, undefined, 0);
 
     // 孔半径（只读）
     ctx.fillStyle = '#999';

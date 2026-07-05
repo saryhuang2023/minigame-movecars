@@ -8,18 +8,18 @@ var Easing = require('../../core/Easing.js');
 var audio = require('../../audio/AudioManager.js');
 
 // Figma 设计常量
-var BG_X = 24;           // 底框 left
-var BG_Y = 70;            // 底框 top
-var BG_W = 78;            // 底框 width
-var BG_H = 26;            // 底框 height
-var BG_RADIUS = 12;       // 底框 border-radius
+var BG_X = 23;           // 底框 left
+var BG_Y = 90;            // 底框 top
+var BG_W = 90;            // 底框 width
+var BG_H = 32;            // 底框 height
+var BG_RADIUS = 16;       // 底框 border-radius
 
 var COIN_X = 16;          // 金币图标 left
-var COIN_Y = BG_Y-3;          // 金币图标 top
+var COIN_Y = 90;          // 金币图标 top
 var COIN_SIZE = 32;       // 金币图标宽高
 
-var TEXT_X = 56;          // 金币数字 left
-var TEXT_Y = BG_Y+3;          // 金币数字 top（baseline）
+var TEXT_X = BG_X + BG_W / 2;  // 金币数字居中
+var TEXT_Y = 98;          // 金币数字 top（baseline）
 var TEXT_SIZE = 16;       // 字体大小
 
 function GoldWidget(opts) {
@@ -299,9 +299,9 @@ GoldWidget.prototype.render = function (ctx) {
   } else {
     ctx.fillStyle = '#FFFFFF';
   }
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText(text, baseX + TEXT_X, baseY + TEXT_Y);
+  ctx.fillText(text, baseX + TEXT_X, baseY + TEXT_Y - 2);
   ctx.restore();
 
   // === "+N" 浮动文字（金币到达时弹出，向上飘移 + 淡出） ===

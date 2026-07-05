@@ -69,13 +69,12 @@ TopBar.prototype._getBreatheScale = function () {
 };
 
 TopBar.prototype.render = function (ctx) {
-  var barY = this.y;
   var barW = this.w;
 
   // === 左上角设置按钮 ===
-  var backW = 49, backH = 47;
-  var backX = PADDING;
-  var backY = PADDING;  // 离屏幕顶部 26px
+  var backW = 32, backH = 32;
+  var backX = 16;
+  var backY = 45;
 
   var setScale = this._buttonPress ? this._buttonPress.getScale('settings') : 1;
   var setCX = backX + backW / 2;
@@ -93,31 +92,31 @@ TopBar.prototype.render = function (ctx) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(setCX + 8, setCY - 10);
+    ctx.moveTo(setCX + 5, setCY - 8);
     ctx.lineTo(setCX - 5, setCY);
-    ctx.lineTo(setCX + 8, setCY + 10);
+    ctx.lineTo(setCX + 5, setCY + 8);
     ctx.stroke();
   } else {
     // 正常模式：设置图标
-    var iconSz = 44;
+    var iconSz = 32;
     ctx.drawImage(commonIcons.setting, setCX - iconSz / 2, setCY - iconSz / 2, iconSz, iconSz);
   }
   ctx.restore();
 
-  // === 关卡徽章（Figma：每字描边 + letter-spacing 4px，居中 + 呼吸缩放） ===
+  // === 关卡徽章 ===
   if (this.mode !== 'trial') {
-    var badgeW = 80;
-    var badgeX = (SCREEN_WIDTH - badgeW) / 2;
-    var badgeY = backY;
-    var badgeH = 24;
+    var badgeW = 29;
+    var badgeX = SCREEN_WIDTH / 2 - 122;
+    var badgeY = 53;
+    var badgeH = 16;
     var badgeCX = badgeX + badgeW / 2;
     var badgeCY = badgeY + badgeH / 2;
 
     var breathScale = this._getBreatheScale();
 
     var chars = this.levelText.split('');
-    var fontSize = 24;
-    var letterSpacing = 4;
+    var fontSize = 16;
+    var letterSpacing = 1;
     ctx.font = '400 ' + fontSize + 'px ' + Theme.font.family;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';

@@ -86,6 +86,7 @@ var GAME = {
     layout: {
       topBarH: 68,
       bottomBarH: 80,
+      padding:16
     },
   },
 
@@ -195,15 +196,15 @@ var GAME = {
     },
 
     // 顶部栏/底栏高度（编辑器/游玩共用）
-    TOP_BAR_H: 90,
+    TOP_BAR_H: 75,
     BOTTOM_STRIP_H_DEFAULT: 105,
 
     // 棋盘宽度屏幕比例下限（由不包含错落列的 cols=oddCols 决定）
     // boardWidth = max(SCREEN_WIDTH * percent, levelBoardWidth)
     BOARD_WIDTH_PERCENT: {
       3: 288 / 393,    // cols ≤ 3
-      4: 378 / 393,    // 3 < cols <= 5 → cols=4
-      5: 383 / 393,    // cols > 5
+      4: 369 / 393,    // 3 < cols <= 5 → cols=4
+      5: 373 / 393,    // cols > 5
     },
   },
 

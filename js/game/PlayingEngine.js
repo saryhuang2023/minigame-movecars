@@ -30,6 +30,8 @@ const GoldSystem = require('./GoldSystem.js');
 const SkinSystem = require('./SkinSystem.js');
 const StaminaSystem = require('./StaminaSystem.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
+const CommonButton = require('../ui/widgets/CommonButton.js');
+const AssetPreloader = require('../ui/AssetPreloader.js');
 const SceneDefaults = require('../define/GameDefine.js').SCENE;
 var PlayDefine = require('../define/PlayingDefine.js');
 var GAME_DEF = require('../define/GameDefine.js').GAME;
@@ -134,6 +136,7 @@ class PlayingEngine {
     this._totalPigsInLevel = 0;      // 本关原始猪数量（loadLevel 时快照，结算用，不受 setTimeout 时序影响）
     this._coinFlyEffect = new CoinFlyEffect();  // 金币磁吸飞行动画
     this._showBoardBounds = false;    // 调试框：棋盘可用区域
+    this._showHintCommon = true;     // 提示按钮可见（通关后隐藏）
     this._goldSettled = false;        // 通关结算已入库（入账后不再累积 _levelAccumulatedGold）
     this._settlementTriggered = false; // 结算已触发（防重入）
     this._settlementTimer = null;      // 2.5s 兜底定时器
@@ -302,6 +305,17 @@ class PlayingEngine {
       });
       this.ui.add(this._uiBottomBar, UIManager.LAYER.CONTROL);
 
+      // 提示按钮（CommonButton gold，右下角）
+      this._hintCommonBtn = new CommonButton({
+        label: '提示!',
+        color: 'gold',
+        iconKey: 'ad_icon',
+      });
+      this._hintCommonBtn.visible = true;
+
+      // 隐藏旧 BottomBar 提示/移除按钮（已替换为 CommonButton）
+      this._uiBottomBar.setHintHidden(true);
+
       // Layer 4 — VictoryPopup
       this._uiVictoryPopup = new VictoryPopup({
         zIndex: UIManager.LAYER.MODAL,
@@ -339,9 +353,9 @@ class PlayingEngine {
   _syncUIData() {
     if (!this._uiTopBar) return;  // 哨兵检查
 
-    // TopBar 位置 + 内容
-    this._uiTopBar.setBounds(0, databus.safeTop, this._boardCardW, Theme.layout.topBarH);
-    this._uiTopBar.setLevelText('第' + _toChineseNum(parseInt(this.levelName) || 1) + '关');
+    // TopBar 位置 + 内容（屏幕坐标系，y=0）
+    this._uiTopBar.setBounds(0, 0, this._boardCardW, Theme.layout.topBarH);
+    this._uiTopBar.setLevelText(parseInt(this.levelName || 1) + '关');
     this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
 
     // GoldWidget — 显示余额（步数奖励动画期间递减展示）
@@ -368,6 +382,15 @@ class PlayingEngine {
     }
     this._uiBottomBar.setHintShowing(hintShowing);
     this._uiBottomBar.setCurrentSteps(this.steps);
+
+    // 提示按钮位置（右下角 Figma 规格）
+    if (this._hintCommonBtn) {
+      this._hintCommonBtn.x = SCREEN_WIDTH - 15 - 144;
+      this._hintCommonBtn.y = SCREEN_HEIGHT - 34.5 - 61;
+      this._hintCommonBtn.label = this._uiBottomBar._hintActive ? '移除!' : '提示!';
+      this._hintCommonBtn.color = this._uiBottomBar._hintActive ? 'red' : 'gold';
+      this._hintCommonBtn.visible = this._showHintCommon;
+    }
 
     // MasterPanel
     this._uiMasterPanel.setHiddenByTrial(databus.returnState === 'editor');
@@ -397,7 +420,7 @@ class PlayingEngine {
       showGold: this._goldAmount > 0,
       masterSteps: master ? master.masterSteps : null,
       masterNickname: master ? master.masterNickname : null,
-      isLastLevel: this._isLastLevelOfGame(),
+      isLastLevel: this._isLastLevelOfGame() || databus.returnState === 'levelSelect',
     });
     this._uiVictoryPopup.visible = this._victory && this._showVictoryPanel;
 
@@ -643,10 +666,13 @@ class PlayingEngine {
   }
 
   _trialStartPlayback() {
+    if (this._isPlayingBack) return;
     if (!this._allPigsOnBoard()) {
       wx.showToast({ title: '请先重置关卡', icon: 'none', duration: 1500 });
       return;
     }
+    // 回放前先停止录制，防止回放操作被录进去
+    this._isRecording = false;
     var key = 'trial_record_' + this.levelName;
     var raw = wx.getStorageSync(key);
     if (!raw) return;
@@ -694,6 +720,24 @@ class PlayingEngine {
       wx.showToast({ title: '回放完成', icon: 'success', duration: 1500 });
     }, delayed + 1000);
     this._playbackTimer = doneTimer;
+  }
+
+  /** 检查是否有可回放的录制数据 */
+  _hasReplayData() {
+    try {
+      var raw = wx.getStorageSync('trial_record_' + this.levelName);
+      return raw && raw.length > 0;
+    } catch (e) { return false; }
+  }
+
+  /** 启动回放（debug "自" 按钮） */
+  _startAutoReplay() {
+    if (this._isPlayingBack) return;
+    if (!this._hasReplayData()) {
+      wx.showToast({ title: '暂无回放数据', icon: 'none', duration: 1500 });
+      return;
+    }
+    this._trialStartPlayback();
   }
 
   /** 强制移除无法推出的猪（回放用） */
@@ -810,7 +854,12 @@ class PlayingEngine {
       for (var i = 0; i < this.gp.pigs.length; i++) {
         if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
       }
-      if (!hasAnyHint) this._uiBottomBar.setHintHidden(true);
+      if (!hasAnyHint) {
+        this._uiBottomBar.setHintHidden(true);
+        this._showHintCommon = false;
+      } else {
+        this._showHintCommon = true;
+      }
     }
   }
 
@@ -826,6 +875,7 @@ class PlayingEngine {
         if (databus.debugUnlocked) {
           if (this._testBtn && _hitRect(t.x, t.y, this._testBtn)) { this._testPlayAll(); return; }
           if (this._testBoundBtn && _hitRect(t.x, t.y, this._testBoundBtn)) { this._showBoardBounds = !this._showBoardBounds; return; }
+          if (this._testAutoBtn && _hitRect(t.x, t.y, this._testAutoBtn)) { this._startAutoReplay(); return; }
         }
       }
       return;
@@ -916,6 +966,10 @@ class PlayingEngine {
         this._showBoardBounds = !this._showBoardBounds;
         return;
       }
+      if (this._testAutoBtn && _hitRect(t.x, t.y, this._testAutoBtn)) {
+        this._startAutoReplay();
+        return;
+      }
 
       // 左上角金币（覆盖金币+文字整个区域，试玩无）
       if (this._uiGoldWidget && _hitRect(t.x, t.y, { x: 10, y: 78, w: 100, h: 50 })) {
@@ -992,6 +1046,23 @@ class PlayingEngine {
               { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
             ]
           });
+        }
+        return;
+      }
+
+      // 提示/移除按钮（CommonButton，右下角）
+      if (this._hintCommonBtn && this._hintCommonBtn.visible &&
+          this._hintCommonBtn.hitTest(t.x, t.y)) {
+        this._hintCommonBtn.handleTouch(t.x, t.y, 'touchstart');
+        if (this._uiBottomBar._hintActive) {
+          this._removeHintedPig();
+        } else {
+          var best = this._hint.show();
+          if (best) {
+            audio.play('hint_reveal');
+          } else {
+            wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
+          }
         }
         return;
       }
@@ -1380,6 +1451,7 @@ class PlayingEngine {
           this._victory = true;
           this._victoryTime = Date.now();
           this._uiBottomBar.setHintHidden(true);  // 通关后隐藏提示按钮
+          this._showHintCommon = false;
           console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
         }
         // 试玩模式：不弹结算面板，数据已保存，停留在关卡界面
@@ -1586,6 +1658,11 @@ class PlayingEngine {
 
   /** 继续按钮 — 体力检查后进入下一关 */
   _onContinueClick() {
+    // 从关卡选择进入 → 返回选择面板
+    if (databus.returnState === 'levelSelect') {
+      databus.gameState = 'levelSelect';
+      return;
+    }
     if (this._isLastLevelOfGame()) {
       console.log('[LOG_victory] 已是最后一关，返回主菜单');
       databus.gameState = 'menu';
@@ -1939,10 +2016,11 @@ class PlayingEngine {
    */
   _testBurstEffect() {
     audio.play('coin_fly');
-    var savedAccum = this._levelAccumulatedGold;
+    // 临时标记，阻止 coinArrived 修改游戏状态
+    this._testAnimActive = true;
     var self = this;
-    var fromX = SCREEN_WIDTH - 41;
-    var fromY = 127;
+    var fromX = SCREEN_WIDTH - 98;
+    var fromY = 106;
     var toX = 32;
     var toY = 106;
     for (var i = 0; i < 4; i++) {
@@ -1951,10 +2029,7 @@ class PlayingEngine {
       }, i * 80);
     }
     setTimeout(function () {
-      self._levelAccumulatedGold = savedAccum;
-      if (self._uiGoldWidget) {
-        self._uiGoldWidget.setData(GoldSystem.getGold() + savedAccum);
-      }
+      self._testAnimActive = false;
     }, 1200);
   }
 
@@ -2008,8 +2083,8 @@ class PlayingEngine {
     var interval = Math.floor(1000 / totalTicks);
     var ticked = 0;
     // 步数底框中心 → 金币图标中心（右→左）
-    var fromX = SCREEN_WIDTH - 41;  // CrownPigWidget step bg centerX
-    var fromY = 127;                // CrownPigWidget step bg centerY
+    var fromX = SCREEN_WIDTH - 98;  // CrownPigWidget crown centerX
+    var fromY = 106;                // CrownPigWidget crown centerY
     var toX = 32;                   // GoldWidget coin centerX
     var toY = 106;                  // GoldWidget coin centerY
 
@@ -2314,7 +2389,7 @@ class PlayingEngine {
 
     // 5.5 测试按钮 — 编辑器后门解锁后出现
     if (databus.debugUnlocked) {
-    var testBx = 10, testBy = 110, testBw = 30, testBh = 30;
+    var testBx = 10, testBy = 120, testBw = 30, testBh = 30;
     // "画" 按钮
     ctx.fillStyle = 'rgba(33,150,243,0.6)';
     ctx.beginPath();
@@ -2329,21 +2404,40 @@ class PlayingEngine {
 
     // "框" 按钮（棋盘可用区域）
     var boundBx = testBx + testBw + 8, boundBy = testBy;
-    ctx.fillStyle = this._showBoardBounds ? 'rgba(76,175,80,0.6)' : 'rgba(255,255,255,0.25)';
     ctx.beginPath();
     ctx.arc(boundBx + testBw / 2, boundBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.fillText('框', boundBx + testBw / 2, boundBy + testBh / 2);
     this._testBoundBtn = { x: boundBx, y: boundBy, w: testBw, h: testBh };
+
+    // "回" 按钮（回放，有数据时才显示）
+    var hasReplay = this._hasReplayData();
+    if (hasReplay) {
+    var autoBx = boundBx + testBw + 8, autoBy = testBy;
+    ctx.beginPath();
+    ctx.arc(autoBx + testBw / 2, autoBy + testBh / 2, testBw / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText('回', autoBx + testBw / 2, autoBy + testBh / 2);
+    this._testAutoBtn = { x: autoBx, y: autoBy, w: testBw, h: testBh };
+    } else {
+      this._testAutoBtn = null;
+    }
     } else {
       this._testBtn = null;
       this._testBoundBtn = null;
+      this._testAutoBtn = null;
     }
 
     // 棋盘可用区域调试框
     if (this._showBoardBounds) {
       this._drawBoardBounds(ctx);
+    }
+
+    // 提示/移除按钮（CommonButton，右下角，入场后可见）
+    if (this._hintCommonBtn && this._hintCommonBtn.visible) {
+      this._hintCommonBtn.render(ctx);
     }
 
     // 6. 通关弹窗（UIManager）
@@ -2368,7 +2462,7 @@ class PlayingEngine {
     // 奖杯/关主飞行动画（最高图层，覆盖所有 UI）
     this._victoryAnim.render(ctx);
     // 金币到达 → 播放音效 + 触发 GoldWidget 呼吸 + "+1" 浮字
-    if (coinArrived > 0 && this._uiGoldWidget) {
+    if (coinArrived > 0 && this._uiGoldWidget && !this._testAnimActive) {
       // 结算已入库 → 不再累加计数（保留视觉效果）
       if (!this._goldSettled) {
         audio.play('coin_get');

@@ -29,9 +29,9 @@ var PLAY = {
     SUCK_DURATION: 530,
     MAX_SCALE: 1.2,
     // 奖杯目标位置
-    TROPHY_SIZE: 44,
-    TROPHY_TOP: 70,
-    TROPHY_RIGHT: 20,
+    TROPHY_SIZE: 32,
+    TROPHY_TOP: 90,
+    TROPHY_RIGHT: 82,
     TROPHY_IMG: 'assets/images/levels/leftStep_1.png',
     // 关主头像目标位置
     AVATAR_SIZE: 33,

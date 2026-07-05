@@ -7,8 +7,16 @@ const DPR = Math.min(sysInfo.pixelRatio || 2, 2);
 const realCanvas = wx.createCanvas();
 const realCtx = realCanvas.getContext('2d');
 
+// 逻辑分辨率（所有游戏坐标基于此）
 const SCREEN_WIDTH = realCanvas.width;
 const SCREEN_HEIGHT = realCanvas.height;
+
+// 真实 Canvas 升级为物理分辨率，消除高 DPI 模糊
+realCanvas.width = SCREEN_WIDTH * DPR;
+realCanvas.height = SCREEN_HEIGHT * DPR;
+realCtx.scale(DPR, DPR);
+realCtx.imageSmoothingEnabled = true;
+realCtx.imageSmoothingQuality = 'high';
 
 // 全局存储：用于屏幕适配测试（默认值 = 真实设备宽度）
 const databus = require('./databus.js');
