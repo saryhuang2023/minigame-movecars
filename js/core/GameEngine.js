@@ -1032,7 +1032,7 @@ class GameEngine {
     var debugScale = this._pressedBtnIdx === 5 ? pressScale : 1;
 
     // ===== Frame A（对齐参考，不可见）=====
-    var frameA_Y = 8;
+    var frameA_Y = 26;
 
     // ===== 设置按钮（Frame A 内，left: 16px, top: 6px）=====
     var setIconSize = 42;
@@ -1053,7 +1053,7 @@ class GameEngine {
     ctx.restore();
 
     // ===== 体力 UI（左上角：5 图标 + 倒计时）=====
-    this._renderStaminaUI(ctx, safeTop);
+    this._renderStaminaUI(ctx, setBtnY + setIconSize);
 
     // ===== 主界面中央 idle 小猪（与 loading 画面一致，不做入场动画）=====
     var pigCX = SCREEN_WIDTH / 2;
