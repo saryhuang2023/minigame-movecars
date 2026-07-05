@@ -8,8 +8,10 @@ const commonIcons = require('../ui/commonIcons.js');
 const checkpointDialog = require('../ui/CheckpointDialog.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
+const StaminaSystem = require('../game/StaminaSystem.js');
 const SkinLoader = require('../entity/SkinLoader.js');
 const ShopPanel = require('../ui/ShopPanel.js');
+const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const Theme = require('../define/GameDefine.js').THEME;
 const Easing = require('./Easing.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -63,6 +65,13 @@ class GameEngine {
     SkinSystem.loadLocalSync();
     console.log('[GameEngine] SkinSystem 本地配置同步加载完成');
 
+    // 体力系统
+    this._stamina = new StaminaSystem();
+    this._stamina.load();
+    this._staminaIcons = { filled: null, empty: null };
+    this._preloadStaminaIcons();
+    console.log('[GameEngine] StaminaSystem 初始化完成');
+
     // 预加载数据占位（LoadingManager 填充）
     this._preloadedPlayerData = null;
     this._preloadedCloudRange = null;
@@ -70,6 +79,17 @@ class GameEngine {
 
     console.log('[GameEngine] constructor 完成，启动加载画面...');
     this._startLoading();
+  }
+
+  /** 预加载体力图标 */
+  _preloadStaminaIcons() {
+    var self = this;
+    var filled = wx.createImage();
+    filled.onload = function () { self._staminaIcons.filled = filled; };
+    filled.src = 'assets/images/common/energy.png';
+    var empty = wx.createImage();
+    empty.onload = function () { self._staminaIcons.empty = empty; };
+    empty.src = 'assets/images/common/energy_empty.png';
   }
 
   // ===== 加载画面 =====
@@ -178,8 +198,8 @@ class GameEngine {
       databus.safeTop = menuBtn.bottom + 8;
       console.log('[GameEngine] 安全区顶部: ' + databus.safeTop);
     } catch (e) {
-      databus.safeTop = 56;
-      console.log('[GameEngine] 安全区获取失败，使用默认值 56');
+      databus.safeTop = 28;
+      console.log('[GameEngine] 安全区获取失败，使用默认值');
     }
 
     // 章节配置改为按需懒加载（LevelSelectEngine 激活时才读）
@@ -885,6 +905,24 @@ class GameEngine {
       if (e.type === 'touchstart' && e.touches[0]) {
         var t = e.touches[0];
 
+        // 体力不足广告弹窗
+        if (StaminaAdPanel.isOpen()) {
+          StaminaAdPanel.handleTouch(t.x, t.y, e.type);
+          return;
+        }
+
+        // 体力 "+" 按钮
+        if (this._staminaPlusRect &&
+            t.x >= this._staminaPlusRect.x && t.x <= this._staminaPlusRect.x + this._staminaPlusRect.w &&
+            t.y >= this._staminaPlusRect.y && t.y <= this._staminaPlusRect.y + this._staminaPlusRect.h) {
+          var self3 = this;
+          StaminaAdPanel.open(
+            this._stamina.getAdRemainingToday(),
+            function () { self3._onStaminaAdClaim(); }
+          );
+          return;
+        }
+
         // 设置面板打开时，所有触控由面板处理
         if (settingsPanel.isOpen()) {
           settingsPanel.handleTouch(t.x, t.y, e.type);
@@ -955,7 +993,7 @@ class GameEngine {
       arena:    { dx: 0, dy: 120, scale: 1, alpha: 0 },
       levels:   { dx: 0, dy: 120, scale: 1, alpha: 0 },
       play:     { dx: 0, dy: 120, scale: 1, alpha: 0 },
-      settings: { dx: -30, dy: -20, scale: 1, alpha: 0 },
+      settings: { dx: -30, dy: 0, scale: 1, alpha: 0 },
     };
 
     var elapsed = Date.now() - this._menuEntrance.startTime;
@@ -994,7 +1032,7 @@ class GameEngine {
     var debugScale = this._pressedBtnIdx === 5 ? pressScale : 1;
 
     // ===== Frame A（对齐参考，不可见）=====
-    var frameA_Y = safeTop;
+    var frameA_Y = 8;
 
     // ===== 设置按钮（Frame A 内，left: 16px, top: 6px）=====
     var setIconSize = 42;
@@ -1013,6 +1051,9 @@ class GameEngine {
     var setAreaRaw = this._drawSettingsBtn(setBtnX + st.dx, setBtnY + st.dy, setIconSize);
     var setArea = { x: setBtnX, y: setBtnY, w: setAreaRaw.w, h: setAreaRaw.h };
     ctx.restore();
+
+    // ===== 体力 UI（左上角：5 图标 + 倒计时）=====
+    this._renderStaminaUI(ctx, safeTop);
 
     // ===== 主界面中央 idle 小猪（与 loading 画面一致，不做入场动画）=====
     var pigCX = SCREEN_WIDTH / 2;
@@ -1037,12 +1078,25 @@ class GameEngine {
     ctx.globalAlpha = playT.alpha;
     this.drawClayButton(btnX + playT.dx, mainBtnY + playT.dy, btnW, btnH, 32);
 
-    // 按钮文字
+    // 按钮内体力空图标 + 文字
+    var iconSize = 24;
+    var textW = ctx.measureText('开始游戏').width || 88;
+    var totalW = iconSize + 8 + textW;
+    var startX = cx + playT.dx - totalW / 2;
+    var iconY = mainBtnY + playT.dy + btnH / 2 - iconSize / 2;
+    // 存储体力图标目标位置（飞行动画终点）
+    this._staminaBtnIconRect = {
+      x: startX, y: iconY, w: iconSize, h: iconSize,
+      cx: startX + iconSize / 2, cy: iconY + iconSize / 2
+    };
+    if (this._staminaIcons.empty) {
+      ctx.drawImage(this._staminaIcons.empty, startX, iconY, iconSize, iconSize);
+    }
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 22px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🎮 开始游戏', cx + playT.dx, mainBtnY + playT.dy + btnH / 2);
+    ctx.fillText('开始游戏', startX + iconSize + 8, mainBtnY + playT.dy + btnH / 2);
     ctx.restore();
 
     // ===== 次按钮：关卡选择（开始游戏上方 100px）=====
@@ -1140,7 +1194,7 @@ class GameEngine {
     // ===== 注册按钮碰撞区域 =====
     var self = this;
     this.menuButtons = [
-      { x: btnX, y: mainBtnY, w: btnW, h: btnH, action: function() { self.startLastLevel(); } },
+      { x: btnX, y: mainBtnY, w: btnW, h: btnH, action: function() { self._onClickPlayBtn(); } },
       { x: btnX, y: secBtnY, w: btnW, h: secBtnH, action: function() { self._hasLeftMenu = true; databus.gameState = 'levelSelect'; } },
       { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH, action: function() { ShopPanel.open(); } },
       { x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
@@ -1170,6 +1224,165 @@ class GameEngine {
 
     // 存档恢复确认弹窗（最高层）
     checkpointDialog.render(ctx);
+
+    // 体力飞行动画
+    this._renderStaminaFly(ctx);
+
+    // 体力不足广告弹窗
+    StaminaAdPanel.render(ctx);
+  }
+
+  // ========== 体力系统 UI ==========
+
+  /** 渲染左上角体力 UI（5 图标 + 倒计时） */
+  _renderStaminaUI(ctx, safeTop) {
+    var ST = require('../define/GameDefine.js').GAME.STAMINA;
+    var count = this._stamina.getCount();
+    var x = 16, y = safeTop + 12;
+    var iconSize = ST.ICON_SIZE, gap = ST.ICON_GAP;
+    var flips = this._stamina.updateFlips();
+
+    // 建立 flip 索引快速查找：{ [index]: progress }
+    var flipMap = {};
+    for (var fi = 0; fi < flips.length; fi++) {
+      flipMap[flips[fi].index] = flips[fi].progress;
+    }
+
+    for (var i = 0; i < ST.MAX; i++) {
+      var cx = x + i * (iconSize + gap) + iconSize / 2;
+      var cy = y + iconSize / 2;
+      var p = flipMap[i];
+
+      if (p != null) {
+        // 翻转动效
+        ctx.save();
+        ctx.translate(cx, cy);
+        if (p < 0.5) {
+          // 前半段：空图标缩小消失
+          var scaleX = 1 - p * 2;
+          ctx.scale(scaleX, 1);
+          if (this._staminaIcons.empty) {
+            ctx.drawImage(this._staminaIcons.empty, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
+          }
+        } else {
+          // 后半段：实心图标放大出现
+          var scaleX2 = (p - 0.5) * 2;
+          ctx.scale(scaleX2, 1);
+          if (this._staminaIcons.filled) {
+            ctx.drawImage(this._staminaIcons.filled, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
+          }
+        }
+        ctx.restore();
+      } else {
+        var img = i < count ? this._staminaIcons.filled : this._staminaIcons.empty;
+        if (img) {
+          ctx.drawImage(img, x + i * (iconSize + gap), y, iconSize, iconSize);
+        }
+      }
+    }
+
+    // 存储第一个体力图标位置（飞行动画起点）
+    this._staminaFirstIconRect = {
+      x: x, y: y, w: iconSize, h: iconSize,
+      cx: x + iconSize / 2, cy: y + iconSize / 2
+    };
+
+    // "+" 按钮（体力未满时显示）
+    var rightX = x + ST.MAX * (iconSize + gap);
+    if (count < ST.MAX) {
+      var plusSize = 20;
+      var plusX = rightX + 2;
+      var plusY = y + (iconSize - plusSize) / 2;
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath();
+      ctx.arc(plusX + plusSize / 2, plusY + plusSize / 2, plusSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 14px ' + Theme.font.family + '';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('+', plusX + plusSize / 2, plusY + plusSize / 2);
+      ctx.restore();
+      this._staminaPlusRect = { x: plusX, y: plusY, w: plusSize, h: plusSize };
+    } else {
+      this._staminaPlusRect = null;
+    }
+
+    // 倒计时
+    var cdText = this._stamina.getCountdownText();
+    if (cdText) {
+      ctx.save();
+      ctx.font = 'bold 12px ' + Theme.font.family + '';
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(cdText, x, y + iconSize + 4);
+      ctx.restore();
+    }
+  }
+
+  /** 渲染体力飞行动画 */
+  _renderStaminaFly(ctx) {
+    var fly = this._stamina.updateFly();
+    if (!fly) return;
+    if (fly.done) {
+      if (this._staminaPendingStart) {
+        var cb = this._staminaPendingStart;
+        this._staminaPendingStart = null;
+        cb();
+      }
+      return;
+    }
+    if (this._staminaIcons.filled) {
+      // 飞行阶段渐隐，停留阶段保持清晰
+      var alpha = fly.phase === 'hold' ? 1 : (1 - fly.progress * 0.2);
+      var iconSize = 24;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(this._staminaIcons.filled,
+        fly.x - iconSize / 2, fly.y - iconSize / 2, iconSize, iconSize);
+      ctx.restore();
+    }
+  }
+
+  /** 处理开始游戏按钮点击 */
+  _onClickPlayBtn() {
+    var self = this;
+    // 先同步体力
+    this._stamina.load();
+
+    // 有体力 → 消耗后飞行动画 → 进入关卡
+    if (this._stamina.canPlay()) {
+      this._stamina.consume();
+      // 启动飞行动画
+      var from = this._staminaFirstIconRect;
+      var to = this._staminaBtnIconRect;
+      if (from && to) {
+        this._stamina.startFly(from.cx, from.cy, to.cx, to.cy, null);
+        this._staminaPendingStart = function () { self.startLastLevel(); };
+      } else {
+        self.startLastLevel();
+      }
+      return;
+    }
+
+    // 体力不足 → 弹窗
+    if (this._stamina.getAdRemainingToday() > 0) {
+      var self = this;
+      StaminaAdPanel.open(
+        this._stamina.getAdRemainingToday(),
+        function () { self._onStaminaAdClaim(); }
+      );
+    } else {
+      StaminaAdPanel.openNoAds();
+    }
+  }
+
+  /** 处理广告领取体力 */
+  _onStaminaAdClaim() {
+    StaminaAdPanel.close();
+    this._stamina.claimAd();
   }
 
   // ========== 主循环 ==========

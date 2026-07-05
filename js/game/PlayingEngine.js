@@ -28,6 +28,8 @@ const GoldWidget = require('../ui/widgets/GoldWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
 const GoldSystem = require('./GoldSystem.js');
 const SkinSystem = require('./SkinSystem.js');
+const StaminaSystem = require('./StaminaSystem.js');
+const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const SceneDefaults = require('../define/GameDefine.js').SCENE;
 var PlayDefine = require('../define/PlayingDefine.js');
 var GAME_DEF = require('../define/GameDefine.js').GAME;
@@ -831,6 +833,12 @@ class PlayingEngine {
 
     if (e.type === 'touchstart') {
       // === UIManager 优先路由 ===
+      // 体力广告弹窗
+      if (StaminaAdPanel.isOpen()) {
+        StaminaAdPanel.handleTouch(t.x, t.y, e.type);
+        return;
+      }
+
       // 设置面板打开时，所有触控由面板处理
       if (settingsPanel.isOpen()) {
         settingsPanel.handleTouch(t.x, t.y, e.type);
@@ -1568,14 +1576,39 @@ class PlayingEngine {
     }
   }
 
-  /** 继续按钮 — 直接进入下一关（金币已入账） */
+  /** 继续按钮 — 体力检查后进入下一关 */
   _onContinueClick() {
     if (this._isLastLevelOfGame()) {
       console.log('[LOG_victory] 已是最后一关，返回主菜单');
       databus.gameState = 'menu';
       return;
     }
+    // 体力检查
+    var stamina = new StaminaSystem();
+    stamina.load();
+    if (!stamina.canPlay()) {
+      if (stamina.getAdRemainingToday() > 0) {
+        var self = this;
+        StaminaAdPanel.open(
+          stamina.getAdRemainingToday(),
+          function () {
+            stamina.claimAd();
+          }
+        );
+      } else {
+        StaminaAdPanel.openNoAds();
+      }
+      return;
+    }
+    stamina.consume();
     console.log('[LOG_victory] 用户点击继续 → 进入下一关 (current balance=' + GoldSystem.getGold() + ')');
+    this._goNextLevel();
+  }
+
+  /** 从广告领取后继续（消费体力已在 claimAd 调用前完成） */
+  _goNextLevelAfterStamina() {
+    var stamina = new StaminaSystem();
+    stamina.consume();
     this._goNextLevel();
   }
 
@@ -2252,7 +2285,8 @@ class PlayingEngine {
     }
 
     // 8. 设置面板（保持原有）
-    settingsPanel.render(ctx);  
+    settingsPanel.render(ctx);
+    StaminaAdPanel.render(ctx);  
 
     // 9. 金币磁吸飞行动画（推猪时触发，飞向金币区）—— 最高层级，不被任何 UI 遮挡
     var coinArrived = this._coinFlyEffect.update();

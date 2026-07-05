@@ -63,6 +63,7 @@ var SFX_EVENTS = {
   'rewards':      { files: ['rewards.mp3'],          priority: PRIORITY.SFX },
   'button_click': { files: ['button_click.mp3'],     priority: PRIORITY.UI },
   'hint_reveal':  { files: ['hint_reveal.mp3'],      priority: PRIORITY.ACTION },
+  'stamina_add':  { files: ['stamina_add.mp3'],      priority: PRIORITY.UI },
   'rotate_loop':  { files: ['rotate_loop.mp3'],      priority: PRIORITY.AMBIENT },
 };
 
