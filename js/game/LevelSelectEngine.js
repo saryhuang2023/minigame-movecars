@@ -188,7 +188,7 @@ LevelSelectEngine.prototype._buildSections = function () {
   }
 
   // 计算各节 Y 坐标和总滚动高度
-  var totalY = 103;  // 第一张卡片起始Y
+  var totalY = 113;  // 第一张卡片起始Y
   for (var s = 0; s < this._sections.length; s++) {
     this._sections[s].y = totalY;
     totalY += this._sections[s].getHeight() + CARD_GAP;

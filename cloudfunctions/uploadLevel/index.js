@@ -4,7 +4,6 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
 exports.main = async (event, context) => {
-  const { OPENID } = cloud.getWXContext();
   const { name, data, version, published } = event;
   if (!name || !data) {
     return { code: -1, msg: '缺少 name 或 data' };
@@ -17,7 +16,7 @@ exports.main = async (event, context) => {
 
   try {
     const exist = await db.collection('levels')
-      .where({ _openid: OPENID, name })
+      .where({ name })
       .get();
 
     if (exist.data.length === 0) {

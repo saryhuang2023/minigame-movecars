@@ -85,8 +85,8 @@ LevelButton.prototype.render = function (ctx) {
   ctx.fillRect(ox, oy + INNER_H - 3, INNER_W, 3);
   ctx.restore();
 
-  // 3. 关卡编号
-  ctx.fillStyle = '#7E8B97';
+  // 3. 关卡编号（已通关 #733C29，未通关 #7E8B97）
+  ctx.fillStyle = this.state === 'cleared' ? '#733C29' : '#7E8B97';
   ctx.font = '20px ' + Theme.font.family;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
