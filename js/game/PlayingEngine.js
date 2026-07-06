@@ -124,9 +124,9 @@ class PlayingEngine {
     this._lastFrameTime = 0;        // 上一帧时间戳（引导系统 dt 计算用）
     this._cloudFetchedData = new Map();  // 本次会话已拉取过的云端关卡数据 { name → data }
     // 断点续玩
-    this._checkpointTimer = null;   // 30秒存档定时器
+    this._checkpointTimer = null;   // 5秒存档定时器
     this._levelVersion = 0;         // 当前关卡版本号
-    this._pendingResume = false;    // 是否待恢复存档
+    this._skipRestore = false;       // 重玩标记（置 true 则跳过恢复）
     this._lastSavedSteps = -1;      // 上次存档时的步数（用于脏检测）
     this._lastSavedPigCount = -1;   // 上次存档时的猪数量（用于脏检测）
     // 金币奖励
@@ -442,11 +442,6 @@ class PlayingEngine {
       this._destroyAuthBtn(true);
     }
 
-    // 0.5 保存恢复标志（异步加载完成后处理）
-    if (opts.resume) {
-      this._pendingResume = true;
-    }
-
     // 1. 保存关卡标识
     this.levelName = name;
 
@@ -557,17 +552,8 @@ class PlayingEngine {
     // 重置脏检测基准（确保首轮一定写入）
     this._lastSavedSteps = -1;
     this._lastSavedPigCount = -1;
-    // 恢复存档（如果有）
-    console.log('[LOG_cp] _loadAndStart _pendingResume=' + this._pendingResume);
-    if (this._pendingResume) {
-      this._pendingResume = false;
-      this._doResume();
-    } else {
-      // 非恢复进入：清理旧存档（避免残留上一关数据）
-      this._clearCheckpoint();
-    }
-    // 启动 10 秒存档定时器（放在清存档之后，避免被 _clearCheckpoint 误杀）
-    this._startCheckpointTimer();
+    // 断点续传（单函数收敛：恢复/清理/启动定时器）
+    this._updateCheckpoint();
 
     // 关卡预下载：仅最新关卡触发（非试玩模式）
     this._tryPreloadNext();
@@ -759,38 +745,15 @@ class PlayingEngine {
 
   activate() {
     var name = databus.currentLevel ? databus.currentLevel.name : '';
-
-    // 试玩模式：跳过存档自检 + 清理旧存档，强制使用编辑器数据
-    if (databus.returnState === 'editor') {
-      console.log('[LOG] activate 试玩模式，跳过存档自检，清理旧存档');
-      this._clearCheckpoint();
-      this.startLevel(name, { resume: false });
-      return;
-    }
-
-    // 自检：外部未设 _checkpointResume 时，主动读取存档（杀进程重启场景）
-    if (!databus._checkpointResume) {
-      var cp;
-      try { cp = wx.getStorageSync('game_checkpoint'); } catch (e) { cp = null; }
-      console.log('[LOG_cp] activate 自检: cp=' + !!cp + ' name=' + name + ' cpLevelName=' + (cp && cp.levelName));
-      if (cp && cp.levelName === name) {
-        console.log('[LOG_cp] activate 自检匹配！设置恢复标记');
-        databus._checkpointResume = true;
-      }
-    } else {
-      console.log('[LOG_cp] activate _checkpointResume 已设置，跳过自检');
-    }
-    var resume = !!databus._checkpointResume;
-    if (resume) databus._checkpointResume = false;
-    this.startLevel(name, { resume: resume });
+    this.startLevel(name);
   }
 
   deactivate() {
     this.input.off('playing');
     this._guide.reset();         // 退出关卡时强制结束引导
     this._destroyAuthBtn(true);  // 立即关闭，无动画
-    this._clearCheckpoint();     // 任何退出关卡路径都清理存档
     this._entranceState = null;  // 清空入场动画，防止下一帧闪现旧猪
+    this._stopCheckpointTimer();
     // 清理录制/回放状态
     if (this._isRecording) this._trialStopRecord(false);  // 退出关卡不保存录制
     this._isPlayingBack = false;
@@ -1474,6 +1437,7 @@ class PlayingEngine {
 
   restartLevel() {
     audio.play('reset');
+    this._skipRestore = true;
     this.startLevel(this.levelName);
   }
 
@@ -1493,8 +1457,6 @@ class PlayingEngine {
         }
       }
     }
-    // 清理存档：通关后杀进程恢复会出现"关卡已完成但仍有存档"的矛盾，这里清除掉
-    try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
     // 奖杯：试玩模式不写存储；已获得过则跳过，不再重复检查/写存储/播动画
     if (isTrial) {
       this._earnedCrown = false;
@@ -2568,24 +2530,26 @@ class PlayingEngine {
 
   /** 保存当前关卡状态到本地持久化存储 */
   _saveCheckpoint() {
+    // 仅最新关卡才写盘（定时器残留兜底）
+    if (!this._isLatestUnexploredLevel()) return;
     if (!this.levelName) {
-      console.log('[LOG] 跳过保存: levelName 为空');
+      console.log('[LOG_cp] 跳过保存: levelName 为空');
       return;
     }
     if (this.steps === 0) {
-      console.log('[LOG] 跳过保存: 步数为0，无操作无需保存');
+      console.log('[LOG_cp] 跳过保存: 步数为0，无操作无需保存');
       return;
     }
     if (databus.returnState === 'editor') {
-      console.log('[LOG] 跳过保存: 试玩模式');
+      console.log('[LOG_cp] 跳过保存: 试玩模式');
       return;
     }
     if (this._victory) {
-      console.log('[LOG] 跳过保存: 已通关 (_victory=true)');
+      console.log('[LOG_cp] 跳过保存: 已通关 (_victory=true)');
       return;
     }
     if (!this.gp.pigs.some(function(p) { return p.type !== 'rock'; })) {
-      console.log('[LOG] 跳过保存: 猪已全消');
+      console.log('[LOG_cp] 跳过保存: 猪已全消');
       return;
     }
     var data = {
@@ -2608,32 +2572,75 @@ class PlayingEngine {
     }
   }
 
-  /** 清理存档（deactivate 统一入口） */
-  _clearCheckpoint() {
-    console.log('[LOG] 清理存档 (timer=' + !!this._checkpointTimer + ')');
-    try {
-      wx.removeStorageSync('game_checkpoint');
-    } catch (e) {}
+  /** 判断当前关卡是否为最新未通关关卡 */
+  _isLatestUnexploredLevel() {
+    var idx = databus.currentLevelIndex;
+    if (idx < 0) return false;
+    var li = wx.getStorageSync('lastLevelIndex');
+    var lastIdx;
+    if (li === '' || li === undefined || li === null) {
+      lastIdx = -1;
+    } else {
+      lastIdx = parseInt(li, 10);
+    }
+    // 必须紧接最后通关关卡（lastIdx + 1）
+    return idx === lastIdx + 1;
+  }
+
+  /** 断点续传单函数：恢复 / 清理 / 启动定时器 */
+  _updateCheckpoint() {
+    var skipRestore = this._skipRestore;
+    this._skipRestore = false;
+
+    if (!this._isLatestUnexploredLevel()) {
+      console.log('[LOG_cp] 非最新关卡，跳过 checkpoint');
+      return;
+    }
+
+    var cp;
+    try { cp = wx.getStorageSync('game_checkpoint'); } catch (e) { cp = null; }
+
+    if (cp) {
+      var match = cp.levelName === this.levelName
+               && cp.version === this._levelVersion
+               && !skipRestore;
+      if (match) {
+        console.log('[LOG_cp] ✓ 恢复存档: level=' + cp.levelName + ' steps=' + cp.steps + ' v=' + cp.version);
+        this._doResume();
+      } else {
+        console.log('[LOG_cp] ✗ 清空存档: skipRestore=' + skipRestore + ' cpLevel=' + cp.levelName + ' curLevel=' + this.levelName + ' cpVer=' + cp.version + ' curVer=' + this._levelVersion);
+        wx.removeStorageSync('game_checkpoint');
+      }
+    } else {
+      console.log('[LOG_cp] 无存档，开始记录: level=' + this.levelName + ' v=' + this._levelVersion);
+    }
+
+    this._startCheckpointTimer();
+  }
+
+  /** 停止存档定时器 */
+  _stopCheckpointTimer() {
     if (this._checkpointTimer) {
       clearInterval(this._checkpointTimer);
+      console.log('[LOG_cp] 清除定时器');
       this._checkpointTimer = null;
     }
   }
 
-  /** 启动 10 秒存档定时器（脏检测：只有步数或猪数量变化才真正写盘） */
+  /** 启动 5 秒存档定时器（脏检测：只有步数或猪数量变化才真正写盘） */
   _startCheckpointTimer() {
     if (this._checkpointTimer) {
-      console.log('[LOG] 清除旧定时器，重新启动');
+      console.log('[LOG_cp] 清除旧定时器，重新启动');
       clearInterval(this._checkpointTimer);
     }
-    console.log('[LOG] 启动 10 秒存档定时器 (level=' + this.levelName + ', version=' + this._levelVersion + ')');
+    console.log('[LOG_cp] 启动 5 秒存档定时器 (level=' + this.levelName + ', version=' + this._levelVersion + ')');
     var self = this;
     this._checkpointTimer = setInterval(function() {
       // 脏检测：步数和猪数量都没变就不写盘
       if (self.steps === self._lastSavedSteps && self.gp.pigs.length === self._lastSavedPigCount) {
         return;
       }
-      console.log('[LOG] === 定时器触发，检测到变化，准备存档 ===');
+      console.log('[LOG_cp] === 定时器触发，检测到变化，准备存档 ===');
       self._saveCheckpoint();
     }, PlayDefine.PLAY.CHECKPOINT_INTERVAL);
   }
@@ -2646,15 +2653,6 @@ class PlayingEngine {
     } catch (e) { cp = null; }
     console.log('[LOG_cp] _doResume: cp=' + !!cp + ' level=' + (cp && cp.levelName) + ' steps=' + (cp && cp.steps) + ' version=' + (cp && cp.version) + ' currentVersion=' + this._levelVersion);
     if (!cp) return;
-
-    // 版本校验：关卡配置已更新则重新开始
-    if (cp.version !== this._levelVersion) {
-      console.log('[LOG] 版本不一致 存档v' + cp.version + ' 当前v' + this._levelVersion + '，重新开始');
-      this._clearCheckpoint();
-      wx.showToast({ title: '关卡配置已更新，请重新开始', icon: 'none', duration: 2500 });
-      this.restartLevel();
-      return;
-    }
 
     // 恢复步数
     this.steps = cp.steps || 0;

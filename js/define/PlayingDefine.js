@@ -16,7 +16,7 @@ var PLAY = {
   },
 
   // ---------- 存档 ----------
-  CHECKPOINT_INTERVAL: 10000,           // 存档定时器间隔 ms
+  CHECKPOINT_INTERVAL: 5000,            // 存档定时器间隔 ms
   LOAD_TIMEOUT: 6000,                   // 关卡加载超时 ms
 
   // ---------- 金币飞行 ----------

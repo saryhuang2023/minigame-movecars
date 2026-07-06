@@ -11,6 +11,7 @@ var AssetPreloader = require('../ui/AssetPreloader.js');
 var Theme = require('../define/GameDefine.js').THEME;
 
 var ChapterSection = require('../ui/widgets/ChapterSection.js');
+var ShopPanel = require('../ui/ShopPanel.js');
 
 // ========== 布局常量 ==========
 var BACK_IMG_W = 32, BACK_IMG_H = 32;
@@ -235,6 +236,13 @@ LevelSelectEngine.prototype._getCurrentChapterIdx = function () {
 // 事件处理
 // ============================================================
 LevelSelectEngine.prototype._handleEvent = function (e) {
+  // 商城面板打开时，所有触控事件由面板处理
+  if (ShopPanel.isOpen()) {
+    var t0 = e.touches && e.touches[0];
+    ShopPanel.handleEvent({ type: e.type, x: t0 ? t0.x : 0, y: t0 ? t0.y : 0 });
+    return;
+  }
+
   if (e.type === 'touchstart') {
     var t = e.touches && e.touches[0];
     if (!t) return;
@@ -304,7 +312,7 @@ LevelSelectEngine.prototype._onLevelTap = function (levelId) {
 /** "去装扮" 按钮 */
 LevelSelectEngine.prototype._onDressUp = function () {
   audio.play('button_click');
-  // TODO: 打开装扮面板
+  ShopPanel.open();
 };
 
 // ============================================================
@@ -353,6 +361,9 @@ LevelSelectEngine.prototype.render = function () {
   ctx.lineWidth = 1;
   ctx.strokeText('关卡', SCREEN_WIDTH / 2, TITLE_Y);
   ctx.fillText('关卡', SCREEN_WIDTH / 2, TITLE_Y);
+
+  // ===== 商城面板（顶层）=====
+  ShopPanel.render(ctx);
 
   ctx.restore();
 };

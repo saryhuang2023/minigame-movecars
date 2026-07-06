@@ -5,7 +5,6 @@ const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
 const commonIcons = require('../ui/commonIcons.js');
-const checkpointDialog = require('../ui/CheckpointDialog.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
 const StaminaSystem = require('../game/StaminaSystem.js');
@@ -476,11 +475,7 @@ class GameEngine {
       return;
     }
 
-    // 保护：如果玩家已经离开过主菜单（如云端数据异步到达太晚），
-    // 不弹恢复弹窗，直接清理存档
     if (this._hasLeftMenu) {
-      console.log('[LOG] ✗ 玩家已离开过主菜单，跳过恢复弹窗，清理存档');
-      try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
       this._didAutoStart = true;
       return;
     }
@@ -500,45 +495,7 @@ class GameEngine {
       return;
     }
 
-    // 杀进程恢复：检查是否有待恢复的存档
-    var cp;
-    try { cp = wx.getStorageSync('game_checkpoint'); } catch (e) { cp = null; }
-    if (cp && cp.levelName) {
-      console.log('[LOG] ✓ 发现存档 level=' + cp.levelName + ' step=' + cp.steps + ' pigs=' + (cp.pigs ? cp.pigs.length : 0) + '，弹确认框');
-      var self = this;
-      checkpointDialog.open({
-        steps: cp.steps,
-        levelName: cp.levelName,
-        levelIndex: cp.levelIndex,
-        onConfirm: function() {
-          console.log('[LOG] 用户确认恢复存档: level=' + cp.levelName + ' index=' + cp.levelIndex);
-          // 用存档的关卡信息，而非 lastLevelIndex（可能已更新到更后面的关卡）
-          var totalLevels = self._getTotalLevelCount();
-          var lv = self._getLevelEntry(cp.levelIndex);
-          if (!lv) {
-            console.warn('[LOG] 存档关卡不存在，降级到 startLastLevel');
-            self.startLastLevel();
-            return;
-          }
-          databus.currentLevel = { name: lv.name, data: null };
-          databus.currentLevelIndex = cp.levelIndex;
-          databus.returnState = 'menu';
-          databus.gameState = 'playing';
-          databus._checkpointResume = true;  // 标记需要恢复
-          self._hasLeftMenu = true;
-          self._buildProjectLevels(totalLevels);
-        },
-        onCancel: function() {
-          console.log('[LOG] 用户放弃恢复，清理存档');
-          try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
-        }
-      });
-      console.log('[LOG] ===== _checkAutoStart 结束（弹确认框） =====');
-      return;
-    }
-
-    console.log('[LOG] ✗ 进度=' + liNum + '，无存档，停在主菜单');
-    console.log('[LOG] ===== _checkAutoStart 结束 =====');
+    console.log('[LOG] _checkAutoStart 完成，停在主菜单');
   }
 
   // ========== 设计常量 ==========
@@ -885,12 +842,6 @@ class GameEngine {
         ShopPanel.handleEvent({ type: e.type, x: t0 ? t0.x : 0, y: t0 ? t0.y : 0 });
         return;
       }
-      if (checkpointDialog.isOpen()) {
-        if (e.touches && e.touches[0]) {
-          checkpointDialog.handleTouch(e.touches[0].x, e.touches[0].y, e.type);
-        }
-        return;
-      }
 
       if (e.type === 'touchstart' && e.touches[0]) {
         var t = e.touches[0];
@@ -1206,9 +1157,6 @@ class GameEngine {
 
     // 商城面板（比设置面板更高一层）
     ShopPanel.render(ctx);
-
-    // 存档恢复确认弹窗（最高层）
-    checkpointDialog.render(ctx);
 
     // 体力飞行动画
     this._renderStaminaFly(ctx);
