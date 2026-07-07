@@ -104,15 +104,31 @@ ChapterSection.prototype.getHeight = function () { return this.height; };
 
 ChapterSection.prototype.hitTest = function (px, py) {
   var rx = px - this.x, ry = py - this.y;
+  // 关卡按钮
   for (var i = 0; i < this._btns.length; i++) {
     if (this._btns[i].hitTest(rx, ry)) return this._btns[i];
   }
+  // "去装扮" 按钮
+  if (this._dressBtn && this._dressBtn.hitTest(rx, ry)) return this._dressBtn;
   return null;
 };
 
 ChapterSection.prototype.handleTouch = function (px, py) {
   var btn = this.hitTest(px, py);
-  if (btn && btn.state !== 'locked') {
+  if (!btn) return false;
+  // "去装扮" 按钮
+  if (btn === this._dressBtn) {
+    // 手动触发按压动画（滚动场景无 touchstart/touchend 序列）
+    var self = this;
+    this._dressBtn._pressState = { startTime: Date.now(), phase: 'pressing' };
+    setTimeout(function () {
+      self._dressBtn._pressState = { startTime: Date.now(), phase: 'releasing' };
+    }, 100);
+    if (this.onDressUp) this.onDressUp();
+    return true;
+  }
+  // 关卡按钮
+  if (btn.state !== 'locked') {
     if (this.onLevelTap) this.onLevelTap(btn.levelId);
     return true;
   }

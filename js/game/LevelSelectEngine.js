@@ -52,11 +52,9 @@ LevelSelectEngine.prototype.activate = function () {
   try {
     this._justActivated = true;
 
-    if (this._sections.length === 0 || this._needsRebuild) {
-      this.loadProjectLevels();
-      this._buildSections();
-      this._needsRebuild = false;
-    }
+    // 每次进入关卡列表都重建，确保关卡状态是最新的
+    this.loadProjectLevels();
+    this._buildSections();
 
     // 滚动到当前章节
     if (this._sections.length > 0) {

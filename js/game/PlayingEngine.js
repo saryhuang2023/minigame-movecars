@@ -1450,11 +1450,8 @@ class PlayingEngine {
       var savedRaw = wx.getStorageSync('lastLevelIndex');
       var savedIdx = (savedRaw !== '' && savedRaw !== undefined && savedRaw !== null) ? parseInt(savedRaw, 10) : -1;
       if (currentIdx >= 0 && currentIdx >= savedIdx) {
-        var nextIdx = currentIdx + 1;
-        if (nextIdx < databus.projectLevels.length) {
-          wx.setStorageSync('lastLevelIndex', nextIdx);
-          console.log('[关主] lastLevelIndex 推进到 ' + nextIdx);
-        }
+        wx.setStorageSync('lastLevelIndex', currentIdx);
+        console.log('[关主] lastLevelIndex 推进到 ' + currentIdx);
       }
     }
     // 奖杯：试玩模式不写存储；已获得过则跳过，不再重复检查/写存储/播动画
@@ -2607,6 +2604,7 @@ class PlayingEngine {
       if (match) {
         console.log('[LOG_cp] ✓ 恢复存档: level=' + cp.levelName + ' steps=' + cp.steps + ' v=' + cp.version);
         this._doResume();
+        wx.showToast({ title: '已恢复上次游玩进度', icon: 'none', duration: 2000 });
       } else {
         console.log('[LOG_cp] ✗ 清空存档: skipRestore=' + skipRestore + ' cpLevel=' + cp.levelName + ' curLevel=' + this.levelName + ' cpVer=' + cp.version + ' curVer=' + this._levelVersion);
         wx.removeStorageSync('game_checkpoint');
