@@ -12,6 +12,7 @@ var AssetPreloader = require('../ui/AssetPreloader.js');
 var SkinLoader = require('../entity/SkinLoader.js');
 var LevelCache = require('../preload/LevelCache.js');
 var CloudCache = require('../preload/CloudCache.js');
+var ChapterSection = require('../ui/widgets/ChapterSection.js');
 
 function LoadingManager() {
   this._progress = 0;
@@ -144,7 +145,23 @@ LoadingManager.prototype._startPhase2 = function () {
   // 4. 下载云端图片（rock 等）→ 缓存 temp 路径供 SkinLoader 使用
   self._cloudImageCache = {};
   var preloadFiles = p2.cloudImages || [];
-  var lazyFiles = p2.cloudImagesLazy || [];
+  var lazyFiles = (p2.cloudImagesLazy || []).slice();
+
+  // 章节背景图加到按需列表（由 chapter.json 动态计算）
+  try {
+    var fs2 = wx.getFileSystemManager();
+    var chRaw = fs2.readFileSync('assets/levels/chapter.json', 'utf8');
+    var chapters = JSON.parse(chRaw);
+    var li2 = wx.getStorageSync('lastLevelIndex');
+    var lastIdx2 = (li2 !== '' && li2 !== undefined && li2 !== null) ? parseInt(li2, 10) : 0;
+    for (var cs = 0; cs < chapters.length; cs++) {
+      if (lastIdx2 <= 0 || lastIdx2 <= chapters[cs].endIndex || cs === 0) {
+        lazyFiles.push('level/' + cs + '/chapter_skin.jpg');
+        if (lastIdx2 > 0 && lastIdx2 <= chapters[cs].endIndex) break;  // 只预加载已解锁的
+      }
+    }
+  } catch (e) { /* noop */ }
+
   if (preloadFiles.length > 0 || lazyFiles.length > 0) {
     // 初始化 CloudCache：预加载文件立即下载，按需文件仅校验版本
     CloudCache.init(preloadFiles, lazyFiles);
@@ -203,6 +220,29 @@ LoadingManager.prototype._startPhase3 = function () {
     var li = wx.getStorageSync('lastLevelIndex');
     var lastIdx = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : 0;
     LevelCache.preloadNext(lastIdx);
+  } catch (e) { /* noop */ }
+
+  // 6. 章节背景图预加载（走 CloudCache，版本一致则跳过下载）
+  try {
+    var fs = wx.getFileSystemManager();
+    var chapterRaw = fs.readFileSync('assets/levels/chapter.json', 'utf8');
+    var chapters = JSON.parse(chapterRaw);
+    var currentChIdx = 0;
+    for (var c = 0; c < chapters.length; c++) {
+      if (lastIdx <= chapters[c].endIndex) { currentChIdx = c; break; }
+    }
+    for (var ci = 0; ci <= currentChIdx && ci < chapters.length; ci++) {
+      (function (chIdx) {
+        CloudCache.downloadImage('level/' + chIdx + '/chapter_skin.jpg').then(function (path) {
+          var img = wx.createImage();
+          img.onload = function () {
+            ChapterSection.setBgCache(chIdx, img);
+            console.log('[Loading] 章节背景图就绪: ch' + chIdx);
+          };
+          img.src = path;
+        }).catch(function () {});
+      })(ci);
+    }
   } catch (e) { /* noop */ }
 };
 

@@ -343,27 +343,41 @@ function _renderAudioRow(ctx, p, opts) {
   ctx.textBaseline = 'top';
   ctx.fillText(opts.text, textLeft, textTop);
 
-  // 滑块底板填充（ON: #FF8E36 ↔ OFF: #C7805A）
-  var fillR = Math.round(255 + (199 - 255) * (1 - display));
-  var fillG = Math.round(142 + (128 - 142) * (1 - display));
-  var fillB = Math.round(54  + (90  - 54)  * (1 - display));
-  ctx.fillStyle = 'rgb(' + fillR + ',' + fillG + ',' + fillB + ')';
-  _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
-  ctx.fill();
-
-  // 内阴影（两态统一：inset 0px 2px 4px rgba(0,0,0,0.25)）
-  ctx.save();
-  _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
-  ctx.clip();
-  var gradShadow = ctx.createLinearGradient(0, sliderY + 2, 0, sliderY + 6);
-  gradShadow.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  gradShadow.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
-  ctx.fillStyle = gradShadow;
-  ctx.fillRect(sliderX, sliderY + 2, sliderW, 4);
-  ctx.restore();
-
-  // Stroke（两态统一：#FF8628）
-  ctx.strokeStyle = '#FF8628';
+  // 滑块底板 — 两态独立配色（按 Figma 精确参数）
+  var isOn = display > 0.5;
+  if (isOn) {
+    // ON: bg #FF8E36, border #CC6F27, inset 0px -2px 4px #C25E11
+    ctx.fillStyle = '#FF8E36';
+    _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
+    ctx.fill();
+    // 底部内阴影 (inset 0px -2px 4px #C25E11 — 软渐变，防黑线)
+    ctx.save();
+    _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
+    ctx.clip();
+    var shadowOn = ctx.createLinearGradient(0, sliderY + sliderH - 8, 0, sliderY + sliderH);
+    shadowOn.addColorStop(0, 'rgba(194, 94, 17, 0)');
+    shadowOn.addColorStop(1, 'rgba(194, 94, 17, 0.35)');
+    ctx.fillStyle = shadowOn;
+    ctx.fillRect(sliderX, sliderY + sliderH - 8, sliderW, 8);
+    ctx.restore();
+    ctx.strokeStyle = '#CC6F27';
+  } else {
+    // OFF: bg #C7805A, border #FF8628, inset 0px 2px 4px rgba(0,0,0,0.25)
+    ctx.fillStyle = '#C7805A';
+    _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
+    ctx.fill();
+    // 顶部内阴影 (inset 0px 2px 4px rgba(0,0,0,0.25) — 软渐变)
+    ctx.save();
+    _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
+    ctx.clip();
+    var shadowOff = ctx.createLinearGradient(0, sliderY, 0, sliderY + 8);
+    shadowOff.addColorStop(0, 'rgba(0, 0, 0, 0.15)');
+    shadowOff.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = shadowOff;
+    ctx.fillRect(sliderX, sliderY, sliderW, 8);
+    ctx.restore();
+    ctx.strokeStyle = '#FF8628';
+  }
   ctx.lineWidth = 1.5;
   _roundRect(ctx, sliderX, sliderY, sliderW, sliderH, sliderR);
   ctx.stroke();

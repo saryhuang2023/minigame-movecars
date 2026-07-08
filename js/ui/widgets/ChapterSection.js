@@ -6,6 +6,7 @@ var CommonButton = require('./CommonButton.js');
 var LevelButton = require('./LevelButton.js');
 var databus = require('../../databus.js');
 var cloud = require('../../cloud.js');
+var CloudCache = require('../../preload/CloudCache.js');
 var AssetPreloader = require('../AssetPreloader.js');
 
 var CARD_W = 353;
@@ -32,6 +33,9 @@ var NAME_X = 20, NAME_Y = 33;
 var INNER_X = BORDER_W, INNER_Y = BORDER_W;
 var INNER_W = CARD_W - BORDER_W * 2;
 var INNER_H = CARD_H - BORDER_W * 2;
+
+// 模块级背景图缓存（避免每次重建 ChapterSection 都重新下载）
+var _bgImageCache = {};
 
 var NUM_CN = ['零','一','二','三','四','五','六','七','八','九','十',
               '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十'];
@@ -91,11 +95,20 @@ function ChapterSection(opts) {
 ChapterSection.prototype.loadBgImage = function () {
   if (this._bgLoaded || this.isFuture) return;
   this._bgLoaded = true;
+
+  var key = 'chapter_bg_' + this.chIdx;
+  if (_bgImageCache[key]) {
+    this._bgImg = _bgImageCache[key];
+    return;
+  }
+
   var self = this;
-  cloud.downloadCloudImage('level/' + this.chIdx + '/chapter_skin.jpg').then(function (path) {
-    if (!path) return;
+  CloudCache.downloadImage('level/' + this.chIdx + '/chapter_skin.jpg').then(function (path) {
     var img = wx.createImage();
-    img.onload = function () { self._bgImg = img; };
+    img.onload = function () {
+      self._bgImg = img;
+      _bgImageCache[key] = img;
+    };
     img.src = path;
   }).catch(function () {});
 };
@@ -297,5 +310,10 @@ function _roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + r, y, r);
   ctx.closePath();
 }
+
+/** LoadingManager 预加载章节背景图后，通过此接口写入缓存 */
+ChapterSection.setBgCache = function (chIdx, img) {
+  _bgImageCache['chapter_bg_' + chIdx] = img;
+};
 
 module.exports = ChapterSection;
