@@ -43,13 +43,8 @@ var PHASE2 = {
   animationTotalFrames: 24,
   // 音频是否启用云端下载
   audioEnabled: true,
-  // 云端图片资源（Loading 期间立即下载）
-  cloudImages: [
-    'skins/rock/idle/1.png',
-    'skins/rock/hint/1.png',
-  ],
-  // 云端图片资源 — 按需下载（Loading 期间仅校验版本，首次访问时下载）
-  cloudImagesLazy: [],
+  // 云端图片资源不再在此硬编码 —— LoadingManager 启动后读取 version.json 清单，
+  // 把清单里所有 data/ 开头的图片一次性全量预下载进本地缓存（需求：loading 阶段全量下载）。
 };
 
 // ===== AssetPreloader 映射：key → path =====

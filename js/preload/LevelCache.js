@@ -57,8 +57,7 @@ LevelCache.prototype.preloadNext = async function (fromIndex) {
   var self = this;
   this._pendingPromise = (async function () {
     try {
-      console.log('[LevelCache] 预下载 ' + targets.length + ' 关: ' + targets.join(',')
-        + ' (fromIndex=' + fromIndex + ')');
+      console.log('[cloud][LevelCache] 预下载 ' + targets.length + ' 关: ' + targets.join(',') + ' (fromIndex=' + fromIndex + ')');
       await self._doFetch(targets);
     } catch (err) {
       console.warn('[LevelCache] 预下载异常: ' + (err && err.message));
@@ -81,7 +80,7 @@ LevelCache.prototype._doFetch = async function (names) {
     { versions: versions, compress: false }, 'Load');
 
   if (!result || !result.ok) {
-    console.warn('[LevelCache] batchDownloadLevels 失败: ' + (result && result.msg));
+    console.warn('[cloud][LevelCache] batchDownloadLevels 失败: ' + (result && result.msg));
     return null;
   }
 
@@ -94,9 +93,9 @@ LevelCache.prototype._doFetch = async function (names) {
       var item = payload[k];
       this._saveLevelFile(k, item.data, item.version);
     }
-    console.log('[LevelCache] ' + result.skipped + ' 跳过, ' + result.changed + ' 更新');
+    console.log('[cloud][LevelCache] ' + result.skipped + ' 跳过, ' + result.changed + ' 更新');
   } else {
-    console.log('[LevelCache] ' + names.length + ' 关均未变化');
+    console.log('[cloud][LevelCache] ' + names.length + ' 关均未变化');
   }
 
   // 标记已下载

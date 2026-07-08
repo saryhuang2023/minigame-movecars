@@ -866,14 +866,14 @@ class EditorEngine {
         if (updated) {
           entry.data = updated;
           entry._version = updated.version || 0;
-          console.log('[Editor] ' + entry.name + ' 云端更新已同步');
+          console.log('[cloud][Editor] ' + entry.name + ' 云端更新已同步');
         }
       });
       return;
     }
 
     // Step 2: 无本地 → 云端拉取
-    console.log('[Editor] ' + entry.name + ' 无本地数据，从云端拉取...');
+    console.log('[cloud][Editor] ' + entry.name + ' 无本地数据，从云端拉取...');
     LevelCache.fetchLevel(entry.name).then(function(data) {
       self._editorLoading = false;
       if (data) {
@@ -886,7 +886,7 @@ class EditorEngine {
       }
       self.loadLevelData(entry.data);
     }).catch(function(err) {
-      console.warn('[Editor] ' + entry.name + ' 拉取失败: ' + (err && err.message));
+      console.warn('[cloud][Editor] ' + entry.name + ' 拉取失败: ' + (err && err.message));
       self._editorLoading = false;
       entry.data = self.getDefaultLevelData();
       entry.isDirty = true;
@@ -1083,7 +1083,7 @@ class EditorEngine {
     } catch (e) {}
     // 异步从云端删除
     if (entry._cloudId) {
-      cloud.deleteLevel(entry._cloudId).catch(e => console.warn('云端删除失败:', e));
+      cloud.deleteLevel(entry._cloudId).catch(e => console.warn('[cloud][Editor] 云端删除失败:', e));
     }
     this.levelList.splice(idx, 1);
     if (this.levelList.length === 0) {
@@ -1128,7 +1128,7 @@ class EditorEngine {
 
       if (res.code === 2) {
         // 版本冲突：其他设备已保存更新版本 → 用云端最新数据覆盖本地
-        console.log(`[Cloud] 关卡 ${entry.name} 版本冲突 (本地v${version}, 云端v${res.serverVersion})，拉取云端覆盖本地`);
+        console.log(`[cloud] 关卡 ${entry.name} 版本冲突 (本地v${version}, 云端v${res.serverVersion})，拉取云端覆盖本地`);
         this.showToast('关卡已被其他设备更新，已刷新为最新版本');
         if (res.data) {
           res.data.version = res.serverVersion;
@@ -1160,10 +1160,10 @@ class EditorEngine {
         const dir = `${wx.env.USER_DATA_PATH}/levels`;
         const fullPath = `${dir}/${entry.fileName}`;
         fs.writeFileSync(fullPath, JSON.stringify(entry.data, null, 2), 'utf8');
-        console.log(`[Cloud] 关卡 ${entry.name} 已同步云端 v${res.version}`);
+        console.log(`[cloud] 关卡 ${entry.name} 已同步云端 v${res.version}`);
       }
     } catch (e) {
-      console.warn(`[Cloud] 上传 ${entry.name} 失败:`, e);
+      console.warn(`[cloud] 上传 ${entry.name} 失败:`, e);
     }
   }
 
@@ -1287,7 +1287,7 @@ class EditorEngine {
       try { fs.unlinkSync(`${wx.env.USER_DATA_PATH}/levels/.meta/${entry.name}.json`); } catch (e) {}
     } catch (e) {}
     if (entry._cloudId) {
-      cloud.deleteLevel(entry._cloudId).catch(e => console.warn('云端删除失败:', e));
+      cloud.deleteLevel(entry._cloudId).catch(e => console.warn('[cloud][Editor] 云端删除失败:', e));
     }
     if (this.currentLevelIdx === idx) {
       this.levelList.splice(idx, 1);

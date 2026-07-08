@@ -4,6 +4,10 @@ var CloudDefine = require('./define/CloudDefine.js');
 var CLOUD_ENV = CloudDefine.CLOUD.ENV;
 var CLOUD_DATA_PREFIX = CloudDefine.CLOUD.DATA_PREFIX;
 
+// 资源清单模块级缓存（整个 session 只拉一次 version.json）
+// 用 promise 串接，避免并发 init 重复下载。详见 getAssetManifest()。
+var _manifestPromise = null;
+
 /**
  * 初始化云开发
  * 在 game.js 中调用
@@ -19,7 +23,7 @@ function initCloud() {
     traceUser: true,
   });
 
-  console.log('[Cloud] 云开发初始化完成');
+  console.log('[cloud] 云开发初始化完成');
 }
 
 /**
@@ -29,7 +33,7 @@ function initCloud() {
  */
 async function callFunction(name, data = {}, tag = '') {
   const t0 = Date.now();
-  const prefix = tag ? `[${tag}][Cloud]` : '[Cloud]';
+  const prefix = tag ? `[${tag}][cloud]` : '[cloud]';
 
   // 参数摘要
   const argsSummary = {};
@@ -81,7 +85,7 @@ async function callFunction(name, data = {}, tag = '') {
     return result;
   } catch (err) {
     const duration = Date.now() - t0;
-    console.error(`${prefix} ✗ ${name}  ${duration}ms  ${(err && err.message) || String(err)}`);
+    console.error(`${prefix} ✗ ${name}  ${duration}ms  errCode=${(err && err.errCode) || '?'}  ${(err && err.message) || String(err)}`);
     throw err;
   }
 }
@@ -109,7 +113,7 @@ async function savePlayerData(data) {
  * @param {number} version 客户端持有的版本号（首次上传传 0）
  */
 async function uploadLevel(name, data, version, published) {
-  console.log('[Edit][Cloud] uploadLevel 参数: name=' + name
+  console.log('[Edit][cloud] uploadLevel 参数: name=' + name
     + ' pigs=' + (data && data.pigs ? data.pigs.length : 0)
     + ' board.cols=' + (data && data.board ? data.board.cols : '?')
     + ' board.rows=' + (data && data.board ? data.board.rows : '?')
@@ -126,7 +130,7 @@ async function uploadLevel(name, data, version, published) {
 async function listLevels() {
   const res = await callFunction('listLevels', {}, 'Load');
   var data = res.data || { minLevel: 0, maxLevel: 0 };
-  console.log('[Load][Cloud] listLevels 数据: min=' + data.minLevel + ' max=' + data.maxLevel);
+  console.log('[Load][cloud] listLevels 数据: min=' + data.minLevel + ' max=' + data.maxLevel);
   return data;
 }
 
@@ -139,7 +143,7 @@ async function listLevels() {
 async function downloadLevel(id, name, publishedOnly) {
   const res = await callFunction('downloadLevel', { id, name, publishedOnly }, 'Load');
   if (!res || !res.data) {
-    console.log('[Load][Cloud] downloadLevel 返回: null (code=' + (res && res.code) + ' msg=' + (res && res.msg) + ')');
+    console.log('[Load][cloud] downloadLevel 返回: null (code=' + (res && res.code) + ' msg=' + (res && res.msg) + ')');
   }
   return res.data || null;
 }
@@ -199,12 +203,12 @@ async function getOpenId() {
  */
 async function downloadCloudFile(relativePath) {
   const fileID = CLOUD_DATA_PREFIX + relativePath;
-  console.log('[Load][Cloud] → downloadCloudFile ' + relativePath);
+  console.log('[Load][cloud] → downloadCloudFile ' + relativePath);
   const t0 = Date.now();
   try {
     var downloadRes = await wx.cloud.downloadFile({ fileID });
     if (downloadRes.statusCode !== 200) {
-      console.warn('[Load][Cloud] downloadCloudFile ' + relativePath + ' HTTP ' + downloadRes.statusCode);
+      console.warn('[Load][cloud] downloadCloudFile ' + relativePath + ' HTTP ' + downloadRes.statusCode);
       return null;
     }
     var fs = wx.getFileSystemManager();
@@ -214,11 +218,11 @@ async function downloadCloudFile(relativePath) {
     var duration = Date.now() - t0;
     var sizeStr = fileSize >= 1024 ? (fileSize / 1024).toFixed(1) + 'KB' : fileSize + 'B';
     var itemCount = Array.isArray(obj) ? obj.length : (typeof obj === 'object' ? Object.keys(obj).length : 1);
-    console.log('[Load][Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  ' + sizeStr + '  ' + itemCount + ' entries');
+    console.log('[Load][cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  ' + sizeStr + '  ' + itemCount + ' entries');
     return obj;
   } catch (e) {
     var duration = Date.now() - t0;
-    console.warn('[Load][Cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
+    console.warn('[Load][cloud] downloadCloudFile ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
     return null;
   }
 }
@@ -230,22 +234,56 @@ async function downloadCloudFile(relativePath) {
  */
 async function downloadCloudImage(relativePath) {
   const fileID = CLOUD_DATA_PREFIX + relativePath;
-  console.log('[Load][Cloud] → downloadCloudImage ' + relativePath);
+  console.log('[Load][cloud] → downloadCloudImage ' + relativePath);
   const t0 = Date.now();
   try {
     var downloadRes = await wx.cloud.downloadFile({ fileID });
     if (downloadRes.statusCode !== 200) {
-      console.warn('[Load][Cloud] downloadCloudImage ' + relativePath + ' HTTP ' + downloadRes.statusCode);
+      console.warn('[Load][cloud] downloadCloudImage ' + relativePath + ' HTTP ' + downloadRes.statusCode);
       throw new Error('HTTP ' + downloadRes.statusCode);
     }
     var duration = Date.now() - t0;
-    console.log('[Load][Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  → ' + downloadRes.tempFilePath);
+    console.log('[Load][cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  → ' + downloadRes.tempFilePath);
     return downloadRes.tempFilePath;
   } catch (e) {
     var duration = Date.now() - t0;
-    console.warn('[Load][Cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
+    console.warn('[Load][cloud] downloadCloudImage ' + relativePath + '  ' + duration + 'ms  FAILED:', (e && e.message) || String(e));
     throw e;
   }
+}
+
+/**
+ * 拉取云端资源清单 version.json（一次下载，整体 session 复用）
+ * 清单内容：{ "data/skins/rock/idle/1.png": "md5...", "audio/music/bgm.mp3": "md5..." }
+ *   - 图片 key 以 "data/" 开头，音频 key 以 "audio/" 开头
+ *   - 客户端启动时下载一次，与本地缓存指纹比对，只对变化的文件重新下载。
+ * 设计要点（最简可靠方案）：
+ *   - 不再依赖云函数 / 云数据库 / 定时器，资源清单就是一个 JSON 文件放云存储 data/ 下。
+ *   - 模块级 _manifestPromise 缓存，保证 Loading 阶段图片批量下载与音频并发下载时只拉一次。
+ *   - 失败降级为 {}（即"全部重新下载"），不阻塞游戏。
+ * @returns {Promise<{[key:string]: string}>} 资源指纹表，失败返回 {}
+ */
+async function getAssetManifest() {
+  if (_manifestPromise) return _manifestPromise;
+  _manifestPromise = (async () => {
+    try {
+      const obj = await downloadCloudFile('version.json');
+      console.log('[cloud] 资源清单 version.json 载入 ' + (obj ? Object.keys(obj).length : 0) + ' 条');
+      return obj || {};
+    } catch (e) {
+      console.warn('[cloud] 资源清单载入失败（降级：全部重新下载）:', (e && e.message));
+      return {};
+    }
+  })();
+  return _manifestPromise;
+}
+
+/**
+ * 使资源清单缓存失效（下次调用 getAssetManifest 重新下载）
+ * 调试面板清缓存后可调用，正常流程无需。
+ */
+function invalidateAssetManifest() {
+  _manifestPromise = null;
 }
 
 /**
@@ -268,19 +306,6 @@ async function deletePlayerProfile() {
   return callFunction('deletePlayerProfile', {}, 'Game');
 }
 
-/**
- * 获取资源文件版本号（按文件名独立管理）
- * @param {string[]} [files] 文件列表，如 ['skins/rock/idle/1.png']
- * @returns {Promise<{versions: {[file:string]: number}}>}
- */
-async function getAssetConfig(files) {
-  const res = await callFunction('getAssetConfig', { files: files || [] }, 'Load');
-  var data = res.data || { versions: {} };
-  var keys = Object.keys(data.versions || {});
-  console.log('[Load][Cloud] ← getAssetConfig ' + keys.length + ' 个文件版本: ' + keys.join(', '));
-  return data;
-}
-
 module.exports = {
   initCloud,
   callFunction,
@@ -296,7 +321,8 @@ module.exports = {
   getOpenId,
   downloadCloudFile,
   downloadCloudImage,
+  getAssetManifest,
+  invalidateAssetManifest,
   settleLevel,
-  deletePlayerProfile,
-  getAssetConfig
+  deletePlayerProfile
 };

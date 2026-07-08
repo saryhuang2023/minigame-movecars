@@ -58,7 +58,7 @@ function getSkinFramePath(skinId, entityKey, anim, frame) {
 function setCloudCache(cache) {
   _cloudCache = cache;
   if (cache) {
-    console.log('[SkinLoader] 云端缓存已注入: ' + Object.keys(cache).join(', '));
+    console.log('[cloud][SkinLoader] 云端缓存已注入: ' + Object.keys(cache).join(', '));
   }
 }
 

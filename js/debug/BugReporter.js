@@ -359,11 +359,11 @@ class BugReporter {
     var self = this;
     this._sendReport(snapshot)
       .then(function () {
-        console.log('[BugReporter] 上报成功', snapshot.meta.reportId);
+        console.log('[cloud][BugReporter] 上报成功', snapshot.meta.reportId);
       })
       .catch(function (err) {
         // 网络失败 → 离线缓存
-        console.warn('[BugReporter] 上报失败，离线缓存', err && err.message);
+        console.warn('[cloud][BugReporter] 上报失败，离线缓存', err && err.message);
         self._pendingReports.push(snapshot);
         if (self._pendingReports.length > CONFIG.MAX_PENDING_STORAGE) {
           self._pendingReports.shift();
@@ -373,6 +373,7 @@ class BugReporter {
   }
 
   _sendReport(snapshot) {
+    console.log('[cloud][BugReporter] _sendReport → reportBug');
     return cloud.callFunction('reportBug', { report: snapshot });
   }
 

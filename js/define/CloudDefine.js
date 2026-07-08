@@ -8,7 +8,7 @@ var CLOUD = {
   // ---------- 云存储路径前缀 ----------
   DATA_PREFIX: 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/',
   SKINS_PREFIX: 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/skins/',
-  AUDIO_PREFIX: 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/audio/',
+  AUDIO_PREFIX: 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/audio/',
 
   // ---------- 云函数名 ----------
   FUNC: {
@@ -24,7 +24,6 @@ var CLOUD = {
     GET_OPENID: 'getOpenId',
     SETTLE_LEVEL: 'settleLevel',
     DELETE_PROFILE: 'deletePlayerProfile',
-    GET_ASSET_CONFIG: 'getAssetConfig',
   },
 
   // ---------- 下载参数 ----------

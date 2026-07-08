@@ -474,7 +474,7 @@ class PlayingEngine {
         self._loadAndStart(localData);
       } else {
         // 本地无 → 尝试云端
-        console.log('[Playing] startLevel name=' + name + ' 本地无配置，尝试云端...');
+        console.log('[cloud][Playing] startLevel name=' + name + ' 本地无配置，尝试云端...');
         var TIMEOUT_MS = PlayDefine.PLAY.LOAD_TIMEOUT;
         var pullPromise = cloud.downloadLevel(null, name, true);
         var timeoutPromise = new Promise(function(_, reject) {
@@ -488,15 +488,15 @@ class PlayingEngine {
                 result.data.crownSteps = result.crownSteps;
               }
               self._cloudFetchedData.set(name, result.data);
-              console.log('[Cloud] 关卡 ' + name + ' 云端配置就绪');
+              console.log('[cloud] 关卡 ' + name + ' 云端配置就绪');
               self._loadAndStart(result.data);
             } else {
-              console.warn('[Cloud] 关卡 ' + name + ' 未发布，本地也无配置');
+              console.warn('[cloud] 关卡 ' + name + ' 未发布，本地也无配置');
               self._loadAndStart(null);
             }
           })
           .catch(function(err) {
-            console.warn('[Cloud] 关卡拉取失败（' + (err && err.message) + '），本地也无配置');
+            console.warn('[cloud] 关卡拉取失败（' + (err && err.message) + '），本地也无配置');
             self._loadAndStart(null);
           });
       }
@@ -531,7 +531,7 @@ class PlayingEngine {
   /** loadLevel + 恢复 _loading。data 为 null 时销毁关卡并返回主菜单 */
   _loadAndStart(data) {
     if (!data) {
-      console.warn('[Playing] 关卡数据加载失败（云端+本地均无），返回主菜单');
+      console.warn('[cloud][Playing] 关卡数据加载失败（云端+本地均无），返回主菜单');
       this._loading = false;
       wx.showToast({ title: '关卡数据加载失败', icon: 'none', duration: 2000 });
       databus.gameState = 'menu';
@@ -1559,9 +1559,9 @@ class PlayingEngine {
         console.log('[Hint] 关卡已写入 ' + cache.length + ' 条提示: ' + this.levelName);
         // 上传云端（已发布关卡也直接覆盖）
         cloud.uploadLevel(this.levelName, data, data.version || 0, null).then(function() {
-          console.log('[Hint] 云端上传成功: ' + self.levelName);
+          console.log('[cloud][Hint] 云端上传成功: ' + self.levelName);
         }).catch(function(e) {
-          console.warn('[Hint] 云端上传失败:', e && e.message);
+          console.warn('[cloud][Hint] 云端上传失败:', e && e.message);
         });
       }
     } catch (e) {
@@ -1607,12 +1607,12 @@ class PlayingEngine {
         avatarUrl: info.avatarUrl || '',
         nickname: info.nickName || ''
       }).then(function() {
-        console.log('[Cloud] 玩家数据已同步到云端');
+        console.log('[cloud] 玩家数据已同步到云端');
       }).catch(function(err) {
-        console.warn('[Cloud] 同步失败（非阻塞）:', err && err.message);
+        console.warn('[cloud] 同步失败（非阻塞）:', err && err.message);
       });
     } catch (e2) {
-      console.warn('[Cloud] _syncToCloud 异常:', e2);
+      console.warn('[cloud] _syncToCloud 异常:', e2);
     }
   }
 
@@ -1775,13 +1775,13 @@ class PlayingEngine {
       var info = (res && res.userInfo) ? res.userInfo : {};
       console.log('[关主] onTap userInfo:', JSON.stringify(info).substring(0, 200));
       if (info.nickName || info.avatarUrl) {
-        console.log('[关主] onTap 获取到真实头像昵称，开始重传关主');
+        console.log('[cloud][关主] onTap 获取到真实头像昵称，开始重传关主');
         that._master.retryClaimWithRealInfo(that.steps, info.nickName || '', info.avatarUrl || '')
           .then(function (result) {
-            console.log('[关主] onTap claimLevelMaster 返回 code=' + (result ? result.code : 'null') + ' claimed=' + (result ? result.claimed : 'null'));
+            console.log('[cloud][关主] onTap claimLevelMaster 返回 code=' + (result ? result.code : 'null') + ' claimed=' + (result ? result.claimed : 'null'));
           })
           .catch(function (err) {
-            console.warn('[关主] onTap claimLevelMaster 失败:', err);
+            console.warn('[cloud][关主] onTap claimLevelMaster 失败:', err);
           });
       } else {
         console.log('[关主] onTap 未获取到真实头像昵称（用户可能拒绝授权）');

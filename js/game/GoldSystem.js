@@ -60,7 +60,7 @@ var GoldSystem = {
       try {
         wx.setStorageSync(STORAGE_KEY, cloudGold);
       } catch (e) {}
-      console.log('[LOG] GoldSystem 云端金币合并: ' + local + ' → ' + cloudGold);
+      console.log('[cloud][Gold] GoldSystem 云端金币合并: ' + local + ' → ' + cloudGold);
       return cloudGold;
     }
     return local;

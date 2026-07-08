@@ -28,7 +28,7 @@ function LoadingManager() {
 
   // Phase 各子项进度
   this._p1 = { idleLoaded: 0, imgLoaded: 0, fontLoaded: false };
-  this._p2 = { imgLoaded: 0, animLoaded: 0, audioProgress: 0 };
+  this._p2 = { imgLoaded: 0, animLoaded: 0, audioProgress: 0, cloudLoaded: 0, cloudTotal: 0, cloudDone: false };
   this._p3 = { endpointsDone: 0 };
 
   // 定时器
@@ -142,70 +142,103 @@ LoadingManager.prototype._startPhase2 = function () {
     });
   }
 
-  // 4. 下载云端图片（rock 等）→ 缓存 temp 路径供 SkinLoader 使用
+  // 4. loading 阶段云端【图片】资源全量预下载 —— 需求：loading 阶段一次性全部下载进本地缓存，
+  //    之后游戏内直接使用缓存、不再向云端发起请求。
+  //    本方法只负责图片（data/ 开头、但排除 data/audio/），下载到 CloudCache。
+  //    音频 data/audio/ 由 AudioLoader 在 AudioManager.init 内独立处理（写入 USER_DATA_PATH/audio/，
+  //    供 SfxPlayer/MusicPlayer 使用）。两者职责必须分离：CloudCache 会把路径拍平写进 cache/img/，
+  //    音频若走 CloudCache 会导致 SfxPlayer 找不到正确路径，且造成双下载。
   self._cloudImageCache = {};
-  var preloadFiles = p2.cloudImages || [];
-  var lazyFiles = (p2.cloudImagesLazy || []).slice();
+  self._loadAllCloudImages();
+};
 
-  // 章节背景图加到按需列表（由 chapter.json 动态计算）
-  try {
-    var fs2 = wx.getFileSystemManager();
-    var chRaw = fs2.readFileSync('assets/levels/chapter.json', 'utf8');
-    var chapters = JSON.parse(chRaw);
-    var li2 = wx.getStorageSync('lastLevelIndex');
-    var lastIdx2 = (li2 !== '' && li2 !== undefined && li2 !== null) ? parseInt(li2, 10) : 0;
-    for (var cs = 0; cs < chapters.length; cs++) {
-      if (lastIdx2 <= 0 || lastIdx2 <= chapters[cs].endIndex || cs === 0) {
-        lazyFiles.push('level/' + cs + '/chapter_skin.jpg');
-        if (lastIdx2 > 0 && lastIdx2 <= chapters[cs].endIndex) break;  // 只预加载已解锁的
+/**
+ * 读取资源清单，把清单里所有 data/ 开头且非 data/audio/ 的资源一次性全量预下载进本地缓存。
+ * （音频 data/audio/ 由 AudioLoader 独占处理，此处跳过，避免 CloudCache 把音频写错目录/双下载。）
+ * 下载完成后 this._cloudImageCache 记录 relativePath → 本地缓存路径，供 SkinLoader 使用。
+ * 完成后置 this._p2.cloudDone = true（即使失败也置 true，避免阻塞 loading）。
+ */
+LoadingManager.prototype._loadAllCloudImages = function () {
+  var self = this;
+  this._p2.cloudLoaded = 0;
+  this._p2.cloudTotal = 0;
+  this._p2.cloudDone = false;
+
+  cloud.getAssetManifest().then(function (manifest) {
+    if (!manifest || typeof manifest !== 'object') {
+      self._p2.cloudDone = true;
+      return;
+    }
+    // 拆分图片(data/)条目；排除 data/audio/（音频由 AudioLoader 独占处理）
+    var imageRels = [];
+    for (var k in manifest) {
+      if (manifest.hasOwnProperty(k) && k.indexOf('data/') === 0 && k.indexOf('data/audio/') !== 0) {
+        imageRels.push(k.substring('data/'.length));
       }
     }
-  } catch (e) { /* noop */ }
+    self._p2.cloudTotal = imageRels.length;
+    console.log('[cloud][LoadingManager] 云端图片待全量下载: ' + imageRels.length + ' 张（清单驱动）');
 
-  if (preloadFiles.length > 0 || lazyFiles.length > 0) {
-    // 初始化 CloudCache：预加载文件立即下载，按需文件仅校验版本
-    CloudCache.init(preloadFiles, lazyFiles);
-
-    for (var ci = 0; ci < preloadFiles.length; ci++) {
-      (function (relativePath) {
-        CloudCache.downloadImage(relativePath).then(function (localPath) {
-          self._cloudImageCache[relativePath] = localPath;
-          self._p2.cloudLoaded = (self._p2.cloudLoaded || 0) + 1;
-          console.log('[LoadingManager] 云端图片就绪: ' + relativePath + ' → ' + localPath);
-          self._tickPhase2();  // 推进进度
-        }).catch(function (err) {
-          self._p2.cloudLoaded = (self._p2.cloudLoaded || 0) + 1;
-          self._tickPhase2();
-        });
-      })(preloadFiles[ci]);
+    if (imageRels.length === 0) {
+      self._p2.cloudDone = true;
+      return;
     }
-  }
+
+    // 并发批量下载（每批 6），下载即写入本地缓存
+    var BATCH = 6;
+    var idx = 0;
+    function nextBatch() {
+      if (idx >= imageRels.length) {
+        self._p2.cloudDone = true;
+        console.log('[cloud][LoadingManager] 云端图片全量下载完成: ' + imageRels.length + ' 张');
+        return;
+      }
+      var batch = imageRels.slice(idx, idx + BATCH);
+      idx += BATCH;
+      Promise.all(batch.map(function (rel) {
+        return CloudCache.downloadImage(rel).then(function (localPath) {
+          self._cloudImageCache[rel] = localPath;
+          self._p2.cloudLoaded++;
+          console.log('[cloud][LoadingManager] 云端图片就绪: ' + rel + ' → ' + localPath);
+          return null;
+        }).catch(function (err) {
+          console.warn('[cloud][LoadingManager] 云端图片下载失败（跳过）: ' + rel + ' ' + (err && err.message));
+          self._p2.cloudLoaded++;
+          return null;
+        });
+      })).then(nextBatch);
+    }
+    nextBatch();
+  }).catch(function (err) {
+    console.warn('[cloud][LoadingManager] 资源清单拉取失败，跳过云端全量下载:', err && err.message);
+    self._p2.cloudDone = true;
+  });
 };
 
 LoadingManager.prototype._startPhase3 = function () {
   var self = this;
   this._phase = 3;
-  console.log('[LoadingManager] → Phase 3 开始（云端数据）');
+  console.log('[cloud][LoadingManager] → Phase 3 开始（云端数据）');
 
   // 1. 拉取玩家数据
   cloud.getPlayerData().then(function (res) {
     if (res && res.code === 0 && res.data) {
       self._playerData = res.data;
-      console.log('[LoadingManager] 云端玩家数据就绪');
+      console.log('[cloud][LoadingManager] 云端玩家数据就绪');
     }
     self._p3.endpointsDone++;
   }).catch(function (err) {
-    console.warn('[LoadingManager] getPlayerData 失败:', err && err.message);
+    console.warn('[cloud][LoadingManager] getPlayerData 失败:', err && err.message);
     self._p3.endpointsDone++;
   });
 
   // 2. 拉取关卡范围
   cloud.listLevels().then(function (range) {
     self._cloudLevelRange = range;
-    console.log('[LoadingManager] 云端关卡范围就绪:', JSON.stringify(range));
+    console.log('[cloud][LoadingManager] 云端关卡范围就绪:', JSON.stringify(range));
     self._p3.endpointsDone++;
   }).catch(function (err) {
-    console.warn('[LoadingManager] listLevels 失败:', err && err.message);
+    console.warn('[cloud][LoadingManager] listLevels 失败:', err && err.message);
     self._p3.endpointsDone++;
   });
 
@@ -231,7 +264,7 @@ LoadingManager.prototype._startPhase3 = function () {
     for (var c = 0; c < chapters.length; c++) {
       if (lastIdx <= chapters[c].endIndex) { currentChIdx = c; break; }
     }
-    for (var ci = 0; ci <= currentChIdx && ci < chapters.length; ci++) {
+    for (var ci = 0; ci < chapters.length; ci++) {
       (function (chIdx) {
         CloudCache.downloadImage('level/' + chIdx + '/chapter_skin.jpg').then(function (path) {
           var img = wx.createImage();
@@ -297,15 +330,18 @@ LoadingManager.prototype._tickPhase2 = function () {
   var imgRatio = this._p2.imgLoaded / p2.images.length;
   var animRatio = this._p2.animLoaded / p2.animationTotalFrames;
   var audioRatio = this._p2.audioProgress;
-  var cloudTotal = p2.cloudImages ? p2.cloudImages.length : 0;
-  var cloudRatio = cloudTotal > 0 ? (this._p2.cloudLoaded || 0) / cloudTotal : 1;
+  var cloudTotal = this._p2.cloudTotal || 0;
+  var cloudRatio = cloudTotal > 0
+    ? (this._p2.cloudLoaded || 0) / cloudTotal
+    : (this._p2.cloudDone ? 1 : 0);
 
   if (!p2.audioEnabled) audioRatio = 1;
 
   var phaseProgress = imgRatio * 0.35 + animRatio * 0.30 + audioRatio * 0.20 + cloudRatio * 0.15;
   this._progress = w.phase1 + phaseProgress * w.phase2;
 
-  if (imgRatio >= 1 && animRatio >= 1 && audioRatio >= 1 && cloudRatio >= 1) {
+  // 云端图片全量下载完成（cloudDone）才允许进入 Phase 3
+  if (imgRatio >= 1 && animRatio >= 1 && audioRatio >= 1 && this._p2.cloudDone) {
     this._progress = w.phase1 + w.phase2;
     this._startPhase3();
   }
@@ -373,7 +409,7 @@ LoadingManager.prototype._finish = function () {
 
   // 将云端图片缓存注入 SkinLoader
   SkinLoader.setCloudCache(this._cloudImageCache || {});
-  console.log('[LoadingManager] SkinLoader 云端缓存注入完成: ' + Object.keys(this._cloudImageCache || {}).length + ' 项');
+  console.log('[cloud][LoadingManager] SkinLoader 云端缓存注入完成: ' + Object.keys(this._cloudImageCache || {}).length + ' 项');
 
   console.log('[LoadingManager] === 全部资源加载完成 ===');
 

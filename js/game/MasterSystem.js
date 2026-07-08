@@ -47,7 +47,7 @@ MasterSystem.prototype.fetchMyOpenId = function () {
   var self = this;
   require('../cloud.js').getOpenId()
     .then(function (openid) { self._myOpenId = openid; })
-    .catch(function (err) { console.warn('[关主] getOpenId fail:', err); });
+    .catch(function (err) { console.warn('[cloud][关主] getOpenId fail:', err); });
 };
 
 /** 异步拉取关主信息 + 加载头像（含 loading 防重入） */
@@ -66,7 +66,7 @@ MasterSystem.prototype.fetchMaster = function () {
       }
     })
     .catch(function (err) {
-      console.warn('[关主] _fetchLevelMaster fail:', err);
+      console.warn('[cloud][关主] _fetchLevelMaster fail:', err);
       self._levelMaster = null;
       self._masterLoading = false;
     });
@@ -133,7 +133,7 @@ MasterSystem.prototype.tryClaim = function (params) {
       .catch(function (err) {
         self._masterClaimPending = false;
         if (params.onClaimNotGranted) params.onClaimNotGranted();
-        console.warn('[关主] claimLevelMaster 失败:', err);
+        console.warn('[cloud][关主] claimLevelMaster 失败:', err);
       });
   });
 };

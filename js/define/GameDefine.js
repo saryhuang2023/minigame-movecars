@@ -299,7 +299,7 @@ var GAME = {
     MAX: 5,                      // 最大个数
     COST_PER_GAME: 1,            // 每局消耗个数
     AD_GAIN: 1,                  // 看广告领体力个数
-    RECOVERY_INTERVAL: 20 * 1000,  // 自然恢复 1 个所需毫秒（1 小时）
+    RECOVERY_INTERVAL: 3600 * 1000,  // 自然恢复 1 个所需毫秒（生产值：1 小时 = 3600s）
     AD_DAILY_LIMIT: 10,           // 每天看广告领体力上限
     ICON_SIZE: 24,               // 图标显示尺寸
     ICON_GAP: 4,                 // 图标间距

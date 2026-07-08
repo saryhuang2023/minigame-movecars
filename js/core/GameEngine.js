@@ -236,12 +236,12 @@ class GameEngine {
   }
 
   _syncFromCloud() {
-    console.log('[LOG] === _syncFromCloud 开始，准备拉取玩家数据 ===');
+    console.log('[cloud] === _syncFromCloud 开始，准备拉取玩家数据 ===');
     var self = this;
     cloud.getPlayerData().then(function(res) {
-      console.log('[LOG] cloud.getPlayerData 成功回调，res.code=' + (res && res.code) + '，有data=' + !!(res && res.data));
+      console.log('[cloud] cloud.getPlayerData 成功回调，res.code=' + (res && res.code) + '，有data=' + !!(res && res.data));
       if (!res || res.code !== 0 || !res.data) {
-        console.log('[Cloud] 无云端存档或拉取失败，沿用本地数据');
+        console.log('[cloud] 无云端存档或拉取失败，沿用本地数据');
         self._checkAutoStart();
         return;
       }
@@ -251,7 +251,7 @@ class GameEngine {
       var localLI = (localRaw !== '' && localRaw !== undefined && localRaw !== null)
         ? parseInt(localRaw, 10) : -1;
       if (typeof cloudLI === 'number' && cloudLI > localLI) {
-        console.log('[Cloud] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
+        console.log('[cloud] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
         wx.setStorageSync('lastLevelIndex', cloudLI);
       }
       // 合并 crowns：云端有的且本地没有则补本地
@@ -266,12 +266,12 @@ class GameEngine {
         }
       }
       if (crownMerged > 0) {
-        console.log('[Cloud] 合并 crowns: ' + crownMerged + ' 条');
+        console.log('[cloud] 合并 crowns: ' + crownMerged + ' 条');
       }
       // 金币：云端权威覆盖本地（不再取较大值，以服务器结算为准）
       if (typeof cloudData.gold === 'number') {
         GoldSystem.setGold(cloudData.gold);
-        console.log('[LOG] 云端金币同步: ' + cloudData.gold);
+        console.log('[cloud] 云端金币同步: ' + cloudData.gold);
       }
       // 还原已领取金币的关卡记录
       if (cloudData.goldClaimedLevels && Array.isArray(cloudData.goldClaimedLevels)) {
@@ -291,11 +291,11 @@ class GameEngine {
           });
         }
       }
-      console.log('[LOG] 云端数据同步完成 → 调用 _checkAutoStart');
+      console.log('[cloud] 云端数据同步完成 → 调用 _checkAutoStart');
       self._checkAutoStart();
     }).catch(function(err) {
-      console.warn('[Cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
-      console.log('[LOG] cloud.getPlayerData 失败，走 catch → 调用 _checkAutoStart');
+      console.warn('[cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
+      console.log('[cloud] cloud.getPlayerData 失败，走 catch → 调用 _checkAutoStart');
       self._checkAutoStart();
     });
   }
@@ -303,35 +303,35 @@ class GameEngine {
   // 异步从云端拉取关卡范围和章节配置（fire-and-forget，不阻塞启动）
   _syncCloudLevels() {
     var self = this;
-    console.log('[LOG] _syncCloudLevels 开始拉取云端关卡范围...');
+    console.log('[cloud] _syncCloudLevels 开始拉取云端关卡范围...');
     // 拉取云端已发布关卡范围
     cloud.listLevels().then(function(range) {
-      console.log('[LOG] _syncCloudLevels cloud.listLevels() 返回: range=' + JSON.stringify(range)
+      console.log('[cloud] _syncCloudLevels cloud.listLevels() 返回: range=' + JSON.stringify(range)
         + ', typeof range.maxLevel=' + (range ? typeof range.maxLevel : 'N/A'));
       if (range && range.maxLevel > 0) {
         var prevMax = databus._cloudMaxLevel;
         databus._cloudMaxLevel = range.maxLevel;
-        console.log('[LOG] _syncCloudLevels 云端关卡范围就绪: ' + range.minLevel + '~' + range.maxLevel
+        console.log('[cloud] _syncCloudLevels 云端关卡范围就绪: ' + range.minLevel + '~' + range.maxLevel
           + ' (之前 _cloudMaxLevel=' + prevMax + ')');
         // 云端范围比已构建的大 → 需要重建
         if (prevMax === undefined || range.maxLevel > prevMax) {
-          console.log('[LOG] _syncCloudLevels 云端范围增大 (prevMax=' + prevMax + '→' + range.maxLevel + '), 当前 gameState=' + databus.gameState);
+          console.log('[cloud] _syncCloudLevels 云端范围增大 (prevMax=' + prevMax + '→' + range.maxLevel + '), 当前 gameState=' + databus.gameState);
           if (databus.gameState === 'levelSelect') {
-            console.log('[LOG] _syncCloudLevels 立即重建关卡选择列表');
+            console.log('[cloud] _syncCloudLevels 立即重建关卡选择列表');
             self.levelSelect.loadProjectLevels();
-            self.levelSelect._buildChapterSections();
+            self.levelSelect._buildSections();
             self.levelSelect._setupUI();
             self.levelSelect._needsRebuild = false;
           } else {
-            console.log('[LOG] _syncCloudLevels 标记脏，下次进入关卡选择时重建');
+            console.log('[cloud] _syncCloudLevels 标记脏，下次进入关卡选择时重建');
             self.levelSelect._needsRebuild = true;
           }
         }
       } else {
-        console.log('[LOG] _syncCloudLevels 云端无已发布关卡或无数据 (range=' + JSON.stringify(range) + ')');
+        console.log('[cloud] _syncCloudLevels 云端无已发布关卡或无数据 (range=' + JSON.stringify(range) + ')');
       }
     }).catch(function(err) {
-      console.warn('[Cloud] listLevels 异常（非阻塞）:', err && err.message);
+      console.warn('[cloud] listLevels 异常（非阻塞）:', err && err.message);
     });
   }
 
@@ -393,7 +393,7 @@ class GameEngine {
     var localLI = (localRaw !== '' && localRaw !== undefined && localRaw !== null)
       ? parseInt(localRaw, 10) : -1;
     if (typeof cloudLI === 'number' && cloudLI > localLI) {
-      console.log('[GameEngine] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
+      console.log('[cloud][GameEngine] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
       wx.setStorageSync('lastLevelIndex', cloudLI);
     }
 
@@ -409,13 +409,13 @@ class GameEngine {
       }
     }
     if (crownMerged > 0) {
-      console.log('[GameEngine] 合并 crowns: ' + crownMerged + ' 条');
+      console.log('[cloud][GameEngine] 合并 crowns: ' + crownMerged + ' 条');
     }
 
     // 金币：取云端和本地最大值（不覆盖）
     if (typeof cloudData.gold === 'number') {
       var merged = GoldSystem.mergeFromCloud(cloudData.gold);
-      console.log('[GameEngine] 云端金币合并: cloud=' + cloudData.gold + ' local=' + GoldSystem.getGold() + ' → ' + merged);
+      console.log('[cloud][GameEngine] 云端金币合并: cloud=' + cloudData.gold + ' local=' + GoldSystem.getGold() + ' → ' + merged);
     }
 
     // 还原已领取金币的关卡记录
@@ -446,13 +446,13 @@ class GameEngine {
     if (range && range.maxLevel > 0) {
       var prevMax = databus._cloudMaxLevel;
       databus._cloudMaxLevel = range.maxLevel;
-      console.log('[GameEngine] 预加载云端关卡范围: ' + range.minLevel + '~' + range.maxLevel
+      console.log('[cloud][GameEngine] 预加载云端关卡范围: ' + range.minLevel + '~' + range.maxLevel
         + ' (之前=' + prevMax + ')');
 
       if (prevMax === undefined || range.maxLevel > prevMax) {
         if (databus.gameState === 'levelSelect') {
           this.levelSelect.loadProjectLevels();
-          this.levelSelect._buildChapterSections();
+          this.levelSelect._buildSections();
           this.levelSelect._setupUI();
           this.levelSelect._needsRebuild = false;
         } else {
@@ -460,7 +460,7 @@ class GameEngine {
         }
       }
     } else {
-      console.log('[GameEngine] 无预加载云端关卡范围');
+      console.log('[cloud][GameEngine] 无预加载云端关卡范围');
     }
   }
 

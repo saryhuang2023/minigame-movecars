@@ -6,11 +6,11 @@ try {
   var Theme = require('./define/GameDefine.js').THEME;
   console.log('[Main] cloud 模块加载完成');
   cloud.initCloud();
-  console.log('[Main] 云开发初始化完成');
+  console.log('[cloud][Main] 云开发初始化完成');
 
   console.log('[Main] 开始加载音频系统...');
   var AudioDefine = require('./audio/AudioDefine.js');
-  AudioDefine.setCloudPrefix('cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/audio/sfx/escape_1.mp3');
+  AudioDefine.setCloudPrefix('cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/audio/sfx/escape_1.mp3');
   console.log('[LOG] main.js — after setCloudPrefix: CLOUD_PREFIX=' + AudioDefine.CLOUD_PREFIX + ' isCloudEnabled=' + AudioDefine.isCloudEnabled());
   var audio = require('./audio/AudioManager.js');
   console.log('[Main] AudioManager 加载完成');

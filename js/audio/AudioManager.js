@@ -47,12 +47,12 @@ function init(onProgress) {
 
   _ensureInit();
 
-  console.log('[LOG] AudioManager.init() — calling loader.startDownload(), isCloudEnabled=' + config.isCloudEnabled() + ' wx.cloud=' + !!wx.cloud + ' prefix=' + config.CLOUD_PREFIX);
+  console.log('[cloud][AudioManager] AudioManager.init() — calling loader.startDownload(), isCloudEnabled=' + config.isCloudEnabled() + ' wx.cloud=' + !!wx.cloud + ' prefix=' + config.CLOUD_PREFIX);
   _initPromise = loader.startDownload(function (progress, loaded, total) {
     if (onProgress) onProgress(progress);
-    console.log('[Audio] download progress:', Math.round(progress * 100) + '%', loaded + '/' + total);
+    console.log('[cloud][Audio] download progress:', Math.round(progress * 100) + '%', loaded + '/' + total);
   }).then(function () {
-    console.log('[Audio] all files ready');
+    console.log('[cloud][Audio] all files ready');
   }).catch(function (err) {
     console.warn('[Audio] download error:', err);
   });

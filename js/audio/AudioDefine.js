@@ -29,16 +29,15 @@ function isCloudEnabled() {
   return !!CLOUD_PREFIX;
 }
 
-// ===== 版本检测 =====
-var AUDIO_VERSION_KEY = 'audio_cache_version';
-var VERSION_FILE = 'version.txt';
+// ===== 指纹（MD5 内容指纹，与图片统一机制）=====
+var AUDIO_FP_KEY = 'audio_cache_fingerprints';
 
 // ===== 本地路径 =====
 var CACHE_DIR = wx.env.USER_DATA_PATH + '/audio/';
 var SFX_CACHE_DIR = CACHE_DIR + 'sfx/';
 var MUSIC_CACHE_DIR = CACHE_DIR + 'music/';
-var LOCAL_SFX_DIR = 'assets/audio/sfx/';
-var LOCAL_MUSIC_DIR = 'assets/audio/music/';
+// 注：音频是纯云资源（需求1 规定 assets/ 只含本地只读资源、绝不打包音频；需求5 音频纳入云版本管理）。
+// 主包 assets/audio/ 目录不存在，故没有 LOCAL_SFX_DIR / LOCAL_MUSIC_DIR，查找链只有「缓存」与「云下载」两层。
 
 // ===== 语音预算 =====
 var MAX_VOICES = 8;
@@ -59,11 +58,13 @@ var SFX_EVENTS = {
   'coin_fly':     { files: ['coin_fly.mp3'],         priority: PRIORITY.SFX },
   'coin_get':     { files: ['coin_get.mp3'],         priority: PRIORITY.SFX },
   'coin_roll':    { files: ['coin_roll.mp3'],        priority: PRIORITY.SFX },
-  'victory':      { files: ['victory.mp3'],          priority: PRIORITY.VICTORY },
+  // 注：victory.mp3 / stamina_add.mp3 未上传到云端（cloud-src 无对应文件），
+  // 这里改为引用云端实际存在的音频，保证 loading 全量下载后可用。
+  'victory':      { files: ['rewards.mp3'],          priority: PRIORITY.VICTORY },
   'rewards':      { files: ['rewards.mp3'],          priority: PRIORITY.SFX },
   'button_click': { files: ['button_click.mp3'],     priority: PRIORITY.UI },
   'hint_reveal':  { files: ['hint_reveal.mp3'],      priority: PRIORITY.ACTION },
-  'stamina_add':  { files: ['stamina_add.mp3'],      priority: PRIORITY.UI },
+  'stamina_add':  { files: ['button_click.mp3'],     priority: PRIORITY.UI },
   'rotate_loop':  { files: ['rotate_loop.mp3'],      priority: PRIORITY.AMBIENT },
 };
 
@@ -83,12 +84,9 @@ module.exports = {
   CACHE_DIR: CACHE_DIR,
   SFX_CACHE_DIR: SFX_CACHE_DIR,
   MUSIC_CACHE_DIR: MUSIC_CACHE_DIR,
-  LOCAL_SFX_DIR: LOCAL_SFX_DIR,
-  LOCAL_MUSIC_DIR: LOCAL_MUSIC_DIR,
 
-  // 版本检测
-  AUDIO_VERSION_KEY: AUDIO_VERSION_KEY,
-  VERSION_FILE: VERSION_FILE,
+  // 指纹
+  AUDIO_FP_KEY: AUDIO_FP_KEY,
 
   // 音频参数
   MAX_VOICES: MAX_VOICES,
