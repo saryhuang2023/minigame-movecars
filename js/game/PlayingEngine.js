@@ -138,6 +138,7 @@ class PlayingEngine {
     this._showBoardBounds = false;    // 调试框：棋盘可用区域
     this._showHintCommon = true;     // 提示按钮可见（通关后隐藏）
     this._goldSettled = false;        // 通关结算已入库（入账后不再累积 _levelAccumulatedGold）
+    this._isFirstGoldClear = false;    // 进入关卡时计算：本关是否首通（决定飞金币 + 金币发放）
     this._settlementTriggered = false; // 结算已触发（防重入）
     this._settlementTimer = null;      // 2.5s 兜底定时器
 
@@ -197,6 +198,11 @@ class PlayingEngine {
     this._totalPigsInLevel = 0;
     this._coinFlyEffect = new CoinFlyEffect();  // 重置飞行中动画
     this._goldSettled = false;
+    // 首通判定（与 _markCleared 金币奖励逻辑同源）：本关从未获得过金币奖励才飞金币。
+    // 用此标志约束「小猪逃脱飞金币」动画，避免已通关关卡重玩仍飞金币（金币不再发放）。
+    var liRaw = wx.getStorageSync('lastLevelIndex');
+    var savedLi = (liRaw !== '' && liRaw !== undefined && liRaw !== null) ? parseInt(liRaw, 10) : -1;
+    this._isFirstGoldClear = databus.returnState !== 'editor' && databus.currentLevelIndex > savedLi;
     this._settlementTriggered = false;
     this._lastGoldLog = -1;  // 诊断日志去重用
     // 清除兜底定时器
@@ -1322,8 +1328,8 @@ class PlayingEngine {
       this._hint.onPigExited(pigId);
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
 
-      // 金币磁吸飞行：非试玩模式且本关未领过金币，每推出一只猪 → 等猪飞到屏幕边缘后再从边缘弹出金币
-      if (databus.returnState !== 'editor' && this._uiGoldWidget && !GoldSystem.isSettled(this.levelName)) {
+      // 金币磁吸飞行：仅「首通本关」才飞金币（与金币发放逻辑一致），重玩已通关关卡不再飞金币
+      if (databus.returnState !== 'editor' && this._uiGoldWidget && this._isFirstGoldClear) {
         var tailHole = this.gp.holes[pig.tailIndex];
         if (tailHole) {
           var tailSX = this.gp.boardOffsetX + tailHole.x;
@@ -1473,10 +1479,10 @@ class PlayingEngine {
       console.log('[奖杯] 未获得 ' + this.levelName + ' ' + this.steps + '/' + (this._crownSteps || '?') + '步');
     }
     // 金币奖励：试玩模式不触发；首次通关本关 → 计算奖励金额
-    //   首次判定：currentIndex >= 旧 lastLevelIndex（即玩家未打过此关）
+    //   首通判定与「飞金币」动画同源（this._isFirstGoldClear，进入关卡时计算）
     this._goldAmount = 0;
     this._stepBonusRemaining = 0;
-    if (!isTrial && currentIdx >= savedIdx) {
+    if (this._isFirstGoldClear) {
       var reward = GoldSystem.calculateReward(this._totalPigsInLevel);
       if (this._earnedCrown) {
         var stepBonus = Math.max(0, this._crownSteps - this.steps);

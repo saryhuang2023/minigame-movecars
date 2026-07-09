@@ -60,7 +60,11 @@ LevelSelectEngine.prototype.activate = function () {
     if (this._sections.length > 0) {
       var chIdx = this._getCurrentChapterIdx();
       var sy = 0;
-      for (var i = 0; i < chIdx; i++) {
+      // 按 section 数组下标遍历（始终有效），用 section.chIdx 比对当前章节。
+      // 注意：_buildSections 会跳过空章节（levelList 为空），故 _sections 长度可能
+      // 少于章节数，不能用章节下标 chIdx 直接作数组下标，否则越界报 undefined.getHeght。
+      for (var i = 0; i < this._sections.length; i++) {
+        if (this._sections[i].chIdx >= chIdx) break;
         sy += this._sections[i].getHeight() + CARD_GAP;
       }
       this._scrollY = Math.max(0, sy - 40);
