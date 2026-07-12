@@ -5,7 +5,7 @@
     "oddCols": 3,
     "rows": 5
   },
-  "crownSteps": 12,
+  "stepBonusThreshold": 12,
   "pigs": [
     {
       "angle": 270,

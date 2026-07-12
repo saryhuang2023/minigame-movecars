@@ -12,7 +12,7 @@ exports.main = async (event, context) => {
     const { versions, compress } = event;
 
     const res = await db.collection('levels')
-      .field({ _id: true, name: true, data: true, version: true, published: true, crownSteps: true })
+      .field({ _id: true, name: true, data: true, version: true, published: true, stepBonusThreshold: true })
       .limit(500)
       .get();
 
@@ -35,7 +35,7 @@ exports.main = async (event, context) => {
         _id: level._id,
         version: serverVersion,
         published: level.published === true,
-        crownSteps: level.crownSteps || 0
+        stepBonusThreshold: level.stepBonusThreshold || level.crownSteps || 0
       };
     }
 

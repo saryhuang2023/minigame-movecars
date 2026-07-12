@@ -53,7 +53,8 @@
   "simulatorPluginLibVersion": {},
   "packOptions": {
     "ignore": [
-      { "type": "folder", "value": "cloud-src" }
+      { "type": "folder", "value": "cloud-src" },
+      { "type": "folder", "value": "tools" }
     ],
     "include": [
       { "type": "file", "value": "assets/font/dabaotaotao.ttf" }

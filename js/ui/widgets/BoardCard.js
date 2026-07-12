@@ -11,8 +11,9 @@ var Theme = require('../../define/GameDefine.js').THEME;
  * @param {number} opts.w - 宽度
  * @param {number} opts.h - 高度
  */
-function BoardCard(opts) {
-  UIComponent.call(this, {
+class BoardCard extends UIComponent {
+  constructor(opts) {
+  super({
     x: opts.x, y: opts.y, w: opts.w, h: opts.h, zIndex: opts.zIndex || 0,
   });
 
@@ -33,10 +34,10 @@ function BoardCard(opts) {
       inset: 4,
     },
   });
+
+}
 }
 
-BoardCard.prototype = Object.create(UIComponent.prototype);
-BoardCard.prototype.constructor = BoardCard;
 
 BoardCard.prototype.updatePosition = function (x, y, w, h) {
   this.setBounds(x, y, w, h);

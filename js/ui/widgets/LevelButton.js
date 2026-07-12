@@ -1,5 +1,4 @@
 // 关卡按钮 — 三种状态：locked / unlocked / cleared
-// cleared 分两种奖杯：leftStep_1.png（获得）/ leftStep_2.png（未获得）
 // 外框 64×37, 内衬 60×33, 统一 radius 25
 
 var Theme = require('../../define/GameDefine.js').THEME;
@@ -8,11 +7,6 @@ var AssetPreloader = require('../AssetPreloader.js');
 var OUTER_W = 64, OUTER_H = 37;
 var INNER_W = 60, INNER_H = 33;
 var RADIUS = 25;
-var TROPHY_KEY_CROWN = 'leftStep';
-var TROPHY_KEY_NO_CROWN = 'leftStep_2';
-var TROPHY_W = 24, TROPHY_H = 22;
-var TROPHY_DX = 42;   // 相对按钮左侧
-var TROPHY_DY = -10;  // 按钮上方
 
 function LevelButton(opts) {
   this.x = opts.x || 0;
@@ -20,7 +14,6 @@ function LevelButton(opts) {
   this.levelId = opts.levelId || 0;
   this.label = opts.label || '';
   this.state = opts.state || 'locked';     // 'locked' | 'unlocked' | 'cleared'
-  this.hasCrown = !!opts.hasCrown;         // cleared 状态下是否获得奖杯
   this.onClick = opts.onClick || null;
 }
 
@@ -95,21 +88,6 @@ LevelButton.prototype.render = function (ctx) {
   }
   ctx.fillText(this.label, x + OUTER_W / 2, y + OUTER_H / 2);
   ctx.globalAlpha = 1;
-
-  // 4. 奖杯（通关态才有）
-  if (this.state === 'cleared') {
-    var trophyKey = this.hasCrown ? TROPHY_KEY_CROWN : TROPHY_KEY_NO_CROWN;
-    var trophyImg = AssetPreloader.get(trophyKey);
-    if (trophyImg && AssetPreloader.isReady(trophyKey)) {
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-      ctx.shadowBlur = 5;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-      ctx.drawImage(trophyImg, x + TROPHY_DX, y + TROPHY_DY, TROPHY_W, TROPHY_H);
-      ctx.restore();
-    }
-  }
 };
 
 function _roundRect(ctx, x, y, w, h, r) {

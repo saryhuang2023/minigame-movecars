@@ -81,8 +81,9 @@ function _drawContinueBtnBg(ctx, x, y, w, h) {
  * @param {Function} opts.onExit - 退出按钮回调
  * @param {Function} opts.onDoubleGold - 双倍金币按钮回调
  */
-function VictoryPopup(opts) {
-  UIComponent.call(this, {
+class VictoryPopup extends UIComponent {
+  constructor(opts) {
+  super({
     x: 0, y: 0,
     w: SCREEN_WIDTH, h: SCREEN_HEIGHT,
     zIndex: opts.zIndex || 4,
@@ -94,7 +95,6 @@ function VictoryPopup(opts) {
   this._returnState = 'menu';
   this._goldAmount = 0;
   this._showGold = false;
-  this._isLastLevel = false;
   this._goldClaimed = false;  // 双倍金币是否已领取
 
   // 通用按钮
@@ -135,10 +135,10 @@ function VictoryPopup(opts) {
   this._goldRollSoundLast = 0;
   this._GOLD_ROLL_DURATION = 500;        // ms
   this._GOLD_ROLL_SOUND_INTERVAL = 100;  // ms 循环播放 coin_roll
+
+}
 }
 
-VictoryPopup.prototype = Object.create(UIComponent.prototype);
-VictoryPopup.prototype.constructor = VictoryPopup;
 
 VictoryPopup.prototype.setAnimator = function (animator) {
   this._animator = animator;
@@ -147,14 +147,11 @@ VictoryPopup.prototype.setAnimator = function (animator) {
 VictoryPopup.prototype.setData = function (data) {
   this._steps = data.steps || 0;
   this._returnState = data.returnState || 'menu';
-  // 双倍金币已领取 → _goldAmount 由 markGoldClaimed 管理，防止 _syncUIData 回写旧值打断翻滚
+  // 双倍金币已领取 → 标记 _goldClaimed，阻止 _syncUIData 回写旧值打断翻滚
   if (!this._goldClaimed) {
     this._goldAmount = data.goldAmount || 0;
   }
   this._showGold = !!data.showGold;
-  this._isLastLevel = !!data.isLastLevel;
-  this._masterSteps = data.masterSteps != null ? data.masterSteps : null;
-  this._masterNickname = data.masterNickname || null;
 };
 
 VictoryPopup.prototype.open = function () {
@@ -376,10 +373,6 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  // 红 — 关主步数
-  var redBadgeAnim = _elAnim();
-  _drawBadge(redBadgeAnim, badgeX, py + 161, '#FF7B7B');
-
   // 蓝 — 本关步数
   var blueBadgeAnim = _elAnim();
   _drawBadge(blueBadgeAnim, badgeX, py + 207, '#83DEFF');
@@ -404,10 +397,6 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  // 奖杯（关主）
-  var crownIconAnim = _elAnim();
-  _drawIcon(crownIconAnim, 'master_hat', iconX, py + 157);
-
   // 步数
   var stepIconAnim = _elAnim();
   _drawIcon(stepIconAnim, 'leftStep', iconX, py + 205);
@@ -415,10 +404,6 @@ VictoryPopup.prototype.render = function (ctx) {
   // 金币
   var coinIconAnim = _elAnim();
   _drawIcon(coinIconAnim, 'coin', iconX, py + 249);
-
-  // 关主步数（标签）
-  var masterAnim = _elAnim();
-  _drawInfoText(masterAnim, '关主步数', infoX, py + 165);
 
   // 本关步数（标签）
   var stepsAnim = _elAnim();
@@ -442,17 +427,11 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  // 关主步数数据（top: 168px）
-  if (this._masterSteps != null) {
-      var masterDataAnim = _elAnim();
-    _drawDataText(masterDataAnim, this._masterSteps + '步', py + 168);
-  }
-
   // 本关步数数据（top: 214px）
   var myStepsAnim = _elAnim();
   _drawDataText(myStepsAnim, this._steps + '步', py + 214);
 
-  // 获得金币数据（top: 258px）— 双击双倍时翻滚，否则静态 +N
+  // 获得金币数据（top: 212px）— 双击双倍时翻滚，否则静态 +N
   var myGoldAnim = _elAnim();
 
   // 双倍翻滚中循环播放 coin_roll 音效
@@ -495,7 +474,7 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.translate(-cx, -cy);
     this._continueBtn.x = CONT_BTN_X;
     this._continueBtn.y = CONT_BTN_Y;
-    this._continueBtn.label = this._isLastLevel ? '返回' : '继续';
+    this._continueBtn.label = '返回';
     this._continueBtn.render(ctx);
     ctx.restore();
   };

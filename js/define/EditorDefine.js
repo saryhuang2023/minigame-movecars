@@ -18,7 +18,7 @@ var EDITOR = {
   DEFAULT_LEVEL: {
     board: { rows: 5, oddCols: 3, boardWidth: 375, boardRate: 2.74 },
     pigs: [],
-    crownSteps: 0,
+    stepBonusThreshold: 0,
     ready: 0,
     version: 0,
   },
@@ -38,7 +38,6 @@ var EDITOR = {
     TPL_BTN: [68, 32],
     PIG:     66,
     INFO_BTN: 66,
-    CROWN:   54,
     LVL_BTN: 72,
     OP:      38,
     SYNC:    50,

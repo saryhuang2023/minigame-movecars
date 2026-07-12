@@ -22,8 +22,9 @@ var TEXT_X = BG_X + BG_W / 2;  // 金币数字居中
 var TEXT_Y = 98;          // 金币数字 top（baseline）
 var TEXT_SIZE = 16;       // 字体大小
 
-function GoldWidget(opts) {
-  UIComponent.call(this, {
+class GoldWidget extends UIComponent {
+  constructor(opts) {
+  super({
     x: opts.x || 0,
     y: opts.y || 0,
     w: opts.w || COIN_X + COIN_SIZE + 16,
@@ -40,7 +41,7 @@ function GoldWidget(opts) {
   this._rollStartTime = 0;
   this._ROLL_DURATION = 800;
 
-  // 呼吸动画（跟 CrownPigWidget 一致）
+  // 呼吸动画（金币图标脉冲）
   this._breatheStart = 0;
   this._breatheActive = false;
   this._BREATHE_DURATION = 400;
@@ -58,10 +59,10 @@ function GoldWidget(opts) {
   this._CELEBRATE_DURATION = 800;   // ms，加长让玩家看清
   this._CELEBRATE_AMPLITUDE = 0.30; // 图标 +30% 缩放
   this._CELEBRATE_GLOW_PEAK = 0.85; // 光晕更亮
+
+}
 }
 
-GoldWidget.prototype = Object.create(UIComponent.prototype);
-GoldWidget.prototype.constructor = GoldWidget;
 
 /** 设置显示数字（带翻滚动画） */
 GoldWidget.prototype.setData = function (gold) {
@@ -113,7 +114,7 @@ GoldWidget.prototype.forceSet = function (gold) {
   this._rollActive = false;
 };
 
-/** 触发呼吸动画（单次缓慢呼吸，纯 UI 反馈，跟奖杯一致） */
+/** 触发呼吸动画（单次缓慢呼吸，纯 UI 反馈） */
 GoldWidget.prototype.triggerBreathe = function () {
   this._breatheStart = Date.now();
   this._breatheActive = true;
@@ -281,6 +282,7 @@ GoldWidget.prototype.render = function (ctx) {
   // === 金币数字（庆祝期间放大 + 金橙渐变色） ===
   var text = String(this._getRollDisplay());
   var numScale = celeb.num;
+  ctx.font = TEXT_SIZE + 'px ' + Theme.font.family;   // 必须先设字体，measureText 才能量对宽度
   ctx.save();
   if (numScale !== 1) {
     var textCX = baseX + TEXT_X + ctx.measureText(text).width / 2;
@@ -289,7 +291,6 @@ GoldWidget.prototype.render = function (ctx) {
     ctx.scale(numScale, numScale);
     ctx.translate(-textCX, -textCY);
   }
-  ctx.font = TEXT_SIZE + 'px ' + Theme.font.family;
   if (celeb.glow > 0.05) {
     // 庆祝色：从白渐变到金橙
     var r = Math.round(255);

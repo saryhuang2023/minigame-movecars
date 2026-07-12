@@ -21,23 +21,23 @@ exports.main = async (event, context) => {
 
     if (exist.data.length === 0) {
       // 新增（首次上传）：默认未发布
-      const crownSteps = (typeof data.crownSteps === 'number') ? data.crownSteps : 0;
+      const stepBonusThreshold = (typeof data.stepBonusThreshold === 'number') ? data.stepBonusThreshold : (typeof data.crownSteps === 'number' ? data.crownSteps : 0);
       data.version = 1;
       var pub = hasPublishedParam ? !!published : false;
       const res = await db.collection('levels').add({
         data: {
-          _openid: OPENID, name, data, pigCount, crownSteps,
+          _openid: OPENID, name, data, pigCount, stepBonusThreshold,
           version: 1, published: pub,
           createdAt: now, updatedAt: now
         }
       });
-      return { code: 0, msg: 'created', id: res._id, version: 1, crownSteps };
+      return { code: 0, msg: 'created', id: res._id, version: 1, stepBonusThreshold };
     }
 
     // 已存在 — 版本号检查（乐观并发）
     const doc = exist.data[0];
     const serverVersion = (typeof doc.version === 'number') ? doc.version : 0;
-    // 深度合并：以客户端 data 为准全覆盖，避免旧文档缺字段（如 crownSteps）
+    // 深度合并：以客户端 data 为准全覆盖，避免旧文档缺字段（如 stepBonusThreshold）
     const mergedData = Object.assign({}, doc.data, data);
     mergedData.version = serverVersion + 1;
 
@@ -51,13 +51,13 @@ exports.main = async (event, context) => {
 
     // 版本匹配 — 原子条件更新
     const newVersion = serverVersion + 1;
-    const crownSteps = (typeof data.crownSteps === 'number') ? data.crownSteps : 0;
+    const stepBonusThreshold = (typeof data.stepBonusThreshold === 'number') ? data.stepBonusThreshold : (typeof data.crownSteps === 'number' ? data.crownSteps : 0);
     const whereCond = serverVersion > 0
       ? { _id: doc._id, version: serverVersion }
       : { _id: doc._id };
     
     // published: null/undefined → 保持现有值不变
-    var updateData = { data: mergedData, pigCount, crownSteps, version: newVersion, updatedAt: now };
+    var updateData = { data: mergedData, pigCount, stepBonusThreshold, version: newVersion, updatedAt: now };
     if (hasPublishedParam) updateData.published = !!published;
     
     const result = await db.collection('levels')
@@ -69,7 +69,7 @@ exports.main = async (event, context) => {
       return { code: 2, msg: 'conflict', serverVersion };
     }
 
-    return { code: 0, msg: 'updated', id: doc._id, version: newVersion, crownSteps };
+    return { code: 0, msg: 'updated', id: doc._id, version: newVersion, stepBonusThreshold };
   } catch (err) {
     return { code: -1, msg: err.message };
   }

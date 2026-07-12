@@ -16,9 +16,10 @@ var Theme = require('../../define/GameDefine.js').THEME;
  * @param {string} [opts.textColor] - 文字颜色（默认用 borderColor）
  * @param {Function} [opts.onClick] - 点击回调
  */
-function RectButton(opts) {
+class RectButton extends UIComponent {
+  constructor(opts) {
   opts = opts || {};
-  UIComponent.call(this, {
+  super({
     x: opts.x || 0,
     y: opts.y || 0,
     w: opts.w || Theme.button.defaultW,
@@ -48,10 +49,10 @@ function RectButton(opts) {
     self._pressAnim.release();
   };
   if (opts.onClick) this.onClick = opts.onClick;
+
+}
 }
 
-RectButton.prototype = Object.create(UIComponent.prototype);
-RectButton.prototype.constructor = RectButton;
 
 RectButton.prototype.setDisabled = function (disabled) {
   this.disabled = !!disabled;

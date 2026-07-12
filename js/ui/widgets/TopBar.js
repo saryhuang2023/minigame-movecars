@@ -18,8 +18,9 @@ var PADDING = Theme.layout.padding || 16;
  * @param {Object} opts.buttonPress - ButtonPress 实例（用于按压缩放）
  * @param {Function} opts.onBack - 返回按钮点击回调
  */
-function TopBar(opts) {
-  UIComponent.call(this, {
+class TopBar extends UIComponent {
+  constructor(opts) {
+  super({
     x: opts.x || 0,
     y: opts.y || 0,
     w: opts.w || 375,
@@ -37,10 +38,10 @@ function TopBar(opts) {
   this._breatheActive = false;
   this._BREATHE_DURATION = 400;
   this._BREATHE_AMPLITUDE = 0.13;
+
+}
 }
 
-TopBar.prototype = Object.create(UIComponent.prototype);
-TopBar.prototype.constructor = TopBar;
 
 TopBar.prototype.setLevelText = function (text) {
   this.levelText = text;

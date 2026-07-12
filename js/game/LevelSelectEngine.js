@@ -159,12 +159,13 @@ LevelSelectEngine.prototype._buildSections = function () {
     var isCurrent = (chIdx === this._currentChIdx);
     var isFuture = (chIdx > this._currentChIdx);
 
-    // 计算本章奖杯数（当前+之前章节都用同一规则）
-    var chapterCrowns = 0;
+    // 计算本章已通关数（levelId <= lastLevelIndex 即视为通关）
+    var lastIdx = parseInt(wx.getStorageSync('lastLevelIndex'), 10) || 0;
+    var clearedCount = 0;
     for (var ci = start; ci <= end; ci++) {
-      if (wx.getStorageSync('crown_' + ci)) chapterCrowns++;
+      if (ci <= lastIdx) clearedCount++;
     }
-    var unlocked = chapterCrowns >= (ch.unlock_crown_num || 0);
+    var unlocked = clearedCount >= (ch.unlockClearNum || 0);
 
     var section = new ChapterSection({
       chapter: ch,

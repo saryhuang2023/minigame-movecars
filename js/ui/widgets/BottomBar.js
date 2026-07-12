@@ -1,5 +1,5 @@
-// 底部栏 — 提示按钮 + 条件移除按钮
-// PlayingEngine 专用
+// 底部栏 — 提示按钮
+// PlayingEngine 专用（实际按钮已由 CommonButton 接管，此处仅作隐藏兜底）
 // v125: 提示按钮底框改为 Canvas 2D 绘制（3层叠加：白色外框 → 渐变填充+棕色边框 → 内高光），不再加载背景图
 
 var UIComponent = require('../base/UIComponent.js');
@@ -64,20 +64,15 @@ function _drawHintBg(ctx, x, y) {
   _drawBtnBg(ctx, x, y, '#FFD640', '#FF8925', '#FFFF5A', '#D96E00');
 }
 
-// 移除按钮：粉→红，高光肉粉，阴影深红
-function _drawEraseBg(ctx, x, y) {
-  _drawBtnBg(ctx, x, y, '#FE9368', '#FD3919', '#FFCCB6', '#D90000');
-}
-
 /**
  * @param {Object} opts
  * @param {number} opts.cardW - 卡片宽度（对齐用）
  * @param {Object} opts.buttonPress - ButtonPress 实例
  * @param {Function} opts.onHintClick - 提示按钮回调
- * @param {Function} opts.onRemoveClick - 移除按钮回调
  */
-function BottomBar(opts) {
-  UIComponent.call(this, {
+class BottomBar extends UIComponent {
+  constructor(opts) {
+  super({
     x: 0,
     y: SCREEN_HEIGHT - Theme.layout.bottomBarH,
     w: SCREEN_WIDTH,
@@ -87,26 +82,19 @@ function BottomBar(opts) {
 
   this._cardW = opts.cardW;
   this._buttonPress = opts.buttonPress;
-  this._hintActive = false;
   this._hintShowing = false;  // 提示正在展示中（灰化按钮）
   this._hintHidden = false;   // 通关后隐藏提示/移除按钮
   this._currentSteps = 0;
 
   // 回调
   this.onHintClick = opts.onHintClick || function () {};
-  this.onRemoveClick = opts.onRemoveClick || function () {};
 
   // 按钮点击区域（供外部 hitTest 查询）
   this.hintBtnRect = null;
-  this.removeBtnRect = null;
+
+}
 }
 
-BottomBar.prototype = Object.create(UIComponent.prototype);
-BottomBar.prototype.constructor = BottomBar;
-
-BottomBar.prototype.setHintActive = function (active) {
-  this._hintActive = !!active;
-};
 
 BottomBar.prototype.setHintShowing = function (showing) {
   this._hintShowing = !!showing;
@@ -121,7 +109,7 @@ BottomBar.prototype.setCurrentSteps = function (steps) {
 };
 
 /**
- * 覆盖 hitTest，精确检测两个按钮
+ * 覆盖 hitTest，精确检测提示按钮
  */
 BottomBar.prototype.hitTest = function (px, py) {
   if (!this.visible) return false;
@@ -134,14 +122,6 @@ BottomBar.prototype.hitTest = function (px, py) {
     }
   }
 
-  // 移除按钮（仅提示激活时存在）
-  if (this._hintActive && this.removeBtnRect) {
-    var r = this.removeBtnRect;
-    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
-      return true;
-    }
-  }
-
   return false;
 };
 
@@ -150,17 +130,11 @@ BottomBar.prototype.hitTest = function (px, py) {
  */
 BottomBar.prototype.getHitType = function (px, py) {
   // 提示展示中：提示按钮灰化，不可点击
-  if (this._hintShowing && !this._hintActive) return null;
+  if (this._hintShowing) return null;
   if (this.hintBtnRect) {
     var h = this.hintBtnRect;
     if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
       return 'hint';
-    }
-  }
-  if (this._hintActive && this.removeBtnRect) {
-    var r = this.removeBtnRect;
-    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
-      return 'remove';
     }
   }
   return null;
@@ -178,14 +152,13 @@ function _drawLabel(ctx, text, x, y, spacing) {
 }
 
 BottomBar.prototype.render = function (ctx) {
-  // ===== 提示/移除按钮（同位置互斥）=====
+  // ===== 提示按钮（移除功能已删除，仅保留提示）=====
   if (this._hintHidden) return;  // 通关后隐藏
   var hintX = SCREEN_WIDTH - 15 - HINT_W;
   var hintY = SCREEN_HEIGHT - 30 - HINT_H;
 
-  var witchBtn = this._hintActive ? 'remove' : 'hint';
-  var btnScale = this._buttonPress ? this._buttonPress.getScale(witchBtn) : 1;
-  this.hintBtnRect = this.removeBtnRect = { x: hintX, y: hintY, w: HINT_W, h: HINT_H };
+  var btnScale = this._buttonPress ? this._buttonPress.getScale('hint') : 1;
+  this.hintBtnRect = { x: hintX, y: hintY, w: HINT_W, h: HINT_H };
 
   ctx.save();
   ctx.fillStyle = Theme.colors.white;
@@ -204,50 +177,24 @@ BottomBar.prototype.render = function (ctx) {
     ctx.translate(-hintCX, -hintCY);
   }
 
-  // 绘制按钮底框（提示/移除使用不同配色）
-  var offsetY = 0;
-  if (this._hintActive) {
-    _drawEraseBg(ctx, hintX, hintY);
-    offsetY = -8;
-  } else {
-    _drawHintBg(ctx, hintX, hintY);
-  }
+  // 绘制按钮底框（提示配色）
+  _drawHintBg(ctx, hintX, hintY);
 
   // 广告图标
   if (AssetPreloader.isReady('ad_icon')) {
-    ctx.drawImage(AssetPreloader.get('ad_icon'), hintX + 22, hintY + 15 + offsetY, AD_ICON_W, AD_ICON_H);
+    ctx.drawImage(AssetPreloader.get('ad_icon'), hintX + 22, hintY + 15, AD_ICON_W, AD_ICON_H);
   }
 
   // 文字
-  var label = this._hintActive ? '移除!' : '提示!';
-  _drawLabel(ctx, label, hintX + 66, hintY + 19.5 + offsetY, 2);
-
-  // 移除按钮：步数说明文字（底部居中）
-  if (this._hintActive) {
-    ctx.font = '13px ' + Theme.font.family;
-    ctx.fillStyle = '#000000';
-    ctx.strokeStyle = 'transparent';
-    var stepText = '移除增加5步';
-    var textW = ctx.measureText(stepText).width;
-    var stepTextX = hintX + 66 - textW / 2 + 10;  // 水平居中后右移10px
-    var stepTextY = hintY + 63 - 7 - 13;     // bottom: 4px, textH: 13px
-    ctx.fillText(stepText, stepTextX, stepTextY);
-  }
+  _drawLabel(ctx, '提示!', hintX + 66, hintY + 19.5, 2);
 
   // 提示展示中：灰化遮罩
-  if (this._hintShowing && !this._hintActive) {
+  if (this._hintShowing) {
     ctx.fillStyle = 'rgba(180,180,180,0.55)';
     ctx.fillRect(hintX, hintY, HINT_W, HINT_H);
   }
 
   ctx.restore();
-
-  // 互斥：设置正确的点击区域
-  if (this._hintActive) {
-    this.hintBtnRect = null;
-  } else {
-    this.removeBtnRect = null;
-  }
 };
 
 module.exports = BottomBar;

@@ -39,20 +39,6 @@
       "ignore": ["node_modules"]
     },
     {
-      "name": "claimLevelMaster",
-      "runtime": "Nodejs18.15",
-      "handler": "index.main",
-      "timeout": 15,
-      "ignore": ["node_modules"]
-    },
-    {
-      "name": "getLevelInfo",
-      "runtime": "Nodejs18.15",
-      "handler": "index.main",
-      "timeout": 15,
-      "ignore": ["node_modules"]
-    },
-    {
       "name": "getOpenId",
       "runtime": "Nodejs18.15",
       "handler": "index.main",

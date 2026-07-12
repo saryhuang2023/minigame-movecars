@@ -9,9 +9,10 @@ var UIComponent = require('../base/UIComponent.js');
  * @param {number} [opts.thickness=1]
  * @param {number[]} [opts.dash] - 虚线模式 [dashLen, gapLen]
  */
-function Divider(opts) {
+class Divider extends UIComponent {
+  constructor(opts) {
   opts = opts || {};
-  UIComponent.call(this, {
+  super({
     x: opts.x || 0,
     y: opts.y || 0,
     w: opts.w || 0,
@@ -24,10 +25,10 @@ function Divider(opts) {
   this.color = opts.color || 'rgba(0,0,0,0.08)';
   this.thickness = opts.thickness || 1;
   this.dash = opts.dash || null;
+
+}
 }
 
-Divider.prototype = Object.create(UIComponent.prototype);
-Divider.prototype.constructor = Divider;
 
 Divider.prototype.render = function (ctx) {
   ctx.save();

@@ -8,8 +8,9 @@ var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 /**
  * @param {Object} opts
  */
-function ConfirmDialog(opts) {
-  UIComponent.call(this, {
+class ConfirmDialog extends UIComponent {
+  constructor(opts) {
+  super({
     x: 0, y: 0,
     w: SCREEN_WIDTH, h: SCREEN_HEIGHT,
     zIndex: opts.zIndex || 4,
@@ -25,10 +26,10 @@ function ConfirmDialog(opts) {
 
   this.onSave = opts.onSave || function () {};
   this.onSkip = opts.onSkip || function () {};
+
+}
 }
 
-ConfirmDialog.prototype = Object.create(UIComponent.prototype);
-ConfirmDialog.prototype.constructor = ConfirmDialog;
 
 ConfirmDialog.prototype.show = function (title, saveLabel, skipLabel) {
   this._title = title || '';

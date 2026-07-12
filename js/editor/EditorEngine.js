@@ -75,8 +75,8 @@ class EditorEngine {
     this._levelSheetTouchStartScrollY = 0;
     this._levelSheetIsScrolling = false;
 
-    // ===== 金猪阈值 =====
-    this._crownSteps = 0;
+    // ===== 金猪/步数奖励阈值（剩余步数转化为金币）=====
+    this._stepBonusThreshold = 0;
 
     // ===== 碰撞框全局开关 =====
     this._showAllCollisionBoxes = false;
@@ -715,7 +715,7 @@ class EditorEngine {
       }
       return obj;
     });
-    base.crownSteps = this._crownSteps || 0;
+    base.stepBonusThreshold = this._stepBonusThreshold || 0;  // 序列化 stepBonusThreshold 字段
     base.ready = (curData && curData.ready != null) ? curData.ready : 0;
     return base;
   }
@@ -727,7 +727,7 @@ class EditorEngine {
       this.gp.boardWidth = data.board.boardWidth || 375;
       this.gp.boardRate = data.board.boardRate || 2.74;
     }
-    this._crownSteps = (data && data.crownSteps) || 0;
+    this._stepBonusThreshold = (data && data.stepBonusThreshold != null) ? data.stepBonusThreshold : ((data && data.crownSteps) || 0);
     this.gp.pigs = (data.pigs || []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       type: p.type || 'pig', skinId: p.skinId || 0,
@@ -1843,39 +1843,39 @@ class EditorEngine {
     }});
     x += infoBtnW + 12;
 
-    // 金猪输入框
+    // 金猪阈值（剩余步数转化为金币的阈值）
     ctx.fillStyle = '#999';
     ctx.font = '12px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('金猪', x, midY1);
     x += 30;
-    const crownW = 54, crownH = btnH;
+    const stepBonusW = 54, stepBonusH = btnH;
     ctx.strokeStyle = '#FF8C00';
     ctx.lineWidth = 1.5;
-    roundRect(ctx, x, btnY1, crownW, crownH, 6);
+    roundRect(ctx, x, btnY1, stepBonusW, stepBonusH, 6);
     ctx.stroke();
     ctx.fillStyle = '#FF8C00';
     ctx.font = 'bold 13px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    var crownLabel = this._crownSteps > 0 ? String(this._crownSteps) : '无';
-    ctx.fillText(crownLabel, x + crownW / 2, midY1);
+    var stepBonusLabel = this._stepBonusThreshold > 0 ? String(this._stepBonusThreshold) : '无';
+    ctx.fillText(stepBonusLabel, x + stepBonusW / 2, midY1);
     this.bottomBtns.push({
-      x: x, y: btnY1, w: crownW, h: crownH, id: 'btm:crown',
+      x: x, y: btnY1, w: stepBonusW, h: stepBonusH, id: 'btm:stepBonus',
       onClick: (function() {
         var engine = this;
         wx.showModal({
           title: '金猪阈值',
           editable: true,
           placeholderText: '输入数字，0 表示无',
-          content: String(engine._crownSteps),
+          content: String(engine._stepBonusThreshold),
           success: function(res) {
             if (res.confirm && res.content != null) {
               var v = parseInt(res.content, 10);
               if (!isNaN(v)) {
                 v = Math.max(0, Math.min(999, v));
-                engine._crownSteps = v;
+                engine._stepBonusThreshold = v;
                 engine.markCurrentDirty();
               }
             }
@@ -1883,7 +1883,7 @@ class EditorEngine {
         });
       }).bind(this)
     });
-    x += crownW;
+    x += stepBonusW;
 
     // ============================
     // 第二行：关卡管理

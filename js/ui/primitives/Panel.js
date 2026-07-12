@@ -13,9 +13,10 @@ var Theme = require('../../define/GameDefine.js').THEME;
  * @param {Object} [opts.border] - 边框 { color, width }
  * @param {Object} [opts.innerGlow] - 内高光 { color, width, inset }
  */
-function Panel(opts) {
+class Panel extends UIComponent {
+  constructor(opts) {
   opts = opts || {};
-  UIComponent.call(this, {
+  super({
     x: opts.x || 0,
     y: opts.y || 0,
     w: opts.w || 0,
@@ -29,10 +30,10 @@ function Panel(opts) {
   this.fill = opts.fill || Theme.colors.white;
   this.border = opts.border || null;
   this.innerGlow = opts.innerGlow || null;
+
+}
 }
 
-Panel.prototype = Object.create(UIComponent.prototype);
-Panel.prototype.constructor = Panel;
 
 Panel.prototype.render = function (ctx) {
   var x = this.x, y = this.y, w = this.w, h = this.h;

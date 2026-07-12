@@ -31,7 +31,7 @@ var _onConfigUpdated = null;
 // 章节配置缓存（懒加载，读取后常驻）
 var _chaptersCache = null;
 
-// 奖杯计数缓存
+// 通关计数缓存
 var _goldenPigsCache = { count: -1, timestamp: 0 };
 var GOLDEN_PIGS_CACHE_TTL = SkinDefine.SKIN.GOLDEN_PIGS_CACHE_TTL;
 
@@ -238,7 +238,7 @@ var SkinSystem = {
       if (lastLevelIndex < condition.levelReached) allPassed = false;
     }
 
-    // goldenPigs: 玩家已收集至少 N 个奖杯
+    // goldenPigs: 玩家已通关至少 N 关（替代原奖杯数）
     if (allPassed && condition.goldenPigs !== undefined) {
       var pigCount = this._countGoldenPigs();
       if (pigCount < condition.goldenPigs) allPassed = false;
@@ -266,22 +266,17 @@ var SkinSystem = {
     return _chaptersCache;
   },
 
-  /** 统计已获得的奖杯数量（短期缓存，2 秒 TTL） */
+  /** 统计已通关关卡数（替代原奖杯数，短期缓存 2 秒 TTL） */
   _countGoldenPigs: function () {
     var now = Date.now();
     if (_goldenPigsCache.count >= 0 && (now - _goldenPigsCache.timestamp) < GOLDEN_PIGS_CACHE_TTL) {
       return _goldenPigsCache.count;
     }
-    try {
-      var info = wx.getStorageInfoSync();
-      var keys = info.keys || [];
-      var count = 0;
-      for (var i = 0; i < keys.length; i++) {
-        if (keys[i].indexOf('crown_') === 0) count++;
-      }
-      _goldenPigsCache = { count: count, timestamp: now };
-      return count;
-    } catch (e) { return 0; }
+    // 奖杯系统已移除：以 lastLevelIndex 推算已通关关卡数（0-based + 1）
+    var lastLevelIndex = parseInt(wx.getStorageSync('lastLevelIndex'), 10) || 0;
+    var count = lastLevelIndex + 1;
+    _goldenPigsCache = { count: count, timestamp: now };
+    return count;
   },
 
   // ---- 装备管理 ----

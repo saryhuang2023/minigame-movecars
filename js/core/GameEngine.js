@@ -254,20 +254,6 @@ class GameEngine {
         console.log('[cloud] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
         wx.setStorageSync('lastLevelIndex', cloudLI);
       }
-      // 合并 crowns：云端有的且本地没有则补本地
-      var cloudCrowns = cloudData.crowns || [];
-      var crownMerged = 0;
-      for (var c = 0; c < cloudCrowns.length; c++) {
-        var crownKey = 'crown_' + cloudCrowns[c];
-        var localCrown = wx.getStorageSync(crownKey);
-        if (localCrown === '' || localCrown === undefined || localCrown === null) {
-          wx.setStorageSync(crownKey, true);
-          crownMerged++;
-        }
-      }
-      if (crownMerged > 0) {
-        console.log('[cloud] 合并 crowns: ' + crownMerged + ' 条');
-      }
       // 金币：云端权威覆盖本地（不再取较大值，以服务器结算为准）
       if (typeof cloudData.gold === 'number') {
         GoldSystem.setGold(cloudData.gold);
@@ -395,21 +381,6 @@ class GameEngine {
     if (typeof cloudLI === 'number' && cloudLI > localLI) {
       console.log('[cloud][GameEngine] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
       wx.setStorageSync('lastLevelIndex', cloudLI);
-    }
-
-    // crowns：云端有的且本地没有则补本地
-    var cloudCrowns = cloudData.crowns || [];
-    var crownMerged = 0;
-    for (var c = 0; c < cloudCrowns.length; c++) {
-      var crownKey = 'crown_' + cloudCrowns[c];
-      var localCrown = wx.getStorageSync(crownKey);
-      if (localCrown === '' || localCrown === undefined || localCrown === null) {
-        wx.setStorageSync(crownKey, true);
-        crownMerged++;
-      }
-    }
-    if (crownMerged > 0) {
-      console.log('[cloud][GameEngine] 合并 crowns: ' + crownMerged + ' 条');
     }
 
     // 金币：取云端和本地最大值（不覆盖）

@@ -7,17 +7,18 @@ var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 /**
  * @param {Object} opts
  */
-function CloudLoading(opts) {
-  UIComponent.call(this, {
+class CloudLoading extends UIComponent {
+  constructor(opts) {
+  super({
     x: 0, y: 0,
     w: SCREEN_WIDTH, h: SCREEN_HEIGHT,
     zIndex: opts.zIndex || 4,
     visible: false,
   });
+
+}
 }
 
-CloudLoading.prototype = Object.create(UIComponent.prototype);
-CloudLoading.prototype.constructor = CloudLoading;
 
 CloudLoading.prototype.render = function (ctx) {
   if (!this.visible) return;

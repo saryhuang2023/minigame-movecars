@@ -278,7 +278,7 @@ var GAME = {
     SKIN_CONFIG_VERSION: 'skin_config_version',
     RECORD_PREFIX: 'record_',          // 个人最好记录 key 前缀
     USERINFO_CACHE: 'userinfo_cache',  // 用户信息缓存
-    FIRST_GOLD_PREFIX: 'first_gold_',  // 旧版兼容 key 前缀
+    FIRST_GOLD_PREFIX: 'first_gold_',  // 旧版兼容 key 前缀（GoldSystem 兜底读取用，勿删）
     AUDIO_VERSION: 'audio_cache_version',
   },
 
@@ -287,7 +287,6 @@ var GAME = {
   // ================================================================
   LEVEL: {
     NAME_PAD: 4,                 // 关卡名零填充位数（"0001"）
-    DEFAULT_CROWN_STEPS: 0,
     DEFAULT_VERSION: 0,
     DEFAULT_READY: 0,
   },

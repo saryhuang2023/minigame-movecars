@@ -28,19 +28,6 @@ var PLAY = {
     HOLD_DURATION: 500,
     SUCK_DURATION: 530,
     MAX_SCALE: 1.2,
-    // 奖杯目标位置
-    TROPHY_SIZE: 32,
-    TROPHY_TOP: 90,
-    TROPHY_RIGHT: 82,
-    TROPHY_IMG: 'assets/images/levels/leftStep_1.png',
-    // 关主头像目标位置
-    AVATAR_SIZE: 33,
-    AVATAR_LEFT: 40,
-    AVATAR_BOTTOM: 43,
-    // 双元素并排
-    DUAL_GAP: 50,
-    SHOW_TROPHY_SIZE: 88,
-    SHOW_AVATAR_SIZE: 66,
   },
 
   // ---------- 提示系统 ----------

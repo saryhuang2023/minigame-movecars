@@ -8,10 +8,11 @@ var UIComponent = require('../base/UIComponent.js');
  * @param {number} [opts.diameter] - 直径（默认取 w）
  * @param {string} [opts.placeholderColor='#E5E7EB'] - 无图像时的占位色
  */
-function Avatar(opts) {
+class Avatar extends UIComponent {
+  constructor(opts) {
   opts = opts || {};
   var size = opts.diameter || opts.w || 36;
-  UIComponent.call(this, {
+  super({
     x: opts.x || 0,
     y: opts.y || 0,
     w: size,
@@ -27,10 +28,10 @@ function Avatar(opts) {
   if (this.image && this.image.complete) {
     this._loaded = true;
   }
+
+}
 }
 
-Avatar.prototype = Object.create(UIComponent.prototype);
-Avatar.prototype.constructor = Avatar;
 
 Avatar.prototype.setImage = function (img) {
   this.image = img;

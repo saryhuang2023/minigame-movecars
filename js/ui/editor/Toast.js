@@ -8,8 +8,9 @@ var { SCREEN_WIDTH } = require('../../render.js');
 /**
  * @param {Object} opts
  */
-function Toast(opts) {
-  UIComponent.call(this, {
+class Toast extends UIComponent {
+  constructor(opts) {
+  super({
     x: 0, y: 0,
     w: SCREEN_WIDTH, h: 50,
     zIndex: opts.zIndex || 4,
@@ -23,10 +24,10 @@ function Toast(opts) {
   this._duration = 2000;  // ms
   this._fadeDelay = 800;   // 开始淡出前停留多久 ms
   this._fadeDuration = 600; // 淡出持续多久 ms
+
+}
 }
 
-Toast.prototype = Object.create(UIComponent.prototype);
-Toast.prototype.constructor = Toast;
 
 Toast.prototype.show = function (text, duration) {
   this._text = text;

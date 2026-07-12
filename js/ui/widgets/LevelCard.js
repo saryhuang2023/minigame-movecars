@@ -1,11 +1,6 @@
 // 关卡选择 — 单个关卡卡片组件
 // 三态：locked（灰卡）、completed（白卡）、current（粉色描边白卡）
 
-// 奖章图片路径
-var IMG_ACTIVE = 'assets/images/levels/leftStep_1.png';
-var IMG_INACTIVE = 'assets/images/levels/leftStep_2.png';
-var MEDAL_SIZE = 16;
-
 var Theme = require('../../define/GameDefine.js').THEME;
 
 // 卡片配色（与引擎内 C 常量同步）
@@ -30,19 +25,8 @@ function LevelCard(opts) {
   this._radius = 6;
   this._globalIndex = 0;
   this._status = 'locked'; // 'locked' | 'completed' | 'current'
-  this._hasCrown = false;
   this._pressScale = 1;
 
-  // 奖章图片
-  this._imgActive = wx.createImage();
-  this._imgActive.src = IMG_ACTIVE;
-  this._activeLoaded = false;
-  this._imgActive.onload = (function () { this._activeLoaded = true; }).bind(this);
-
-  this._imgInactive = wx.createImage();
-  this._imgInactive.src = IMG_INACTIVE;
-  this._inactiveLoaded = false;
-  this._imgInactive.onload = (function () { this._inactiveLoaded = true; }).bind(this);
 }
 
 /** 同步数据（引擎每帧调） */
@@ -54,7 +38,6 @@ LevelCard.prototype.setCardData = function (data) {
   this._radius = data.radius || 6;
   this._globalIndex = data.globalIndex;
   this._status = data.status;
-  this._hasCrown = !!data.hasCrown;
   this._pressScale = data.pressScale || 1;
 };
 
@@ -85,13 +68,6 @@ LevelCard.prototype.render = function (ctx) {
 
   var isCurrent = this._status === 'current';
   _drawActive(ctx, x, y, w, h, r, labelNumber, isCurrent);
-
-  // 右上角奖章
-  var medalImg = this._hasCrown ? this._imgActive : this._imgInactive;
-  var medalLoaded = this._hasCrown ? this._activeLoaded : this._inactiveLoaded;
-  if (medalLoaded && medalImg) {
-    ctx.drawImage(medalImg, x + w - MEDAL_SIZE - 2, y + 2, MEDAL_SIZE, MEDAL_SIZE);
-  }
 
   ctx.restore();
 };

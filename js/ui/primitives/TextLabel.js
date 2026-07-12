@@ -13,9 +13,10 @@ var Theme = require('../../define/GameDefine.js').THEME;
  * @param {string} [opts.baseline='top'] - 垂直基线 'top'|'middle'|'bottom'
  * @param {boolean} [opts.ellipsis=false] - 溢出省略
  */
-function TextLabel(opts) {
+class TextLabel extends UIComponent {
+  constructor(opts) {
   opts = opts || {};
-  UIComponent.call(this, {
+  super({
     x: opts.x || 0,
     y: opts.y || 0,
     w: opts.w || 0,
@@ -31,10 +32,10 @@ function TextLabel(opts) {
   this.align = opts.align || 'left';
   this.baseline = opts.baseline || 'top';
   this.ellipsis = !!opts.ellipsis;
+
+}
 }
 
-TextLabel.prototype = Object.create(UIComponent.prototype);
-TextLabel.prototype.constructor = TextLabel;
 
 TextLabel.prototype.setText = function (text) {
   this.text = text;

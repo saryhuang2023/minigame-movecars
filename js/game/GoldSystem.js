@@ -132,25 +132,6 @@ var GoldSystem = {
   calculateReward: function (pigCount) {
     return Math.max(0, pigCount || 0);
   },
-
-  /**
-   * 检查是否为首次通关（未曾获得过该关卡的金币奖励）
-   * @param {string} levelName - 关卡名
-   * @returns {boolean}
-   * @deprecated 使用 isSettled 替代
-   */
-  isFirstGoldClear: function (levelName) {
-    return !this.isSettled(levelName);
-  },
-
-  /**
-   * 标记该关卡已领取过金币奖励（防止重复领取）
-   * @param {string} levelName - 关卡名
-   * @deprecated 使用 markSettled 替代
-   */
-  markGoldClaimed: function (levelName) {
-    this.markSettled(levelName);
-  },
 };
 
 module.exports = GoldSystem;

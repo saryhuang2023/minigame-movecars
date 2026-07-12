@@ -73,18 +73,15 @@ function ChapterSection(opts) {
     var by = BTN_Y_OFFSET + Math.floor(i / COLS) * ROW_H;
     var levelId = this.startIndex + i;
     var state = 'locked';
-    var hasCrown = false;
 
     if (!this.isFuture) {
-      hasCrown = !!wx.getStorageSync('crown_' + levelId);
-      if (hasCrown) { state = 'cleared'; }
-      else if (levelId <= lastIdx) { state = 'cleared'; }
+      if (levelId <= lastIdx) { state = 'cleared'; }
       else if (levelId <= lastIdx + 1) { state = 'unlocked'; }
     }
 
     this._btns.push(new LevelButton({
       x: bx, y: by, levelId: levelId, label: String(levelId + 1),
-      state: state, hasCrown: hasCrown,
+      state: state,
     }));
   }
 
@@ -271,8 +268,8 @@ ChapterSection.prototype.render = function (ctx) {
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
       ctx.font = '20px ' + Theme.font.family;
 
-      var prefix = '获得 ';
-      var suffix = 'x' + (this.chapter.unlock_crown_num || 0) + ' 解锁专属背景和皮肤';
+      var prefix = '通关 ';
+      var suffix = (this.chapter.unlockClearNum || 0) + ' 关解锁专属背景和皮肤';
       var iconKey = 'leftStep';
       var iconW = 23, iconH = 21, gap = 4;
 
@@ -284,7 +281,7 @@ ChapterSection.prototype.render = function (ctx) {
 
       // 画 "获得 "
       ctx.fillText(prefix, startX, textY);
-      // 画奖杯图标
+      // 画图标
       if (AssetPreloader.isReady(iconKey)) {
         ctx.drawImage(AssetPreloader.get(iconKey), startX + prefixW, textY, iconW, iconH);
       }

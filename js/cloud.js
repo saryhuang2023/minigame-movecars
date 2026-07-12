@@ -117,7 +117,6 @@ async function uploadLevel(name, data, version, published) {
     + ' pigs=' + (data && data.pigs ? data.pigs.length : 0)
     + ' board.cols=' + (data && data.board ? data.board.cols : '?')
     + ' board.rows=' + (data && data.board ? data.board.rows : '?')
-    + ' crownSteps=' + (data && data.crownSteps)
     + ' published=' + published
     + ' version=' + version);
   return callFunction('uploadLevel', { name, data, version, published }, 'Edit');
@@ -163,28 +162,6 @@ async function deleteLevel(id, name) {
  */
 async function reportBug(snapshot) {
   return callFunction('reportBug', { report: snapshot }, 'Game');
-}
-
-/**
- * 获取关卡信息（关主）
- * @param {string} levelId 关卡名（如 "0001"）
- * @returns {Promise<{masterUserId, masterSteps, masterAvatarUrl, masterNickname}|null>}
- */
-async function getLevelInfo(levelId) {
-  const res = await callFunction('getLevelInfo', { levelId }, 'Game');
-  return res.data || null;
-}
-
-/**
- * 尝试夺取关主
- * @param {string} levelId 关卡名
- * @param {number} steps 步数
- * @param {string} [avatarUrl] 玩家头像
- * @param {string} [nickname] 玩家昵称
- * @returns {Promise<{claimed: boolean, master: object}>}
- */
-async function claimLevelMaster(levelId, steps, avatarUrl, nickname) {
-  return callFunction('claimLevelMaster', { levelId, steps, avatarUrl, nickname }, 'Game');
 }
 
 /**
@@ -290,7 +267,7 @@ function invalidateAssetManifest() {
  * 关卡金币结算（服务器权威）
  * @param {string} levelId 关卡名（如 "0001"）
  * @param {number} pigCount 该关卡小猪数量
- * @param {number} stepBonus 步数奖励金币数（奖杯剩余步数，0=无）
+ * @param {number} stepBonus 步数奖励金币数（剩余步数转化，0=无）
  * @param {boolean} double 是否双倍
  * @returns {Promise<{code, gold, reward, claimed}>}
  */
@@ -316,8 +293,6 @@ module.exports = {
   downloadLevel,
   deleteLevel,
   reportBug,
-  getLevelInfo,
-  claimLevelMaster,
   getOpenId,
   downloadCloudFile,
   downloadCloudImage,
