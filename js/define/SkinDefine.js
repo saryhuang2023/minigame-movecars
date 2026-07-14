@@ -18,9 +18,6 @@ var SKIN = {
   CLOUD_CONFIG_PATH: 'skins/skinConfig.json',
   CACHE_CONFIG_FILE: 'skinConfig.json',
 
-  // ---------- 缓存 ----------
-  GOLDEN_PIGS_CACHE_TTL: 2000,
-
   // ---------- 云端路径 ----------
   // 格式: cloud://{env-id}.{dirHash}-{appid}/data/skins/{skinId}/{animType}/{frame}.png
   SKINS_CLOUD_PREFIX: 'cloud://cloud1-4gmoyu9g16089510.636c-cloud1-4gmoyu9g16089510-1316941984/data/skins/',

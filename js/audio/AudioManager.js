@@ -104,7 +104,6 @@ function playMusic(scene) {
   // 场景 → 音轨映射
   var trackMap = {
     'menu': 'explore',
-    'levelSelect': 'explore',
     'playing': 'level',
     'editor': 'explore',  // 或用静音
   };
@@ -136,7 +135,6 @@ function setMusicEnabled(enabled) {
     // 切回场景对应的 BGM
     var trackMap = {
       'menu': 'explore',
-      'levelSelect': 'explore',
       'playing': 'level',
       'editor': 'explore',
     };

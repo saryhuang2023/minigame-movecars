@@ -1,8 +1,6 @@
 // LoadingRenderer.js — 加载画面渲染器
-// 每帧绘制：bg.jpg背景 → idle猪动画 → 金币进度条 → "加载中..."文字
-// 猪位置与主界面 renderMenu() 完全一致，实现无缝过渡
+// 每帧绘制：bg.jpg背景 → 金币进度条 → "加载中..."文字
 
-var PigRenderer = require('../render/PigRenderer.js');
 var { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 var Theme = require('../define/GameDefine.js').THEME;
 
@@ -19,13 +17,7 @@ var TEXT_Y = BAR_Y + 44;
 var BAR_X = BAR_LEFT;
 var BAR_MID_X = SCREEN_WIDTH / 2;
 
-// 主界面猪位置（与 GameEngine.renderMenu() 一致）
-var PIG_CX = SCREEN_WIDTH / 2;
-var PIG_CY = SCREEN_HEIGHT / 2;
-var PIG_TARGET_W = SCREEN_WIDTH * 2 / 3;
-
-// 金币图标在进度条中的尺寸
-var COIN_SIZE = 42;
+// 端点圆钮由代码绘制（见 _drawProgressBar），不再使用金币图
 
 function LoadingRenderer(loadingManager) {
   this._lm = loadingManager;
@@ -82,10 +74,7 @@ LoadingRenderer.prototype.render = function () {
   // 1. 背景
   this._drawBackground();
 
-  // 2. 主界面 idle 小猪动画（始终保持，不做滑出淡化）
-  PigRenderer.drawMenuIdlePig(ctx, PIG_CX, PIG_CY, PIG_TARGET_W);
-
-  // 3. 进度条 + 文字（滑出时向下平移 + 淡出）
+  // 2. 进度条 + 文字（滑出时向下平移 + 淡出）
   this._drawProgressBar();
   this._drawText();
 
@@ -144,34 +133,54 @@ LoadingRenderer.prototype._drawProgressBar = function () {
   ctx.translate(0, offsetY);
   ctx.globalAlpha *= alpha;
 
-  // 背景轨道
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  // 1. 轨道（半透明白底 + 细描边，更有质感）
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.50)';
   _roundRect(ctx, BAR_X, BAR_Y, BAR_WIDTH, BAR_HEIGHT, BAR_RADIUS);
   ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 
-  // 填充条（进度锁定 100%）
+  // 2. 填充（粉 → 琥珀渐变）
   var fillW = this._slideOutActive ? BAR_WIDTH : Math.max(BAR_RADIUS * 2, BAR_WIDTH * progress);
   if (fillW > BAR_RADIUS * 2) {
     var fillGrad = ctx.createLinearGradient(BAR_X, 0, BAR_X + BAR_WIDTH, 0);
     fillGrad.addColorStop(0, '#EC4899');
-    fillGrad.addColorStop(1, '#F59E0B');
+    fillGrad.addColorStop(1, '#FBBF24');
     ctx.fillStyle = fillGrad;
     _roundRect(ctx, BAR_X, BAR_Y, fillW, BAR_HEIGHT, BAR_RADIUS);
     ctx.fill();
-  }
 
-  // 金币图标（跟随填充右边缘）
-  if (this._coinLoaded && this._coinImg) {
-    var coinX = BAR_X + fillW - COIN_SIZE / 2;
-    var coinY = BAR_Y + BAR_HEIGHT / 2 - COIN_SIZE / 2;
+    // 3. 顶部高光（裁剪到填充区，营造果冻/玻璃质感）
     ctx.save();
-    ctx.shadowColor = 'rgba(245, 158, 11, 0.6)';
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    ctx.drawImage(this._coinImg, coinX, coinY, COIN_SIZE, COIN_SIZE);
+    _roundRect(ctx, BAR_X, BAR_Y, fillW, BAR_HEIGHT, BAR_RADIUS);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+    ctx.fillRect(BAR_X, BAR_Y, fillW, BAR_HEIGHT * 0.42);
     ctx.restore();
   }
+
+  // 4. 端点圆钮（白色描边 + 粉芯 + 高光点），跟随填充右缘
+  var knobCx = BAR_X + fillW;
+  var knobCy = BAR_Y + BAR_HEIGHT / 2;
+  var knobR = BAR_HEIGHT / 2 + 4; // 略大于半高，微微凸出轨道
+  ctx.save();
+  ctx.shadowColor = 'rgba(236, 72, 153, 0.45)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(knobCx, knobCy, knobR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#EC4899';
+  ctx.beginPath();
+  ctx.arc(knobCx, knobCy, knobR - 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.beginPath();
+  ctx.arc(knobCx - knobR * 0.3, knobCy - knobR * 0.3, knobR * 0.22, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 };
@@ -193,8 +202,8 @@ LoadingRenderer.prototype._drawText = function () {
   ctx.save();
   ctx.translate(0, offsetY);
   ctx.globalAlpha *= alpha;
-  ctx.fillStyle = '#94A3B8';
-  ctx.font = '14px ' + (Theme.font.family || 'sans-serif');
+  ctx.fillStyle = '#8B6B82';
+  ctx.font = 'bold 14px ' + (Theme.font.family || 'sans-serif');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillText('加载中... ' + pct + '%', BAR_MID_X, TEXT_Y);

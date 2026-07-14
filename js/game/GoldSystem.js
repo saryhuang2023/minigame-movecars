@@ -8,15 +8,6 @@ var STORAGE_KEY = SK.GOLD;
 var CLAIMED_KEY = SK.GOLD_CLAIMED;  // 已领取金币的关卡 ID 数组
 
 var GoldSystem = {
-  _chapters: null,  // 章节数据引用（setChapters 注入）
-
-  /** 注入章节数据（云端优先，本地兜底） */
-  setChapters: function (chapters) {
-    if (chapters && Array.isArray(chapters)) {
-      this._chapters = chapters;
-    }
-  },
-
   /** 获取当前金币余额（本地） */
   getGold: function () {
     try {

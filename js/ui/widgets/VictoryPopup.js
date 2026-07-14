@@ -514,16 +514,6 @@ VictoryPopup.prototype.render = function (ctx) {
       var contAnim2 = _elAnim();
     this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
     _renderContinueBtn(contAnim2);
-  } else if (rState === 'levelSelect') {
-    // ── 无金币 levelSelect：重玩 + 继续 ──
-    this._exitBtn = null;
-    this._doubleGoldBtn = null;
-      var restAnim2 = _elAnim();
-    this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
-    _renderReplayBtn(restAnim2);
-      var contAnim3 = _elAnim();
-    this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
-    _renderContinueBtn(contAnim3);
   } else {
     // ── 编辑器返回 ──
     this._nextBtn = null;

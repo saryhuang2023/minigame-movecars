@@ -12,7 +12,6 @@ var AssetPreloader = require('../ui/AssetPreloader.js');
 var SkinLoader = require('../entity/SkinLoader.js');
 var LevelCache = require('../preload/LevelCache.js');
 var CloudCache = require('../preload/CloudCache.js');
-var ChapterSection = require('../ui/widgets/ChapterSection.js');
 
 function LoadingManager() {
   this._progress = 0;
@@ -24,7 +23,6 @@ function LoadingManager() {
   this._images = {};            // path → Image（所有已加载图片）
   this._playerData = null;      // 云端玩家数据
   this._cloudLevelRange = null; // 云端关卡范围
-  this._chapterData = null;     // 云端章节配置
 
   // Phase 各子项进度
   this._p1 = { idleLoaded: 0, imgLoaded: 0, fontLoaded: false };
@@ -76,7 +74,6 @@ LoadingManager.prototype.getImage = function (path) {
 /** 获取云端数据 */
 LoadingManager.prototype.getPlayerData = function () { return this._playerData; };
 LoadingManager.prototype.getCloudLevelRange = function () { return this._cloudLevelRange; };
-LoadingManager.prototype.getChapterData = function () { return this._chapterData; };
 
 // ===== 内部：各阶段加载 =====
 
@@ -253,29 +250,6 @@ LoadingManager.prototype._startPhase3 = function () {
     var li = wx.getStorageSync('lastLevelIndex');
     var lastIdx = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : 0;
     LevelCache.preloadNext(lastIdx);
-  } catch (e) { /* noop */ }
-
-  // 6. 章节背景图预加载（走 CloudCache，版本一致则跳过下载）
-  try {
-    var fs = wx.getFileSystemManager();
-    var chapterRaw = fs.readFileSync('assets/levels/chapter.json', 'utf8');
-    var chapters = JSON.parse(chapterRaw);
-    var currentChIdx = 0;
-    for (var c = 0; c < chapters.length; c++) {
-      if (lastIdx <= chapters[c].endIndex) { currentChIdx = c; break; }
-    }
-    for (var ci = 0; ci < chapters.length; ci++) {
-      (function (chIdx) {
-        CloudCache.downloadImage('level/' + chIdx + '/chapter_skin.jpg').then(function (path) {
-          var img = wx.createImage();
-          img.onload = function () {
-            ChapterSection.setBgCache(chIdx, img);
-            console.log('[Loading] 章节背景图就绪: ch' + chIdx);
-          };
-          img.src = path;
-        }).catch(function () {});
-      })(ci);
-    }
   } catch (e) { /* noop */ }
 };
 

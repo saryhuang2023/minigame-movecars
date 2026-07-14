@@ -5,23 +5,37 @@ const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
 const { drawSettingsButton } = require('../ui/drawSettingsButton.js');
+const drawBottomBar = require('../ui/drawBottomBar.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
 const StaminaSystem = require('../game/StaminaSystem.js');
 const SkinLoader = require('../entity/SkinLoader.js');
 const ShopPanel = require('../ui/ShopPanel.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
-const CommonButton = require('../ui/widgets/CommonButton.js');
+const AssetPreloader = require('../ui/AssetPreloader.js');
 const Theme = require('../define/GameDefine.js').THEME;
 const Easing = require('./Easing.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
-const LevelSelectEngine = require('../game/LevelSelectEngine.js');
 const PlayingEngine = require('../game/PlayingEngine.js');
 const BugReporter = require('../debug/BugReporter.js');
 const DebugPanel = require('../debug/DebugPanel.js');
-const PigRenderer = require('../render/PigRenderer.js');
+
+// 主菜单入场时序（单一数据源）：分步入场
+//  1) t=500 底部条上移+渐显；设置按钮 + 体力UI 原地渐显（不滑动）
+//  2) t=800 开始按钮渐显+回弹  3) t=1260 左右按钮同批渐显+回弹
+// 整段入场结束绝对时刻（ms）= 左/右按钮最晚：1260 + 440
+var MENU_ENTRANCE = {
+  bottomBar: { stagger: 500,  dur: 480, from: { dx: 0,   dy: 240, scale: 1,   alpha: 0 }, ease: 'cubic' },
+  settings:  { stagger: 500,  dur: 460, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 0 }, ease: 'cubic' },
+  // 体力 UI 与设置按钮同批：原地渐显，不滑动
+  stamina:   { stagger: 500,  dur: 460, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 0 }, ease: 'cubic' },
+  play:      { stagger: 800,  dur: 460, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
+  dress:     { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
+  challenge: { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
+};
+var MENU_ENTRANCE_END = 1260 + 440;
 
 class GameEngine {
   constructor() {
@@ -42,8 +56,6 @@ class GameEngine {
     console.log('[GameEngine] InputManager 创建完成');
     this.editor = new EditorEngine(this.input);
     console.log('[GameEngine] EditorEngine 创建完成');
-    this.levelSelect = new LevelSelectEngine(this.input);
-    console.log('[GameEngine] LevelSelectEngine 创建完成');
     this.playing = new PlayingEngine(this.input);
     console.log('[GameEngine] PlayingEngine 创建完成');
 
@@ -72,15 +84,9 @@ class GameEngine {
     this._preloadStaminaIcons();
     console.log('[GameEngine] StaminaSystem 初始化完成');
 
-    // 主界面通用按钮
-    this._btnPlay = new CommonButton({ label: '开始游戏', color: 'gold' });
-    this._btnLevels = new CommonButton({ label: '关卡选择', color: 'blue', h: 52 });
-    this._btnArena = new CommonButton({ label: '装扮', color: 'blue', h: 52 });
-
     // 预加载数据占位（LoadingManager 填充）
     this._preloadedPlayerData = null;
     this._preloadedCloudRange = null;
-    this._preloadedChapters = null;
 
     console.log('[GameEngine] constructor 完成，启动加载画面...');
     this._startLoading();
@@ -172,7 +178,6 @@ class GameEngine {
       // 存储预加载的云端数据
       this._preloadedPlayerData = this._loadingMgr.getPlayerData();
       this._preloadedCloudRange = this._loadingMgr.getCloudLevelRange();
-      this._preloadedChapters = this._loadingMgr.getChapterData();
 
       // 用户信息预加载（fire-and-forget，不阻塞启动）
       this._prefetchUserInfo();
@@ -181,7 +186,7 @@ class GameEngine {
       this._menuEntrance = {
         phase: 'slideIn',
         startTime: now,
-        totalDuration: 800, // 最后一个元素完成
+        totalDuration: MENU_ENTRANCE_END, // 整段入场结束（左/右按钮最晚，t=1700ms）
       };
 
       console.log('[GameEngine] 加载完成，启动游戏');
@@ -207,8 +212,7 @@ class GameEngine {
       console.log('[GameEngine] 安全区获取失败，使用默认值');
     }
 
-    // 章节配置改为按需懒加载（LevelSelectEngine 激活时才读）
-    // 避免在启动路径上同步 I/O 阻塞首帧渲染
+    // 章节配置按需懒加载，在各引擎激活时读取，避免阻塞首帧渲染
 
     // 菜单输入处理始终注册（自动进关卡路径也需要，以便后续返回菜单时能响应）
     this.setupMenuInput();
@@ -299,20 +303,6 @@ class GameEngine {
         databus._cloudMaxLevel = range.maxLevel;
         console.log('[cloud] _syncCloudLevels 云端关卡范围就绪: ' + range.minLevel + '~' + range.maxLevel
           + ' (之前 _cloudMaxLevel=' + prevMax + ')');
-        // 云端范围比已构建的大 → 需要重建
-        if (prevMax === undefined || range.maxLevel > prevMax) {
-          console.log('[cloud] _syncCloudLevels 云端范围增大 (prevMax=' + prevMax + '→' + range.maxLevel + '), 当前 gameState=' + databus.gameState);
-          if (databus.gameState === 'levelSelect') {
-            console.log('[cloud] _syncCloudLevels 立即重建关卡选择列表');
-            self.levelSelect.loadProjectLevels();
-            self.levelSelect._buildSections();
-            self.levelSelect._setupUI();
-            self.levelSelect._needsRebuild = false;
-          } else {
-            console.log('[cloud] _syncCloudLevels 标记脏，下次进入关卡选择时重建');
-            self.levelSelect._needsRebuild = true;
-          }
-        }
       } else {
         console.log('[cloud] _syncCloudLevels 云端无已发布关卡或无数据 (range=' + JSON.stringify(range) + ')');
       }
@@ -420,16 +410,6 @@ class GameEngine {
       console.log('[cloud][GameEngine] 预加载云端关卡范围: ' + range.minLevel + '~' + range.maxLevel
         + ' (之前=' + prevMax + ')');
 
-      if (prevMax === undefined || range.maxLevel > prevMax) {
-        if (databus.gameState === 'levelSelect') {
-          this.levelSelect.loadProjectLevels();
-          this.levelSelect._buildSections();
-          this.levelSelect._setupUI();
-          this.levelSelect._needsRebuild = false;
-        } else {
-          this.levelSelect._needsRebuild = true;
-        }
-      }
     } else {
       console.log('[cloud][GameEngine] 无预加载云端关卡范围');
     }
@@ -741,7 +721,6 @@ class GameEngine {
       wx.showToast({ title: '没有关卡', icon: 'none', duration: 1500 });
       return;
     }
-    if (databus.gameState === 'levelSelect') return;
 
     // 读取上次关卡索引，开始下一关（lastLevelIndex 是已完成关卡）
     var levelIndex = 0;
@@ -835,6 +814,12 @@ class GameEngine {
         }
 
         // 左下角 100x100 快速 5 连击 → 解锁后门按钮（编辑 + 调试）
+        // 若点击落在底部圆形功能按钮上，则交给按钮逻辑，不触发角落彩蛋
+        var onRoundBtn = (this._dressBtnRect && t.x >= this._dressBtnRect.x && t.x <= this._dressBtnRect.x + this._dressBtnRect.w &&
+                          t.y >= this._dressBtnRect.y && t.y <= this._dressBtnRect.y + this._dressBtnRect.h) ||
+                         (this._challengeBtnRect && t.x >= this._challengeBtnRect.x && t.x <= this._challengeBtnRect.x + this._challengeBtnRect.w &&
+                          t.y >= this._challengeBtnRect.y && t.y <= this._challengeBtnRect.y + this._challengeBtnRect.h);
+        if (!onRoundBtn) {
         var cornerW = 100;
         var cornerH = 100;
         var cornerX = 0;
@@ -855,12 +840,17 @@ class GameEngine {
           }
           return;  // 角落点击不触发按钮
         }
+        }
 
         // 按钮点击
         for (var i = 0; i < this.menuButtons.length; i++) {
             var btn = this.menuButtons[i];
             if (t.x >= btn.x && t.x <= btn.x + btn.w &&
                 t.y >= btn.y && t.y <= btn.y + btn.h) {
+              // 元素入场动画未完成前，忽略点击（不发声、不按压、不触发）
+              if (btn.key && !this._isEntranceDone(btn.key)) {
+                return;
+              }
               audio.play('button_click');
               // 按钮按压动画
               this._pressedBtnIdx = i;
@@ -881,31 +871,34 @@ class GameEngine {
   }
 
   /**
+   * 指定菜单元素入场动画是否已完成
+   * 未完成前该按钮不可点击；数据源 MENU_ENTRANCE[key].stagger + dur
+   */
+  _isEntranceDone(key) {
+    if (!this._menuEntrance || this._menuEntrance.phase !== 'slideIn') return true;
+    var cfg = MENU_ENTRANCE[key];
+    if (!cfg) return true;
+    var elapsed = Date.now() - this._menuEntrance.startTime;
+    return elapsed >= cfg.stagger + cfg.dur;
+  }
+
+  /**
    * 主菜单入场动画：根据元素 key 返回 {dx, dy, scale, alpha}
-   * stagger 错开入场，ease-out cubic
+   * stagger 错开入场，ease-out cubic（play 用 easeOutBack）
    */
   _getEntranceTransform(key) {
     if (!this._menuEntrance || this._menuEntrance.phase !== 'slideIn') {
       return { dx: 0, dy: 0, scale: 1, alpha: 1 };
     }
 
-    var STAGGER = {
-      arena:    0,
-      levels: 100,
-      play:   200,
-      settings: 300,
-    };
-    var FROM = {
-      arena:    { dx: 0, dy: 120, scale: 1, alpha: 0 },
-      levels:   { dx: 0, dy: 120, scale: 1, alpha: 0 },
-      play:     { dx: 0, dy: 120, scale: 1, alpha: 0 },
-      settings: { dx: -30, dy: 0, scale: 1, alpha: 0 },
-    };
-
+    var cfg = MENU_ENTRANCE[key];
+    if (!cfg) {
+      return { dx: 0, dy: 0, scale: 1, alpha: 1 };
+    }
+    var from = cfg.from;
+    var stagger = cfg.stagger;
+    var dur = cfg.dur;
     var elapsed = Date.now() - this._menuEntrance.startTime;
-    var stagger = STAGGER[key] || 0;
-    var from = FROM[key] || { dx: 0, dy: 0, scale: 1, alpha: 1 };
-    var dur = 500; // 每个元素动画时长
 
     if (elapsed < stagger) {
       return { dx: from.dx, dy: from.dy, scale: from.scale, alpha: from.alpha };
@@ -913,7 +906,7 @@ class GameEngine {
 
     var t = (elapsed - stagger) / dur;
     t = Math.max(0, Math.min(1, t));
-    var ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    var ease = cfg.ease === 'back' ? Easing.easeOutBack(t, 1.7) : Easing.easeOutCubic(t);
 
     return {
       dx: from.dx * (1 - ease),
@@ -927,6 +920,25 @@ class GameEngine {
     var C = this.COLORS;
     var safeTop = databus.safeTop;
     var cx = SCREEN_WIDTH / 2;
+
+    // ===== 底部功能区域背景（stretched，最底层，在所有按钮之下）=====
+    // 底部条入场：上移 + 渐显（t=500 起）
+    var barT = this._getEntranceTransform('bottomBar');
+    ctx.save();
+    ctx.globalAlpha = barT.alpha;
+    if (barT.dy !== 0) ctx.translate(0, barT.dy);
+    var bottomBar = drawBottomBar.drawMenuBottomBar(ctx);
+    ctx.restore();
+    var _dressRect = null, _challengeRect = null;
+    if (bottomBar) {
+      var _btSize = 58 * bottomBar.scale;
+      var _dPos = drawBottomBar.figmaToScreen(bottomBar, 303, 721);
+      var _cPos = drawBottomBar.figmaToScreen(bottomBar, 32, 721);
+      _dressRect = { x: _dPos.x, y: _dPos.y, w: _btSize, h: _btSize };
+      _challengeRect = { x: _cPos.x, y: _cPos.y, w: _btSize, h: _btSize };
+      this._dressBtnRect = _dressRect;
+      this._challengeBtnRect = _challengeRect;
+    }
 
     // 计算按钮按压缩放
     var pressScale = this._getBtnPressScale();
@@ -958,94 +970,46 @@ class GameEngine {
     var setArea = { x: setBtnX, y: setBtnY, w: setAreaRaw.w, h: setAreaRaw.h };
     ctx.restore();
 
-    // ===== 体力 UI（左上角：5 图标 + 倒计时）=====
+    // ===== 体力 UI（左上角：5 图标 + 倒计时），与设置按钮同批原地渐显 =====
+    var staT = this._getEntranceTransform('stamina');
+    ctx.save();
+    ctx.globalAlpha *= staT.alpha;
     this._renderStaminaUI(ctx, setBtnY + setIconSize);
+    ctx.restore();
 
-    // ===== 主界面中央 idle 小猪（与 loading 画面一致，不做入场动画）=====
-    var pigCX = SCREEN_WIDTH / 2;
-    var pigCY = SCREEN_HEIGHT / 2;
-    var pigTargetW = SCREEN_WIDTH * 2 / 3;
-    PigRenderer.drawMenuIdlePig(ctx, pigCX, pigCY, pigTargetW);
-
-    // ===== 主按钮：开始游戏（gold）=====
-    var btnW = SCREEN_WIDTH - 64;
-    var btnH = 64;
-    var btnX = (SCREEN_WIDTH - btnW) / 2;
-    var mainBtnY = SCREEN_HEIGHT - 74 - btnH;
-    var mainBtnCX = btnX + btnW / 2;
-    var mainBtnCY = mainBtnY + btnH / 2;
+    // ===== 主按钮：开始游戏（main_start.png 图片按钮）=====
+    // Figma: 173 x 113，水平居中，bottom 距屏幕底 64px（基于 393 宽设计稿等比缩放）
+    var startScale = SCREEN_WIDTH / 393;
+    var startW = 173 * startScale;
+    var startH = 113 * startScale;
+    var startX = (SCREEN_WIDTH - startW) / 2;
+    var startY = SCREEN_HEIGHT - 64 * startScale - startH;
+    var startCX = startX + startW / 2;
+    var startCY = startY + startH / 2;
 
     var playT = this._getEntranceTransform('play');
     ctx.save();
     ctx.globalAlpha = playT.alpha;
+    // 围绕按钮中心：按压缩放 × 入场缩放（easeOutBack 回弹）
+    ctx.translate(startCX, startCY);
+    ctx.scale(mainScale * playT.scale, mainScale * playT.scale);
+    ctx.translate(-startCX, -startCY);
     if (playT.dy !== 0) {
       ctx.translate(0, playT.dy);
     }
 
-    this._btnPlay.x = btnX;
-    this._btnPlay.y = mainBtnY;
-    this._btnPlay.w = btnW;
-    this._btnPlay.h = btnH;
-    this._btnPlay.render(ctx);
+    if (AssetPreloader.isReady('main_start')) {
+      ctx.drawImage(AssetPreloader.get('main_start'), startX, startY, startW, startH);
+    }
+    ctx.restore();
 
-    // 体力图标（按钮左侧，垂直居中）
-    var iconSize = 24;
-    var iconX = btnX + 44;
-    var iconY = mainBtnY + btnH / 2 - iconSize / 2;
+    this._playBtnRect = { x: startX, y: startY, w: startW, h: startH };
+
+    // 体力飞行动画目标点：指向开始按钮中心（原按钮左侧体力图标已随旧按钮移除）
     this._staminaBtnIconRect = {
-      x: iconX, y: iconY, w: iconSize, h: iconSize,
-      cx: iconX + iconSize / 2, cy: iconY + iconSize / 2
+      x: startX, y: startY, w: startW, h: startH,
+      cx: startCX, cy: startCY
     };
-    if (this._staminaIcons.empty) {
-      ctx.drawImage(this._staminaIcons.empty, iconX, iconY, iconSize, iconSize);
-    }
-    ctx.restore();
-
-    this._playBtnRect = { x: btnX, y: mainBtnY, w: btnW, h: btnH };
-
-    // ===== 次按钮：关卡选择（blue）=====
-    var secBtnH = 52;
-    var secBtnY = mainBtnY - secBtnH - 50;
-    var secBtnCX = btnX + btnW / 2;
-    var secBtnCY = secBtnY + secBtnH / 2;
-
-    var lvT = this._getEntranceTransform('levels');
-    ctx.save();
-    ctx.globalAlpha = lvT.alpha;
-    if (lvT.dy !== 0) {
-      ctx.translate(0, lvT.dy);
-    }
-
-    this._btnLevels.x = btnX;
-    this._btnLevels.y = secBtnY;
-    this._btnLevels.w = btnW;
-    this._btnLevels.h = secBtnH;
-    this._btnLevels.render(ctx);
-    ctx.restore();
-
-    this._levelsBtnRect = { x: btnX, y: secBtnY, w: btnW, h: secBtnH };
-
-    // ===== 次按钮：装扮（blue）=====
-    var arenaBtnH = 52;
-    var arenaBtnY = secBtnY - arenaBtnH - 20;
-    var arenaBtnCX = btnX + btnW / 2;
-    var arenaBtnCY = arenaBtnY + arenaBtnH / 2;
-
-    var arT = this._getEntranceTransform('arena');
-    ctx.save();
-    ctx.globalAlpha = arT.alpha;
-    if (arT.dy !== 0) {
-      ctx.translate(0, arT.dy);
-    }
-
-    this._btnArena.x = btnX;
-    this._btnArena.y = arenaBtnY;
-    this._btnArena.w = btnW;
-    this._btnArena.h = arenaBtnH;
-    this._btnArena.render(ctx);
-    ctx.restore();
-
-    this._arenaBtnRect = { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH };
 
     // ===== 后门按钮（右下角，5 连击解锁后显示）=====
     var editArea = null;
@@ -1094,13 +1058,27 @@ class GameEngine {
     // ===== 注册按钮碰撞区域 =====
     var self = this;
     this.menuButtons = [
-      { x: btnX, y: mainBtnY, w: btnW, h: btnH, action: function() { self._onClickPlayBtn(); } },
-      { x: btnX, y: secBtnY, w: btnW, h: secBtnH, action: function() { self._hasLeftMenu = true; databus.gameState = 'levelSelect'; } },
-      { x: btnX, y: arenaBtnY, w: btnW, h: arenaBtnH, action: function() { ShopPanel.open(); } },
-      { x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
+      { key: 'play', x: startX, y: startY, w: startW, h: startH, action: function() { self._onClickPlayBtn(); } },
+      { key: 'settings', x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
         action: function() { settingsPanel.open({ title: '设置' }); }
       }
     ];
+
+    // 底部圆形功能按钮（装扮 / 挑战赛）
+    if (_dressRect) {
+      this.menuButtons.push({
+        key: 'dress',
+        x: _dressRect.x, y: _dressRect.y, w: _dressRect.w, h: _dressRect.h,
+        action: function() { ShopPanel.open(); }
+      });
+    }
+    if (_challengeRect) {
+      this.menuButtons.push({
+        key: 'challenge',
+        x: _challengeRect.x, y: _challengeRect.y, w: _challengeRect.w, h: _challengeRect.h,
+        action: function() { self._onClickChallengeBtn(); }
+      });
+    }
 
     // 后门按钮（右下角，5 连击解锁后附加）
     if (editArea) {
@@ -1114,6 +1092,35 @@ class GameEngine {
         x: debugArea.x, y: debugArea.y, w: debugArea.w, h: debugArea.h,
         action: function() { DebugPanel.toggle(); }
       });
+    }
+
+    // ===== 底部圆形功能按钮（装扮 / 挑战赛）绘制，位于各面板之下 =====
+    // 入场：与开始按钮相同的「缩放回弹 + 渐显」，t=1260 同批出场
+    if (bottomBar) {
+      var _dBt = this._getEntranceTransform('dress');
+      var _cBt = this._getEntranceTransform('challenge');
+      var _dCx = this._dressBtnRect.x + this._dressBtnRect.w / 2;
+      var _dCy = this._dressBtnRect.y + this._dressBtnRect.h / 2;
+      var _cCx = this._challengeBtnRect.x + this._challengeBtnRect.w / 2;
+      var _cCy = this._challengeBtnRect.y + this._challengeBtnRect.h / 2;
+
+      // 装扮（右）
+      ctx.save();
+      ctx.globalAlpha = _dBt.alpha;
+      ctx.translate(_dCx, _dCy);
+      ctx.scale(_dBt.scale, _dBt.scale);
+      ctx.translate(-_dCx, -_dCy);
+      drawBottomBar.drawRoundMenuButton(ctx, this._dressBtnRect.x, this._dressBtnRect.y, this._dressBtnRect.w, '衣');
+      ctx.restore();
+
+      // 挑战赛（左）
+      ctx.save();
+      ctx.globalAlpha = _cBt.alpha;
+      ctx.translate(_cCx, _cCy);
+      ctx.scale(_cBt.scale, _cBt.scale);
+      ctx.translate(-_cCx, -_cCy);
+      drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '赛');
+      ctx.restore();
     }
 
     // 设置面板（最顶层）
@@ -1281,6 +1288,11 @@ class GameEngine {
     }
   }
 
+  _onClickChallengeBtn() {
+    // TODO: 挑战赛功能尚未实现，先用 toast 占位反馈
+    wx.showToast({ title: '挑战赛即将上线', icon: 'none', duration: 1200 });
+  }
+
   /** 处理广告领取体力 */
   _onStaminaAdClaim() {
     StaminaAdPanel.close();
@@ -1329,7 +1341,6 @@ class GameEngine {
     // 反激活旧状态
     switch (prev) {
       case 'editor':      this.editor.deactivate();        break;
-      case 'levelSelect': this.levelSelect.deactivate();   break;
       case 'playing':     this.playing.deactivate();       break;
     }
 
@@ -1342,12 +1353,11 @@ class GameEngine {
           this._menuEntrance = {
             phase: 'slideIn',
             startTime: Date.now(),
-            totalDuration: 800,
+            totalDuration: MENU_ENTRANCE_END,
           };
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;
-      case 'levelSelect': this.levelSelect.activate(); audio.playMusic('levelSelect'); break;
       case 'playing':     this.playing.activate(); audio.playMusic('playing'); break;
     }
 
@@ -1369,9 +1379,6 @@ class GameEngine {
     switch (databus.gameState) {
       case 'menu':
         this.renderMenu();
-        break;
-      case 'levelSelect':
-        this.levelSelect.render();
         break;
       case 'playing':
         this.playing.render();

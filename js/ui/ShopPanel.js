@@ -259,8 +259,6 @@ function _renderGrid(ctx, p, gridY) {
 // ===== 单张皮肤卡片 =====
 
 function _renderOneCard(ctx, x, y, skin, owned, isEquipped, index) {
-  var unlocked = SkinSystem.isUnlocked(skin.skinId);
-
   // 卡片背景（16:9 圆角矩形）
   ctx.fillStyle = '#f5f5f5';
   _roundRect(ctx, x, y, CARD_W, CARD_H, 8);
@@ -269,24 +267,17 @@ function _renderOneCard(ctx, x, y, skin, owned, isEquipped, index) {
   ctx.lineWidth = 0.5;
   ctx.stroke();
 
-  // 预览图 — 铺满卡片
-  _renderCardPreview(ctx, x, y, skin.skinId, unlocked);
+  // 预览图 — 铺满卡片（皮肤默认均解锁）
+  _renderCardPreview(ctx, x, y, skin.skinId);
 
   // 名称标签（浮于上边框正中间）
   _renderCardLabel(ctx, x, y, skin);
 
   // 底部按钮
-  _renderCardButton(ctx, x, y, skin, owned, isEquipped, unlocked, index);
+  _renderCardButton(ctx, x, y, skin, owned, isEquipped, index);
 }
 
-function _renderCardPreview(ctx, x, y, skinId, unlocked) {
-  // 未解锁皮肤给一层灰色遮罩
-  if (!unlocked) {
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    _roundRect(ctx, x, y, CARD_W, CARD_H, 8);
-    ctx.fill();
-  }
-
+function _renderCardPreview(ctx, x, y, skinId) {
   // 默认猪（skinId=0）走本地；其他皮肤走云端
   // 当前所有皮肤暂用默认猪预览
   var sizeInfo = getComposedPigSize();
@@ -328,7 +319,7 @@ function _renderCardLabel(ctx, x, y, skin) {
   ctx.fillText(name, labelX + labelW / 2, labelY + LABEL_H / 2);
 }
 
-function _renderCardButton(ctx, x, y, skin, owned, isEquipped, unlocked, index) {
+function _renderCardButton(ctx, x, y, skin, owned, isEquipped, index) {
   var btnW = CARD_W - 16;
   var btnX = x + (CARD_W - btnW) / 2;
   var btnY = y + CARD_H + BTN_GAP;
@@ -356,17 +347,6 @@ function _renderCardButton(ctx, x, y, skin, owned, isEquipped, unlocked, index) 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     btnText = '装备';
-    ctx.fillText(btnText, btnX + btnW / 2, btnY + BTN_H / 2);
-  } else if (!unlocked) {
-    // 未解锁 — 灰色 🔒 按钮
-    ctx.fillStyle = '#e0e0e0';
-    _roundRect(ctx, btnX, btnY, btnW, BTN_H, BTN_H / 2);
-    ctx.fill();
-    ctx.fillStyle = '#999';
-    ctx.font = 'bold 11px ' + Theme.font.family + '';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    btnText = '🔒 未解锁';
     ctx.fillText(btnText, btnX + btnW / 2, btnY + BTN_H / 2);
   } else {
     // 未拥有 — 金币按钮
@@ -519,9 +499,6 @@ function _handleBtnClick(btn) {
   var equippedId = SkinSystem.getEquippedSkinId();
 
   if (skinId === equippedId) return;
-
-  // 未解锁不可操作
-  if (!SkinSystem.isUnlocked(skinId)) return;
 
   if (SkinSystem.isOwned(skinId)) {
     SkinSystem.equipSkin(skinId);

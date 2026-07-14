@@ -28,13 +28,6 @@ var _configVersion = 0;
 // 配置更新回调（云端配置到达时触发）
 var _onConfigUpdated = null;
 
-// 章节配置缓存（懒加载，读取后常驻）
-var _chaptersCache = null;
-
-// 通关计数缓存
-var _goldenPigsCache = { count: -1, timestamp: 0 };
-var GOLDEN_PIGS_CACHE_TTL = SkinDefine.SKIN.GOLDEN_PIGS_CACHE_TTL;
-
 var SkinSystem = {
   DEFAULT_SKIN_ID: DEFAULT_SKIN_ID,
 
@@ -189,96 +182,6 @@ var SkinSystem = {
     return null;
   },
 
-  // ---- 解锁条件求值 ----
-
-  /**
-   * 检查皮肤是否已解锁
-   * skinId=0 始终解锁；其他皮肤根据 unlockCondition 求值
-   * @param {number} skinId
-   * @returns {boolean}
-   */
-  isUnlocked: function (skinId) {
-    if (skinId === 0) return true;
-    var skin = this.getSkin(skinId);
-    if (!skin) return false;
-    return this.evaluateCondition(skin.unlockCondition);
-  },
-
-  /**
-   * 求值解锁条件对象
-   * 多字段 AND 语义：所有条件必须同时满足
-   * 空对象 / undefined / null → 永久解锁
-   * @param {object|undefined} condition
-   * @returns {boolean}
-   */
-  evaluateCondition: function (condition) {
-    // 无条件 → 永久解锁
-    if (!condition || typeof condition !== 'object' || Object.keys(condition).length === 0) {
-      return true;
-    }
-
-    var allPassed = true;
-
-    // chapterCleared: 玩家已通关指定章节
-    if (condition.chapterCleared !== undefined) {
-      var chapters = this._getChapters();
-      var targetChapter = condition.chapterCleared;
-      if (chapters.length > targetChapter) {
-        var endIndex = chapters[targetChapter].endIndex;
-        var lastLevelIndex = parseInt(wx.getStorageSync('lastLevelIndex'), 10) || 0;
-        if (lastLevelIndex < endIndex) allPassed = false;
-      } else {
-        allPassed = false;
-      }
-    }
-
-    // levelReached: 玩家已解锁指定关卡索引
-    if (allPassed && condition.levelReached !== undefined) {
-      var lastLevelIndex = parseInt(wx.getStorageSync('lastLevelIndex'), 10) || 0;
-      if (lastLevelIndex < condition.levelReached) allPassed = false;
-    }
-
-    // goldenPigs: 玩家已通关至少 N 关（替代原奖杯数）
-    if (allPassed && condition.goldenPigs !== undefined) {
-      var pigCount = this._countGoldenPigs();
-      if (pigCount < condition.goldenPigs) allPassed = false;
-    }
-
-    // ownsSkin: 玩家必须拥有指定皮肤
-    if (allPassed && condition.ownsSkin !== undefined) {
-      if (!this.isOwned(condition.ownsSkin)) allPassed = false;
-    }
-
-    return allPassed;
-  },
-
-  /** 懒加载章节配置 */
-  _getChapters: function () {
-    if (_chaptersCache) return _chaptersCache;
-    try {
-      var fs = wx.getFileSystemManager();
-      var raw = fs.readFileSync('assets/levels/chapter.json', 'utf8');
-      _chaptersCache = JSON.parse(raw);
-    } catch (e) {
-      console.warn('[LOG] SkinSystem 读取 chapter.json 失败:', (e && e.message) || String(e));
-      _chaptersCache = [];
-    }
-    return _chaptersCache;
-  },
-
-  /** 统计已通关关卡数（替代原奖杯数，短期缓存 2 秒 TTL） */
-  _countGoldenPigs: function () {
-    var now = Date.now();
-    if (_goldenPigsCache.count >= 0 && (now - _goldenPigsCache.timestamp) < GOLDEN_PIGS_CACHE_TTL) {
-      return _goldenPigsCache.count;
-    }
-    // 奖杯系统已移除：以 lastLevelIndex 推算已通关关卡数（0-based + 1）
-    var lastLevelIndex = parseInt(wx.getStorageSync('lastLevelIndex'), 10) || 0;
-    var count = lastLevelIndex + 1;
-    _goldenPigsCache = { count: count, timestamp: now };
-    return count;
-  },
-
   // ---- 装备管理 ----
 
   /** 获取当前装备的皮肤 ID（缺省 0） */
@@ -364,7 +267,6 @@ var SkinSystem = {
   canBuy: function (skinId) {
     var skin = this.getSkin(skinId);
     if (!skin || skin.price <= 0) return false;
-    if (!this.isUnlocked(skinId)) return false;
     if (this.isOwned(skinId)) return false;
     return GoldSystem.getGold() >= skin.price;
   },

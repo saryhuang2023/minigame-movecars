@@ -30,10 +30,9 @@ var PHASE2 = {
     'assets/images/image_718.png',
     'assets/images/pig_icon.png',
     'assets/images/level_brush.png',
+    'assets/images/main_buttom.png',
+    'assets/images/main_start.png',
     'assets/images/level_bg.jpg',
-    'assets/images/chapter/chapter_bg.jpg',
-    'assets/images/chapter/back.png',
-    'assets/images/chapter/lock.png',
   ],
   // 非 idle 动画帧 (run 8 + escape 8 + hint 8 = 24)
   animationTotalFrames: 24,
@@ -55,17 +54,16 @@ var ASSET_PRELOADER_MAP = {
   bg_deco_718: 'assets/images/image_718.png',
   pig_icon:    'assets/images/pig_icon.png',
   level_brush: 'assets/images/level_brush.png',
+  main_bottom: 'assets/images/main_buttom.png',
+  main_start:  'assets/images/main_start.png',
   win_cancel:  'assets/images/win_cancel.png',
   icon_music:  'assets/images/icon_music.png',
   icon_sound:  'assets/images/icon_sound.png',
-  chapter_bg:  'assets/images/chapter/chapter_bg.jpg',
-  chapter_back:'assets/images/chapter/back.png',
-  chapter_lock:'assets/images/chapter/lock.png',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====
 var PHASE3 = {
-  // 云端接口：getPlayerData、listLevels、chapterConfig、skinConfig
+  // 云端接口：getPlayerData、listLevels、skinConfig
   endpointCount: 2,
 };
 

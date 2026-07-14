@@ -406,7 +406,7 @@ class DebugPanel {
     info.push({ label: '内存', value: memStr, color: C.valueText });
 
     // 场景
-    var sceneMap = { menu: '主菜单', levelSelect: '选关', playing: '游戏中', editor: '编辑器' };
+    var sceneMap = { menu: '主菜单', playing: '游戏中', editor: '编辑器' };
     info.push({ label: '场景', value: sceneMap[databus.gameState] || databus.gameState, color: C.valueText });
 
     // 关卡
