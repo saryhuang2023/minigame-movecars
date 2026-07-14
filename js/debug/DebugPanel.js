@@ -3,6 +3,7 @@
 
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 const BugReporter = require('./BugReporter.js');
+const { showToast } = require('../ui/widgets/ToastWidget.js');
 const cloud = require('../cloud.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
@@ -458,9 +459,9 @@ class DebugPanel {
                 cloud.deletePlayerProfile().then(function(delRes) {
                   console.log('[DebugPanel] deletePlayerProfile:', delRes);
                   try { wx.clearStorageSync(); } catch (e) { /* ignore */ }
-                  wx.showToast({ title: delRes && delRes.deleted ? '已删除' : '云端无记录', icon: 'success', duration: 1500 });
+                  showToast(delRes && delRes.deleted ? '已删除' : '云端无记录', 1500);
                 }).catch(function(err) {
-                  wx.showToast({ title: '删除失败: ' + (err && err.message || '未知'), icon: 'none', duration: 2000 });
+                  showToast('删除失败: ' + (err && err.message || '未知'), 2000);
                 });
               }
             }
@@ -487,7 +488,7 @@ class DebugPanel {
             success: function (res) {
               if (res.confirm) {
                 try { wx.clearStorageSync(); } catch (e) { /* ignore */ }
-                wx.showToast({ title: '已清空', icon: 'success', duration: 1000 });
+                showToast('已清空', 1000);
               }
             }
           });

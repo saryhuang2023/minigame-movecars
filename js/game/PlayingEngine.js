@@ -21,6 +21,7 @@ const LevelCache = require('../preload/LevelCache.js');
 const HintSystem = require('./HintSystem.js');
 const CoinFlyEffect = require('../effects/CoinFlyEffect.js');
 const GoldWidget = require('../ui/widgets/GoldWidget.js');
+const { showToast } = require('../ui/widgets/ToastWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
 const GoldSystem = require('./GoldSystem.js');
 const SkinSystem = require('./SkinSystem.js');
@@ -279,7 +280,7 @@ class PlayingEngine {
 
     // TopBar 位置 + 内容（屏幕坐标系，y=0）
     this._uiTopBar.setBounds(0, 0, this._boardCardW, Theme.layout.topBarH);
-    this._uiTopBar.setLevelText('第' + (parseInt(this.levelName || 1)) + '关');
+    this._uiTopBar.setLevelText((parseInt(this.levelName || 1)) + '关');
     this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
 
     // GoldWidget — 显示余额（步数奖励动画期间递减展示）
@@ -429,7 +430,7 @@ class PlayingEngine {
     if (!data) {
       console.warn('[cloud][Playing] 关卡数据加载失败（云端+本地均无），返回主菜单');
       this._loading = false;
-      wx.showToast({ title: '关卡数据加载失败', icon: 'none', duration: 2000 });
+      showToast('关卡数据加载失败', 2000);
       databus.gameState = 'menu';
       return;
     }
@@ -489,7 +490,7 @@ class PlayingEngine {
     var list = databus.trialLevelList;
     var idx = databus.trialCurrentIdx;
     if (!list || idx < 0 || idx + 1 >= list.length) {
-      wx.showToast({ title: '已是最后一关', icon: 'none', duration: 1500 });
+      showToast('已是最后一关', 1500);
       return;
     }
 
@@ -497,7 +498,7 @@ class PlayingEngine {
     // 加载关卡数据（优先 USER_DATA_PATH，fallback assets/levels）
     var data = this._readLocalLevel(nextEntry.name);
     if (!data) {
-      wx.showToast({ title: '下一关数据加载失败', icon: 'none', duration: 1500 });
+      showToast('下一关数据加载失败', 1500);
       return;
     }
 
@@ -526,7 +527,7 @@ class PlayingEngine {
 
   _trialStartRecord() {
     if (!this._allPigsOnBoard()) {
-      wx.showToast({ title: '请先重置关卡', icon: 'none', duration: 1500 });
+      showToast('请先重置关卡', 1500);
       return;
     }
     this._isRecording = true;
@@ -554,7 +555,7 @@ class PlayingEngine {
   _trialStartPlayback() {
     if (this._isPlayingBack) return;
     if (!this._allPigsOnBoard()) {
-      wx.showToast({ title: '请先重置关卡', icon: 'none', duration: 1500 });
+      showToast('请先重置关卡', 1500);
       return;
     }
     // 回放前先停止录制，防止回放操作被录进去
@@ -603,7 +604,7 @@ class PlayingEngine {
     var doneTimer = setTimeout(function () {
       self._isPlayingBack = false;
       console.log('[TrialRec] 回放完成');
-      wx.showToast({ title: '回放完成', icon: 'success', duration: 1500 });
+      showToast('回放完成', 1500);
     }, delayed + 1000);
     this._playbackTimer = doneTimer;
   }
@@ -620,7 +621,7 @@ class PlayingEngine {
   _startAutoReplay() {
     if (this._isPlayingBack) return;
     if (!this._hasReplayData()) {
-      wx.showToast({ title: '暂无回放数据', icon: 'none', duration: 1500 });
+      showToast('暂无回放数据', 1500);
       return;
     }
     this._trialStartPlayback();
@@ -680,13 +681,13 @@ class PlayingEngine {
             } else {
               console.warn('[cloud] 关卡 ' + name + ' 未发布，本地也无配置');
               self._levelLoadFailed = true;
-              wx.showToast({ title: '关卡数据加载失败', icon: 'none', duration: 2000 });
+              showToast('关卡数据加载失败', 2000);
             }
           })
           .catch(function (err) {
             console.warn('[cloud] 关卡拉取失败（' + (err && err.message) + '），本地也无配置');
             self._levelLoadFailed = true;
-            wx.showToast({ title: '关卡数据加载失败', icon: 'none', duration: 2000 });
+            showToast('关卡数据加载失败', 2000);
           });
       }
     }
@@ -885,12 +886,6 @@ class PlayingEngine {
         return;
       }
 
-      // 左上角金币（覆盖金币+文字整个区域，试玩无）— 命中区对齐新位置(底框23-101 / 图标16-48 / y122-154)
-      if (this._uiGoldWidget && _hitRect(t.x, t.y, { x: 10, y: 118, w: 100, h: 42 })) {
-        this._uiGoldWidget.triggerBreathe();
-        return;
-      }
-
       // 试玩"下一关"按钮
       if (databus.returnState === 'editor' && this._trialNextBtn && _hitRect(t.x, t.y, this._trialNextBtn)) {
         this._stopPlaybackIfNeeded();
@@ -919,7 +914,7 @@ class PlayingEngine {
           // 播放中 → 停止回放
           this._isPlayingBack = false;
           if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
-          wx.showToast({ title: '回放已停止', icon: 'none', duration: 1500 });
+          showToast('回放已停止', 1500);
           return;
         }
         var hasRec = !!wx.getStorageSync('trial_record_' + this.levelName);
@@ -935,17 +930,10 @@ class PlayingEngine {
         return;
       }
 
-      // 顶部关卡徽章（仅呼吸反馈，不触发功能，trial 模式下无徽章但 hit rect 可能误触）
-      var badgeX = 16;
-      if (databus.returnState !== 'editor' && _hitRect(t.x, t.y, { x: badgeX, y: 48, w: 62, h: 20 })) {
-        this._uiTopBar.triggerBreathe();
-        return;
-      }
-
       // 顶部返回/设置按钮
-      // ⚠️ 命中区必须与 TopBar.js 绘制位置一致：TopBar 把设置按钮画在 backX=16 / backY=78（32×32，见 TopBar.js:76-82），
-      // 故命中区 y 取 78（原 y:26 是一处遗留错位，导致绘制在 y≈78~110 而命中最远只到 73，点击完全接不上）。
-      if (_hitRect(t.x, t.y, { x: Theme.spacing.padding, y: 78, w: 49, h: 47 })) {
+      // ⚠️ 命中区必须与 TopBar.js 绘制位置一致：TopBar 把设置按钮画在 backX=15 / backY=43（32×32，见 TopBar.js 设置按钮段）。
+      // 精确 32×32 @ (15,43)，与上方徽章命中区(15,23,32×16)不重叠。
+      if (_hitRect(t.x, t.y, { x: 15, y: 43, w: 32, h: 32 })) {
         this._btnPress.press('settings');
         this._btnPress.breathe('settings');
         audio.play('button_click');
@@ -985,7 +973,7 @@ class PlayingEngine {
         // 右按钮：提示（提示的猪未逃脱前不能再点）
         if (_hitRect(t.x, t.y, { x: hintX, y: hintY, w: bSize, h: bSize })) {
           if (this._hint.isActive()) {
-            wx.showToast({ title: '提示的猪未逃脱前不能再点', icon: 'none', duration: 1500 });
+            showToast('请先解救这一只', 1500);
             return;
           }
           this._btnPress.press('bottomHint');
@@ -994,7 +982,7 @@ class PlayingEngine {
           if (best) {
             audio.play('hint_reveal');
           } else {
-            wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
+            showToast('提示已结束', 1500);
             }
           return;
         }
@@ -1066,7 +1054,7 @@ class PlayingEngine {
       if (best) {
         audio.play('hint_reveal');
       } else {
-        wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
+        showToast('提示已结束', 1500);
       }
       return;
     }
@@ -1266,9 +1254,9 @@ class PlayingEngine {
             if (t > 0 && t < tMin) { tMin = t; edgeY = 0; edgeX = tailSX + t * pushDirX; }
           }
 
-          // 金币区硬币中心（GoldWidget 在 (0,0)，COIN_X=16 COIN_SIZE=32）
-          var goldCX = PlayDefine.PLAY.GOLD_FLY_TARGET.cx;  // = 32
-          var goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;  // = 138
+          // 金币区硬币中心（GoldWidget 在 (0,0)，COIN_X=7 COIN_SIZE=21）
+          var goldCX = PlayDefine.PLAY.GOLD_FLY_TARGET.cx;  // = 18
+          var goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;  // = 90
 
           // 猪飞出动画用 easeOutCubic：猪在动画前半段就覆盖了大部分距离
           // 计算猪尾部到达屏幕边缘的实际时间（而非动画总时长）
@@ -2079,7 +2067,6 @@ class PlayingEngine {
         }
         // 结算后绝不在落地回调里 setData(getGold) 把数字 snap 回终值（否则上滚被腰斩）；
         // 数字只由 _syncUIData 的 getGold-_stepBonusRemaining 公式驱动。
-        this._uiGoldWidget.triggerBreathe();
         this._uiGoldWidget.addFloatText();
       }
     }
@@ -2241,7 +2228,7 @@ class PlayingEngine {
       if (match) {
         console.log('[LOG_cp] ✓ 恢复存档: level=' + cp.levelName + ' steps=' + cp.steps + ' v=' + cp.version);
         this._doResume();
-        wx.showToast({ title: '已恢复上次游玩进度', icon: 'none', duration: 2000 });
+        showToast('已恢复上次游玩进度', 2000);
       } else {
         console.log('[LOG_cp] ✗ 清空存档: skipRestore=' + skipRestore + ' cpLevel=' + cp.levelName + ' curLevel=' + this.levelName + ' cpVer=' + cp.version + ' curVer=' + this._levelVersion);
         wx.removeStorageSync('game_checkpoint');

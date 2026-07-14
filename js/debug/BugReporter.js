@@ -3,6 +3,7 @@
 // 依赖注入式接入，不侵入现有模块
 
 const cloud = require('../cloud.js');
+const { showToast } = require('../ui/widgets/ToastWidget.js');
 
 // ========== 配置 ==========
 const CONFIG = {
@@ -348,9 +349,7 @@ class BugReporter {
     if (remark) snapshot.userRemark = remark.substring(0, 200);
     this._report(snapshot);
 
-    if (typeof wx !== 'undefined' && wx.showToast) {
-      wx.showToast({ title: '已上报', icon: 'success', duration: 1500 });
-    }
+    showToast('已上报', 1500);
   }
 
   /** 实际传输 */

@@ -13,7 +13,7 @@ var PADDING = Theme.layout.padding || 16;
 
 /**
  * @param {Object} opts
- * @param {string} opts.levelText - 关卡文字（如 "第 1 关"）
+ * @param {string} opts.levelText - 关卡文字（如 "2关"）
  * @param {string} opts.mode - 'normal' | 'trial'（试玩模式）
  * @param {Object} opts.buttonPress - ButtonPress 实例（用于按压缩放）
  * @param {Function} opts.onBack - 返回按钮点击回调
@@ -32,13 +32,6 @@ class TopBar extends UIComponent {
   this.mode = opts.mode || 'normal';
   this._buttonPress = opts.buttonPress;
   this.onBack = opts.onBack || null;
-
-  // 徽章呼吸动画
-  this._breatheStart = 0;
-  this._breatheActive = false;
-  this._BREATHE_DURATION = 400;
-  this._BREATHE_AMPLITUDE = 0.13;
-
 }
 }
 
@@ -51,31 +44,13 @@ TopBar.prototype.setMode = function (mode) {
   this.mode = mode;
 };
 
-/** 触发徽章呼吸动画 */
-TopBar.prototype.triggerBreathe = function () {
-  this._breatheStart = Date.now();
-  this._breatheActive = true;
-};
-
-/** 获取当前呼吸缩放值 */
-TopBar.prototype._getBreatheScale = function () {
-  if (!this._breatheActive) return 1;
-  var elapsed = Date.now() - this._breatheStart;
-  if (elapsed >= this._BREATHE_DURATION) {
-    this._breatheActive = false;
-    return 1;
-  }
-  var t = elapsed / this._BREATHE_DURATION;
-  return 1 + Math.abs(Math.sin(t * Math.PI)) * this._BREATHE_AMPLITUDE;
-};
-
 TopBar.prototype.render = function (ctx) {
   var barW = this.w;
 
-  // === 左上角设置按钮 ===
+  // === 左上角设置按钮（Figma: left 15 / top 43 / 32×32）===
   var backW = 32, backH = 32;
-  var backX = 16;
-  var backY = 78;
+  var backX = 15;
+  var backY = 43;
 
   var setScale = this._buttonPress ? this._buttonPress.getScale('settings') : 1;
   var setCX = backX + backW / 2;
@@ -104,19 +79,15 @@ TopBar.prototype.render = function (ctx) {
   }
   ctx.restore();
 
-  // === 关卡徽章（左上角，Figma: left 16 / top 48 / 62×20 / 白字绿框 1.5px，无圆角）===
+  // === 关卡徽章（左上角，Figma: left 15 / top 23 / 32×16 / 大宝桃桃体 16px / letter-spacing 4px / 白字，无边框）===
   if (this.mode !== 'trial') {
-    var badgeX = 16;
-    var badgeY = 48;
-    var badgeW = 62;
-    var badgeH = 20;
-    var badgeCX = badgeX + badgeW / 2;
-    var badgeCY = badgeY + badgeH / 2;
-
-    var breathScale = this._getBreatheScale();
+    var badgeX = 15;
+    var badgeY = 23;
+    var badgeW = 32;
+    var badgeH = 16;
 
     var chars = this.levelText.split('');
-    var fontSize = 20;
+    var fontSize = 16;
     var letterSpacing = 4;
     ctx.font = '400 ' + fontSize + 'px ' + Theme.font.family;
     ctx.textAlign = 'left';
@@ -137,11 +108,6 @@ TopBar.prototype.render = function (ctx) {
     var textCY = badgeY + badgeH / 2;
 
     ctx.save();
-    if (breathScale !== 1) {
-      ctx.translate(badgeCX, badgeCY);
-      ctx.scale(breathScale, breathScale);
-      ctx.translate(-badgeCX, -badgeCY);
-    }
 
     // 文字：白色（按 Figma，无描边无边框）
     ctx.fillStyle = '#FFFFFF';

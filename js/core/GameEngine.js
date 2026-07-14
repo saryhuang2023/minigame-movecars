@@ -21,6 +21,7 @@ const EditorEngine = require('../editor/EditorEngine.js');
 const PlayingEngine = require('../game/PlayingEngine.js');
 const BugReporter = require('../debug/BugReporter.js');
 const DebugPanel = require('../debug/DebugPanel.js');
+const { ToastWidget, showToast } = require('../ui/widgets/ToastWidget.js');
 
 // 主菜单入场时序（单一数据源）：分步入场
 //  1) t=500 底部条上移+渐显；设置按钮 + 体力UI 原地渐显（不滑动）
@@ -67,6 +68,10 @@ class GameEngine {
     console.log('[GameEngine] EditorEngine 创建完成');
     this.playing = new PlayingEngine(this.input);
     console.log('[GameEngine] PlayingEngine 创建完成');
+
+    // 全局 Toast 替代组件（不拦截触摸，直接叠在所有场景之上渲染）
+    this._toast = new ToastWidget();
+    ToastWidget.registerToast(this._toast);
 
     // 背景图：由 LoadingManager 在 Phase1 加载后注入
     this.bgImg = null;
@@ -674,7 +679,7 @@ class GameEngine {
   startLastLevel() {
     var totalLevels = this._getTotalLevelCount();
     if (totalLevels === 0) {
-      wx.showToast({ title: '没有关卡', icon: 'none', duration: 1500 });
+      showToast('没有关卡', 1500);
       return;
     }
 
@@ -791,7 +796,7 @@ class GameEngine {
             databus.debugUnlocked = true;
             this._cornerTapCount = 0;
             clearTimeout(this._cornerTapTimer);
-            wx.showToast({ title: '编辑器已解锁', icon: 'none', duration: 1200 });
+            showToast('编辑器已解锁', 1200);
           }
           return;  // 角落点击不触发按钮
         }
@@ -1324,7 +1329,7 @@ class GameEngine {
 
   _onClickChallengeBtn() {
     // TODO: 挑战赛功能尚未实现，先用 toast 占位反馈
-    wx.showToast({ title: '挑战赛即将上线', icon: 'none', duration: 1200 });
+    showToast('挑战赛即将上线', 1200);
   }
 
   /** 处理广告领取体力 */
@@ -1454,6 +1459,9 @@ class GameEngine {
       this.drawBackground();
       this._renderCurrentScene();
     }
+
+    // 全局 Toast 替代组件 — 叠在所有游戏场景之上
+    if (this._toast) this._toast.render(ctx);
 
     // 开发者调试面板 — 最顶层渲染
     DebugPanel.render(databus, this);

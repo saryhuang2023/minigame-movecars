@@ -7,28 +7,22 @@ var Theme = require('../../define/GameDefine.js').THEME;
 var Easing = require('../../core/Easing.js');
 var audio = require('../../audio/AudioManager.js');
 
-// Figma 设计常量
-var BG_X = 23;           // 底框 left（Figma left:23）
-var BG_Y = 122;           // 底框 top（Figma top:122）
-var BG_W = 78;            // 底框 width（Figma w:78）
-var BG_H = 32;            // 底框 height（Figma h:32）
-var BG_RADIUS = 16;       // 底框 border-radius（Figma r:16）
+// Figma 设计常量（v2：去除数字底框，图标 21×21 + 数字 13px 左对齐堆叠在左上角）
+var COIN_X = 7;           // 金币图标 left（Figma left:7）
+var COIN_Y = 79;          // 金币图标 top（Figma top:79）
+var COIN_SIZE = 21;       // 金币图标宽高（Figma 21×21）
 
-var COIN_X = 16;          // 金币图标 left（Figma left:16，图标向左探出底框左缘）
-var COIN_Y = 122;          // 金币图标 top（Figma top:122）
-var COIN_SIZE = 32;       // 金币图标宽高（Figma 32×32）
-
-var TEXT_X = 70;          // 金币数字 center-x（Figma 文字框 left53/w34 → 中心 70）
-var TEXT_Y = 132;         // 金币数字 top（Figma top:130，textBaseline=top 再 -2 微调）
-var TEXT_SIZE = 16;       // 字体大小（Figma 16px 大宝桃桃体）
+var TEXT_X = 30;          // 金币数字 左缘-x（左对齐；金币右缘 28 + 2px 间距 = 30，数字向右生长不再贴金币）
+var TEXT_Y = 85;          // 金币数字 top（Figma top:83，textBaseline=top；绘制处再 -2 回到 83）
+var TEXT_SIZE = 13;       // 字体大小（Figma 13px 大宝桃桃体）
 
 class GoldWidget extends UIComponent {
   constructor(opts) {
   super({
     x: opts.x || 0,
     y: opts.y || 0,
-    w: opts.w || BG_X + BG_W + 8,
-    h: opts.h || BG_Y + BG_H + 8,
+    w: opts.w || 64,   // 图标(7..28) + 数字(左缘33起，最长约4位→~62) 包围盒
+    h: opts.h || 36,   // top79..101
     zIndex: opts.zIndex || 2,
   });
 
@@ -40,12 +34,6 @@ class GoldWidget extends UIComponent {
   this._rollTarget = 0;
   this._rollStartTime = 0;
   this._ROLL_DURATION = 800;
-
-  // 呼吸动画（金币图标脉冲）
-  this._breatheStart = 0;
-  this._breatheActive = false;
-  this._BREATHE_DURATION = 400;
-  this._BREATHE_AMPLITUDE = 0.26;
 
   // "+N" 浮动文字动画
   this._floatTexts = [];  // { text, x, y, startTime, duration }
@@ -114,37 +102,6 @@ GoldWidget.prototype.forceSet = function (gold) {
   this._rollActive = false;
 };
 
-/** 触发呼吸动画（单次缓慢呼吸，纯 UI 反馈） */
-GoldWidget.prototype.triggerBreathe = function () {
-  this._breatheStart = Date.now();
-  this._breatheActive = true;
-  this._burstBreathe = false;
-};
-
-/** 触发强力呼吸（2倍幅度，步数金币到账时用） */
-GoldWidget.prototype.triggerBurstBreathe = function () {
-  this._breatheStart = Date.now();
-  this._breatheActive = true;
-  this._burstBreathe = true;
-};
-
-/** 获取当前呼吸缩放值 */
-GoldWidget.prototype._getBreatheScale = function () {
-  if (!this._breatheActive) return 1;
-
-  var elapsed = Date.now() - this._breatheStart;
-  if (elapsed >= this._BREATHE_DURATION) {
-    this._breatheActive = false;
-    this._burstBreathe = false;
-    return 1;
-  }
-
-  var t = elapsed / this._BREATHE_DURATION;
-  var pulse = Math.abs(Math.sin(t * Math.PI));
-  var amp = this._burstBreathe ? this._BREATHE_AMPLITUDE * 2 : this._BREATHE_AMPLITUDE;
-  return 1 + pulse * amp;
-};
-
 /** 金币到达时弹出 "+N" 浮动文字 */
 GoldWidget.prototype.addFloatText = function () {
   var coinCX = this.x + COIN_X + COIN_SIZE / 2;
@@ -193,48 +150,7 @@ GoldWidget.prototype.render = function (ctx) {
   var baseX = this.x;
   var baseY = this.y;
 
-  // === 底框（半透明深色圆角胶囊） ===
-  var bgX = baseX + BG_X;
-  var bgY = baseY + BG_Y;
-  var bgW = BG_W;
-  var bgH = BG_H;
-  var r = BG_RADIUS;
-
   var celeb = this._getCelebrateScale();
-
-  // 底框：庆祝时更透亮，让光晕穿透
-  var bgAlpha = celeb.glow > 0.01 ? 0.2 : 0.3;
-  ctx.fillStyle = 'rgba(0, 0, 0, ' + bgAlpha + ')';
-  ctx.beginPath();
-  ctx.moveTo(bgX + r, bgY);
-  ctx.lineTo(bgX + bgW - r, bgY);
-  ctx.arcTo(bgX + bgW, bgY, bgX + bgW, bgY + r, r);
-  ctx.lineTo(bgX + bgW, bgY + bgH - r);
-  ctx.arcTo(bgX + bgW, bgY + bgH, bgX + bgW - r, bgY + bgH, r);
-  ctx.lineTo(bgX + r, bgY + bgH);
-  ctx.arcTo(bgX, bgY + bgH, bgX, bgY + bgH - r, r);
-  ctx.lineTo(bgX, bgY + r);
-  ctx.arcTo(bgX, bgY, bgX + r, bgY, r);
-  ctx.closePath();
-  ctx.fill();
-
-  // --- 庆祝金辉光晕（底框之上，向外放射） ---
-  if (celeb.glow > 0.01) {
-    var bgCX = bgX + bgW / 2;
-    var bgCY = bgY + bgH / 2;
-    var glowR = Math.max(bgW, bgH) * 0.7 + celeb.glow * 50;
-    ctx.save();
-    ctx.globalAlpha = celeb.glow * 0.8;
-    var glowGrad = ctx.createRadialGradient(bgCX, bgCY, bgW * 0.25, bgCX, bgCY, glowR);
-    glowGrad.addColorStop(0, 'rgba(255, 240, 100, 0.9)');
-    glowGrad.addColorStop(0.4, 'rgba(255, 200, 0, 0.5)');
-    glowGrad.addColorStop(1, 'rgba(255, 150, 0, 0)');
-    ctx.fillStyle = glowGrad;
-    ctx.beginPath();
-    ctx.arc(bgCX, bgCY, glowR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
 
   // === 金币图标（drop-shadow + 呼吸缩放 + 磁吸光晕） ===
   if (AssetPreloader.isReady('coin')) {
@@ -243,8 +159,23 @@ GoldWidget.prototype.render = function (ctx) {
     var coinCX = coinX + COIN_SIZE / 2;
     var coinCY = coinY + COIN_SIZE / 2;
 
-    var breathScale = this._getBreatheScale();
-    var iconScale = celeb.icon !== 1 ? celeb.icon : breathScale;  // 庆祝优先于普通呼吸
+    var iconScale = celeb.icon;  // 满额庆祝缩放（已无普通呼吸脉冲）
+
+    // --- 庆祝金辉光晕（满额庆祝，从金币中心向外放射） ---
+    if (celeb.glow > 0.01) {
+      var glowR = COIN_SIZE * 0.7 + celeb.glow * 50;
+      ctx.save();
+      ctx.globalAlpha = celeb.glow * 0.8;
+      var glowGrad = ctx.createRadialGradient(coinCX, coinCY, COIN_SIZE * 0.25, coinCX, coinCY, glowR);
+      glowGrad.addColorStop(0, 'rgba(255, 240, 100, 0.9)');
+      glowGrad.addColorStop(0.4, 'rgba(255, 200, 0, 0.5)');
+      glowGrad.addColorStop(1, 'rgba(255, 150, 0, 0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(coinCX, coinCY, glowR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     // --- 磁吸光晕（飞行中金币快到达时呼吸光环） ---
     if (this._magnetGlow > 0.01) {
@@ -300,7 +231,7 @@ GoldWidget.prototype.render = function (ctx) {
   } else {
     ctx.fillStyle = '#FFFFFF';
   }
-  ctx.textAlign = 'center';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(text, baseX + TEXT_X, baseY + TEXT_Y - 2);
   ctx.restore();
