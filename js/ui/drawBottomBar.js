@@ -3,12 +3,13 @@
 //
 // 坐标换算约定（来自 Figma 设计稿）：
 //   - 设计稿宽度 DESIGN_W = 393
-//   - 背景图 393 x 122，水平铺满整屏，底部对齐，保持宽高比
+//   - 背景图 393 x 122，底部对齐，固定高度 122（不随屏宽缩放，宽屏轻微横向形变）
+//   - 宽度拉伸铺满屏幕宽度（barW = SCREEN_WIDTH）
 //   - 背景顶部在 Figma 屏幕 y = 721（= 843 - 122）
 //   - 容器内控件以「屏幕坐标」给出，需转化为实际屏幕坐标：
 //       x = fx * scale
 //       y = barY + (fy - 721) * scale
-//     其中 scale = SCREEN_WIDTH / 393，barY = SCREEN_HEIGHT - barH
+//     其中 scale = SCREEN_WIDTH / 393（控件尺寸/水平定位用），barY = SCREEN_HEIGHT - 122（固定高）
 
 var AssetPreloader = require('../ui/AssetPreloader.js');
 var Theme = require('../define/GameDefine.js').THEME;
@@ -20,28 +21,55 @@ var BAR_H = 122;
 var BAR_TOP_FIGMA = 721; // 背景顶部在 Figma 屏幕的 y
 
 /**
- * 绘制底部拉伸背景（main_buttom.png），保持宽高比、底部对齐、铺满屏宽。
- * 带 drop-shadow(0px -4px 6px rgba(0,0,0,0.2))。
+ * 绘制底部拉伸背景（main_buttom.png），固定高度 BAR_H(122)、底部对齐、宽度铺满屏宽。
+ * 宽屏下背景图按比例横向轻微拉伸（与关卡底栏 drawLevelBottomBar 同策略）。
+ * 带 drop-shadow(0px -4px 6px rgba(0,0,0,0.2))（固定模糊半径，不随屏宽缩放）。
  * @returns {Object|null} 容器几何 { x, y, w, h, scale }，资源未就绪时返回 null
+ *   scale 仍保留供 figmaToScreen 做控件水平定位/尺寸换算（bar 高度本身固定）。
  */
 function drawMenuBottomBar(ctx) {
   if (!AssetPreloader.isReady('main_bottom')) return null;
   var img = AssetPreloader.get('main_bottom');
-  var scale = SCREEN_WIDTH / DESIGN_W;
-  var barW = SCREEN_WIDTH;
-  var barH = BAR_H * scale;
+  var scale = SCREEN_WIDTH / DESIGN_W;       // 控件水平定位/尺寸用
+  var barW = SCREEN_WIDTH;                    // 宽度铺满屏宽
+  var barH = BAR_H;                           // 固定高度 122，不随屏宽缩放
   var barX = 0;
   var barY = SCREEN_HEIGHT - barH;
 
   ctx.save();
   ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-  ctx.shadowBlur = 6 * scale;
+  ctx.shadowBlur = 6;
   ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = -4 * scale;
+  ctx.shadowOffsetY = -4;
   ctx.drawImage(img, barX, barY, barW, barH);
   ctx.restore();
 
   return { x: barX, y: barY, w: barW, h: barH, scale: scale };
+}
+
+/**
+ * 绘制关卡内底部拉伸背景（level_buttom.png）。
+ * 与主菜单 drawMenuBottomBar 同风格（向上投影），但高度为用户指定的 94 逻辑像素（固定，不随屏宽缩放），
+ * 铺满屏宽、底部对齐。关卡内直接显示，不参与入场动画。
+ * @returns {Object|null} 容器几何 { x, y, width, height }，资源未就绪时返回 null
+ */
+function drawLevelBottomBar(ctx) {
+  if (!AssetPreloader.isReady('level_bottom')) return null;
+  var img = AssetPreloader.get('level_bottom');
+  var barW = SCREEN_WIDTH;
+  var barH = 94;                 // 用户指定高度（逻辑像素）
+  var barX = 0;
+  var barY = SCREEN_HEIGHT - barH;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = -4;
+  ctx.drawImage(img, barX, barY, barW, barH);
+  ctx.restore();
+
+  return { x: barX, y: barY, width: barW, height: barH };
 }
 
 /**
@@ -133,6 +161,7 @@ function drawRoundMenuButton(ctx, x, y, size, label, withShadow) {
 
 module.exports = {
   drawMenuBottomBar: drawMenuBottomBar,
+  drawLevelBottomBar: drawLevelBottomBar,
   drawRoundMenuButton: drawRoundMenuButton,
   figmaToScreen: figmaToScreen,
 };

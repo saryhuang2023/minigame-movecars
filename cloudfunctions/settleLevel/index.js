@@ -23,10 +23,10 @@ exports.main = async (event, context) => {
     }
 
     const player = exist.data[0];
-    const claimedLevels = player.goldClaimedLevels || [];
 
-    // 检查是否已领取过该关卡金币
-    if (claimedLevels.indexOf(levelId) !== -1) {
+    // 防重复刷金币：进度线性，已通关最高关 = lastLevelIndex。
+    // 仅当本关比已记录进度更靠前（即首通）才发奖，否则视为已领过。
+    if (typeof player.lastLevelIndex === 'number' && levelId <= player.lastLevelIndex) {
       return {
         code: 0,
         gold: player.gold || 0,
@@ -43,7 +43,7 @@ exports.main = async (event, context) => {
     }
 
     var newGold = (player.gold || 0) + reward;
-    var newClaimedLevels = claimedLevels.concat([levelId]);
+    var newLastLevelIndex = Math.max(player.lastLevelIndex || 0, levelId);
 
     // 原子更新
     await db.collection('players')
@@ -51,7 +51,7 @@ exports.main = async (event, context) => {
       .update({
         data: {
           gold: newGold,
-          goldClaimedLevels: newClaimedLevels,
+          lastLevelIndex: newLastLevelIndex,
           updatedAt: db.serverDate()
         }
       });

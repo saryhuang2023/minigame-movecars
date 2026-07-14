@@ -76,11 +76,78 @@ class RightStepWidget extends UIComponent {
     this._breatheActive = false;
     this._BREATHE_DURATION = 400;
     this._BREATHE_AMPLITUDE = 0.26;
+
+    // 数字滚动动画（增加步数时向上滚动 1秒；减少时直接 snap）
+    this._displayValue = undefined;  // 当前显示值（首次进入直接显示，不滚动）
+    this._animFrom = 0;
+    this._animTo = 0;
+    this._animStart = 0;
+    this._animActive = false;
+    this._ANIM_DURATION = 1000;
+  }
+
+  /** ease-out-cubic 缓动 */
+  _easeOutCubic(t) {
+    t = Math.max(0, Math.min(1, t));
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  /** 绘制剩余步数数字（描边 #FFD343 + 投影 + 字间距），支持 alpha 与垂直偏移 */
+  _drawStepNumber(ctx, numStr, yCenter, alpha) {
+    if (alpha <= 0 || !numStr) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = '400 20px ' + Theme.font.family;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    var letterSpacing = 2;
+    var chars = numStr.split('');
+    var widths = [];
+    var totalW = 0;
+    for (var i = 0; i < chars.length; i++) {
+      var w = ctx.measureText(chars[i]).width;
+      widths.push(w);
+      totalW += w + (i < chars.length - 1 ? letterSpacing : 0);
+    }
+    var cursorX = NUM_CX - totalW / 2;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    for (var j = 0; j < chars.length; j++) {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#FFD343';
+      ctx.strokeText(chars[j], cursorX, yCenter);
+      ctx.fillStyle = '#FFD343';
+      ctx.fillText(chars[j], cursorX, yCenter);
+      cursorX += widths[j] + letterSpacing;
+    }
+    ctx.restore();
+    ctx.restore();
   }
 
   setData(threshold, steps) {
     this._threshold = threshold || 0;
     this._steps = steps || 0;
+    var target = this._threshold - this._steps;
+    if (target < 0) target = 0;
+    if (this._displayValue === undefined) {
+      this._displayValue = target;   // 首次进入直接显示，不滚动
+      return;
+    }
+    if (target > this._displayValue && !this._animActive) {
+      // 步数增加（+3步）→ 触发向上滚动动画
+      this._animFrom = this._displayValue;
+      this._animTo = target;
+      this._animStart = Date.now();
+      this._animActive = true;
+    } else if (target < this._displayValue) {
+      // 步数减少（正常移动）→ 直接 snap，不滚动
+      this._displayValue = target;
+      this._animActive = false;
+    }
   }
 
   setHidden(hidden) {
@@ -171,45 +238,31 @@ class RightStepWidget extends UIComponent {
     ctx.textBaseline = 'middle';
     ctx.fillText('剩余步数', LABEL_CX, LABEL_CY);
 
-    // === 剩余步数数字（大宝桃桃体 20px，letter-spacing 2px，描边 + 投影）===
-    var remaining = this._threshold - this._steps;
-    if (remaining < 0) remaining = 0;
-    var numStr = String(remaining);
-
-    ctx.font = '400 20px ' + Theme.font.family;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-
-    var letterSpacing = 2;
-    var chars = numStr.split('');
-    var widths = [];
-    var totalW = 0;
-    for (var i = 0; i < chars.length; i++) {
-      var w = ctx.measureText(chars[i]).width;
-      widths.push(w);
-      totalW += w + (i < chars.length - 1 ? letterSpacing : 0);
+    // === 剩余步数数字（滚动动画：增加步数时向上滚动 1秒；减少时直接 snap）===
+    var curValue;
+    if (this._animActive) {
+      var elapsed = Date.now() - this._animStart;
+      var t = Math.min(1, elapsed / this._ANIM_DURATION);
+      var e2 = this._easeOutCubic(t);
+      curValue = this._animFrom + (this._animTo - this._animFrom) * e2;
+      if (t >= 1) {
+        this._animActive = false;
+        this._displayValue = this._animTo;
+        curValue = this._animTo;
+      }
+    } else {
+      curValue = (this._displayValue === undefined) ? 0 : this._displayValue;
     }
-    var cursorX = NUM_CX - totalW / 2;
-    var numY = NUM_CY;
+    var numStr = String(Math.round(curValue));
 
-    // 投影（text-shadow: 0 0 4px rgba(0,0,0,0.25)）
-    ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    for (var j = 0; j < chars.length; j++) {
-      // 描边（border: 1px solid #FFD343，Figma 文本描边）
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = '#FFD343';
-      ctx.strokeText(chars[j], cursorX, numY);
-      // 填充
-      ctx.fillStyle = '#FFD343';
-      ctx.fillText(chars[j], cursorX, numY);
-      cursorX += widths[j] + letterSpacing;
+    var ROLL_DIST = 22; // 滚动距离（px）
+    if (this._animActive) {
+      // 旧数字上移淡出 + 新数字从下进（向上滚动效果）
+      this._drawStepNumber(ctx, String(Math.round(this._animFrom)), NUM_CY - e2 * ROLL_DIST, 1 - e2);
+      this._drawStepNumber(ctx, String(Math.round(this._animTo)), NUM_CY + (1 - e2) * ROLL_DIST, e2);
+    } else {
+      this._drawStepNumber(ctx, numStr, NUM_CY, 1);
     }
-    ctx.restore();
 
     ctx.restore();
   }

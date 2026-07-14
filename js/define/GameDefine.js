@@ -272,13 +272,10 @@ var GAME = {
   // ================================================================
   STORAGE_KEYS: {
     GOLD: 'player_gold',
-    GOLD_CLAIMED: 'player_gold_claimed',
     OWNED_SKINS: 'player_owned_skins',
     EQUIPPED_SKIN: 'player_equipped_skin',
     SKIN_CONFIG_VERSION: 'skin_config_version',
-    RECORD_PREFIX: 'record_',          // 个人最好记录 key 前缀
     USERINFO_CACHE: 'userinfo_cache',  // 用户信息缓存
-    FIRST_GOLD_PREFIX: 'first_gold_',  // 旧版兼容 key 前缀（GoldSystem 兜底读取用，勿删）
     AUDIO_VERSION: 'audio_cache_version',
   },
 
@@ -298,7 +295,7 @@ var GAME = {
     MAX: 5,                      // 最大个数
     COST_PER_GAME: 1,            // 每局消耗个数
     AD_GAIN: 1,                  // 看广告领体力个数
-    RECOVERY_INTERVAL: 3600 * 1000,  // 自然恢复 1 个所需毫秒（生产值：1 小时 = 3600s）
+    RECOVERY_INTERVAL: 20 * 1000,  // 自然恢复 1 个所需毫秒（生产值：1 小时 = 3600s）
     AD_DAILY_LIMIT: 10,           // 每天看广告领体力上限
     ICON_SIZE: 24,               // 图标显示尺寸
     ICON_GAP: 4,                 // 图标间距

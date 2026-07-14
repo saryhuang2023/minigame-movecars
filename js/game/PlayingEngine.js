@@ -14,7 +14,6 @@ const GameplayEngine = require('../core/GameplayEngine.js');
 const Theme = require('../define/GameDefine.js').THEME;
 const UIManager = require('../ui/UIManager.js');
 const TopBar = require('../ui/widgets/TopBar.js');
-const BottomBar = require('../ui/widgets/BottomBar.js');
 const VictoryPopup = require('../ui/widgets/VictoryPopup.js');
 const FailPopup = require('../ui/widgets/FailPopup.js');
 const RightStepWidget = require('../ui/widgets/RightStepWidget.js');
@@ -28,6 +27,7 @@ const SkinSystem = require('./SkinSystem.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const CommonButton = require('../ui/widgets/CommonButton.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
+const drawBottomBar = require('../ui/drawBottomBar.js');
 const { drawFlower } = require('../ui/drawFlower.js');
 const { drawPigCounter } = require('../ui/drawPigCounter.js');
 const SceneDefaults = require('../define/GameDefine.js').SCENE;
@@ -107,7 +107,6 @@ class PlayingEngine {
     this._totalPigsInLevel = 0;      // 本关原始猪数量（loadLevel 时快照，结算用，不受 setTimeout 时序影响）
     this._coinFlyEffect = new CoinFlyEffect();  // 金币磁吸飞行动画
     this._showBoardBounds = false;    // 调试框：棋盘可用区域
-    this._showHintCommon = true;     // 提示按钮可见（通关后隐藏）
     this._goldSettled = false;        // 通关结算已入库（入账后不再累积 _levelAccumulatedGold）
     this._isFirstGoldClear = false;    // 进入关卡时计算：本关是否首通（决定飞金币 + 金币发放）
     this._settlementTriggered = false; // 结算已触发（防重入）
@@ -124,6 +123,8 @@ class PlayingEngine {
     // 场景背景图
     this._sceneBgImg = wx.createImage();
     this._sceneBgLoaded = false;
+    this._levelReady = false;        // prepareLevel 并行加载是否完成
+    this._levelLoadFailed = false;   // 并行加载是否失败
     var self = this;
     this._sceneBgImg.onload = function () {
       self._sceneBgLoaded = true;
@@ -156,6 +157,8 @@ class PlayingEngine {
     this._goldAmount = 0;
     this._stepBonusRemaining = 0;
     this._levelAccumulatedGold = 0;
+    this._bonusSteps = 0;          // 关卡内「+3步」累计加成（每关重置）
+    this._hasHintData = true;      // 关卡是否有 hint 数据（无则隐藏「提」按钮，与旧逻辑一致）
     this._totalPigsInLevel = 0;
     this._coinFlyEffect = new CoinFlyEffect();  // 重置飞行中动画
     this._goldSettled = false;
@@ -234,33 +237,6 @@ class PlayingEngine {
         this._uiGoldWidget = null;
       }
 
-      // Layer 2 — BottomBar
-      this._uiBottomBar = new BottomBar({
-        zIndex: UIManager.LAYER.CONTROL,
-        cardW: SCREEN_WIDTH - Theme.spacing.padding * 2,
-        buttonPress: this._btnPress,
-        onHintClick: function () {
-          var best = self._hint.show();
-          if (best) {
-            audio.play('hint_reveal');
-          } else {
-            wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
-          }
-        },
-      });
-      this.ui.add(this._uiBottomBar, UIManager.LAYER.CONTROL);
-
-      // 提示按钮（CommonButton gold，右下角）
-      this._hintCommonBtn = new CommonButton({
-        label: '提示!',
-        color: 'gold',
-        iconKey: 'ad_icon',
-      });
-      this._hintCommonBtn.visible = true;
-
-      // 隐藏旧 BottomBar 提示/移除按钮（已替换为 CommonButton）
-      this._uiBottomBar.setHintHidden(true);
-
       // Layer INFO — 右上角剩余步数组件（还原旧版 CrownPigWidget 的步数显示，奖杯已删除）
       this._uiRightStep = new RightStepWidget({ zIndex: UIManager.LAYER.INFO });
       this.ui.add(this._uiRightStep, UIManager.LAYER.INFO);
@@ -291,7 +267,6 @@ class PlayingEngine {
       this.ui = null;
       this._uiTopBar = null;
       this._uiGoldWidget = null;
-      this._uiBottomBar = null;
       this._uiVictoryPopup = null;
       this._uiFailPopup = null;
       this._uiRightStep = null;
@@ -322,26 +297,12 @@ class PlayingEngine {
     }
     if (this._uiGoldWidget) this._uiGoldWidget.setData(goldDisplay);
 
-    // BottomBar — 提示按钮状态（移除功能已删除，提示按钮常显）
-    var hintShowing = this._hint.isActive();
-    this._uiBottomBar.setHintShowing(hintShowing);
-    this._uiBottomBar.setCurrentSteps(this.steps);
-
-    // 提示按钮位置（右下角 Figma 规格）
-    if (this._hintCommonBtn) {
-      this._hintCommonBtn.x = SCREEN_WIDTH - 15 - 144;
-      this._hintCommonBtn.y = SCREEN_HEIGHT - 34.5 - 61;
-      this._hintCommonBtn.label = '提示!';
-      this._hintCommonBtn.color = 'gold';
-      this._hintCommonBtn.visible = this._showHintCommon && !this._failed;
-    }
-
     // 右上角剩余步数组件（还原旧版 CrownPigWidget 的步数显示；试玩/结算面板弹出/失败时隐藏）
     // 注意：隐藏时机用 _showVictoryPanel（结算面板弹出）而非 _victory（一通关就置真）。
     // 否则通关瞬间步数框即消失，但步数转金币动画（_startStepBonusTicker + 金币飞入）要等
     // _showVictoryPanel=true 才结束，会出现「框没了、动画还在播」的割裂感。
     if (this._uiRightStep) {
-      this._uiRightStep.setData(this._stepBonusThreshold, this.steps);
+      this._uiRightStep.setData(this._stepBonusThreshold + this._bonusSteps, this.steps);
       this._uiRightStep.setHidden(
         databus.returnState === 'editor' || this._showVictoryPanel || this._failed
       );
@@ -474,7 +435,7 @@ class PlayingEngine {
     }
     // 入场动画状态必须在 loadLevel 之前设置，确保首帧渲染时 es 已存在
     this._entranceState = {
-      startTime: Date.now(),
+      startTime: Date.now() + 50,    // 进入关卡后延后 50ms 再启动入场（与菜单出场后的停留呼应）
       phase: 'board',        // board → pigs → ui → done
       pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,     // 300ms 后开始猪渐显
       pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,       // 猪渐显 500ms (ease-out)
@@ -484,6 +445,14 @@ class PlayingEngine {
     };
     this.loadLevel(data);
     this._loading = false;
+    // 断点续传 + 录制 + 预下载（与菜单 prepareLevel 路径共用，避免菜单进关漏掉续玩）
+    this._afterEnterLevel();
+  }
+
+  /** 进关后续统一逻辑：脏检测重置 + 断点续玩恢复 + 录制启动 + 预下载。
+   *  所有「加载完关卡」的入口（startLevel 的 _loadAndStart / 菜单 prepareLevel）都应调用，
+   *  否则菜单进关会漏掉 game_checkpoint 续玩恢复与录制启动（交叉淡变重构期间暴露）。 */
+  _afterEnterLevel() {
     // 重置脏检测基准（确保首轮一定写入）
     this._lastSavedSteps = -1;
     this._lastSavedPigCount = -1;
@@ -658,14 +627,90 @@ class PlayingEngine {
   }
 
   activate() {
-    var name = databus.currentLevel ? databus.currentLevel.name : '';
-    this.startLevel(name);
+    // 菜单→关卡路径：prepareLevel 已在出场期间完成加载（_levelReady=true），这里只绑定输入、跳过重复加载。
+    // 其它直接进关路径（冷启动 / 编辑器试玩）：_levelReady 仍为 false → 走 startLevel 兜底。
+    var self = this;
+    if (this._levelReady) {
+      this.input.on('playing', function (e) { self.handleEvent(e); });
+    } else {
+      var name = databus.currentLevel ? databus.currentLevel.name : '';
+      this.startLevel(name);
+    }
+  }
+
+  /** 菜单→关卡：在出场动画期间并行预加载并构建关卡（不启动入场计时）。 */
+  prepareLevel(name) {
+    this._levelReady = false;
+    this._levelLoadFailed = false;
+    if (this.levelName) {
+      this.input.off('playing');
+      this._guide.reset();
+    }
+    this.levelName = name;
+    this._setupUI();                       // 搭建 UI 框架（棋盘空白），让关卡引擎可随时渲染
+    if (this._uiGoldWidget) this._uiGoldWidget._floatTexts = [];
+
+    var self = this;
+    var doLoad = function (data) {
+      self.loadLevel(data);
+      self._levelReady = true;
+      self._afterEnterLevel();   // 断点续玩恢复 + 录制 + 预下载（与 _loadAndStart 一致，修复菜单进关漏续玩）
+    };
+
+    // 试玩模式：直接用编辑器关卡数据
+    if (databus.returnState === 'editor' && databus.currentLevel && databus.currentLevel.data) {
+      doLoad(databus.currentLevel.data);
+    } else if (this._cloudFetchedData.has(name)) {
+      doLoad(this._cloudFetchedData.get(name));
+    } else {
+      var localData = this._readLocalLevel(name);
+      if (localData) {
+        doLoad(localData);                 // 本地关：同步重活在「菜单下滑」期间完成
+      } else {
+        // 本地无 → 云端异步（与菜单下滑并行）
+        var pullPromise = cloud.downloadLevel(null, name, true);
+        var timeoutPromise = new Promise(function (_, reject) {
+          setTimeout(function () { reject(new Error('timeout')); }, PlayDefine.PLAY.LOAD_TIMEOUT);
+        });
+        Promise.race([pullPromise, timeoutPromise])
+          .then(function (result) {
+            if (result && result.data) {
+              self._cloudFetchedData.set(name, result.data);
+              doLoad(result.data);
+            } else {
+              console.warn('[cloud] 关卡 ' + name + ' 未发布，本地也无配置');
+              self._levelLoadFailed = true;
+              wx.showToast({ title: '关卡数据加载失败', icon: 'none', duration: 2000 });
+            }
+          })
+          .catch(function (err) {
+            console.warn('[cloud] 关卡拉取失败（' + (err && err.message) + '），本地也无配置');
+            self._levelLoadFailed = true;
+            wx.showToast({ title: '关卡数据加载失败', icon: 'none', duration: 2000 });
+          });
+      }
+    }
+  }
+
+  /** 关卡入场动画计时起点（交叉淡变结束、切场景那一刻调用）。不再 +500ms —— 交叉淡变已提供呼吸间隙。 */
+  beginEntrance() {
+    this._entranceState = {
+      startTime: Date.now(),
+      phase: 'board',        // board → pigs → ui → done
+      pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,
+      pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,
+      uiStart: PlayDefine.PLAY.ENTRANCE.UI_START,
+      uiDur: PlayDefine.PLAY.ENTRANCE.UI_DUR,
+      totalDuration: PlayDefine.PLAY.ENTRANCE.TOTAL,
+    };
   }
 
   deactivate() {
     this.input.off('playing');
     this._guide.reset();         // 退出关卡时强制结束引导
     this._entranceState = null;  // 清空入场动画，防止下一帧闪现旧猪
+    this._levelReady = false;    // 重置并行加载标志，避免误判「已加载」跳过 startLevel（如编辑器试玩→进关）
+    this._levelLoadFailed = false;
     this._stopCheckpointTimer();
     // 清理录制/回放状态
     if (this._isRecording) this._trialStopRecord(false);  // 退出关卡不保存录制
@@ -727,18 +772,11 @@ class PlayingEngine {
       }
     }
     // 关卡无 hint 数据则隐藏提示按钮（正式 + 试玩统一）
-    if (this._uiBottomBar) {
-      var hasAnyHint = false;
-      for (var i = 0; i < this.gp.pigs.length; i++) {
-        if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
-      }
-      if (!hasAnyHint) {
-        this._uiBottomBar.setHintHidden(true);
-        this._showHintCommon = false;
-      } else {
-        this._showHintCommon = true;
-      }
+    var hasAnyHint = false;
+    for (var i = 0; i < this.gp.pigs.length; i++) {
+      if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
     }
+    this._hasHintData = hasAnyHint;         // 无 hint 关卡隐藏提示按钮
   }
 
   // ========== 输入 ==========
@@ -928,17 +966,38 @@ class PlayingEngine {
         return;
       }
 
-      // 提示按钮（CommonButton，右下角；移除功能已删除，仅提示）
-      if (this._hintCommonBtn && this._hintCommonBtn.visible &&
-          this._hintCommonBtn.hitTest(t.x, t.y)) {
-        this._hintCommonBtn.handleTouch(t.x, t.y, 'touchstart');
-        var best = this._hint.show();
-        if (best) {
-          audio.play('hint_reveal');
-        } else {
-          wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
+      // 关卡内底栏双圆按钮（赛+3 / 提提示）—— 入场动画完成前 / 失败 / 通关后 不响应
+      var entranceActive = this._entranceState && this._entranceState.phase !== 'done';
+      if (!entranceActive && !this._failed && !this._victory) {
+        var bSize = 68;
+        var bonusX = 84;                        // 左：+3 步（屏幕底部 left:84 bottom:53）
+        var bonusY = SCREEN_HEIGHT - 53 - bSize;
+        var hintX = SCREEN_WIDTH - 84 - bSize;  // 右：提示（屏幕底部 right:84 bottom:53）
+        var hintY = SCREEN_HEIGHT - 53 - bSize;
+        // 左按钮：+3 步
+        if (_hitRect(t.x, t.y, { x: bonusX, y: bonusY, w: bSize, h: bSize })) {
+          audio.play('button_click');
+          this._btnPress.press('plus5');
+          this._btnPress.breathe('plus5');
+          this._addBonusSteps(3);
+          return;
         }
-        return;
+        // 右按钮：提示（提示的猪未逃脱前不能再点）
+        if (_hitRect(t.x, t.y, { x: hintX, y: hintY, w: bSize, h: bSize })) {
+          if (this._hint.isActive()) {
+            wx.showToast({ title: '提示的猪未逃脱前不能再点', icon: 'none', duration: 1500 });
+            return;
+          }
+          this._btnPress.press('bottomHint');
+          this._btnPress.breathe('bottomHint');
+          var best = this._hint.show();
+          if (best) {
+            audio.play('hint_reveal');
+          } else {
+            wx.showToast({ title: '提示已结束', icon: 'none', duration: 1500 });
+            }
+          return;
+        }
       }
 
       // === 游戏世界（拖拽猪等）===
@@ -1266,8 +1325,6 @@ class PlayingEngine {
           this._markCleared();
           this._victory = true;
           this._victoryTime = Date.now();
-          this._uiBottomBar.setHintHidden(true);  // 通关后隐藏提示按钮
-          this._showHintCommon = false;
           console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
         }
         // 试玩模式：不弹结算面板，数据已保存，停留在关卡界面
@@ -1301,8 +1358,9 @@ class PlayingEngine {
   _checkFail() {
     if (this._victory || this._failed) return;          // 已通关 / 已失败 → 不重复触发
     if (databus.returnState === 'editor') return;       // 试玩模式不判失败
-    if (this._stepBonusThreshold <= 0) return;          // 无步数预算（旧关卡）不判失败
-    var remaining = this._stepBonusThreshold - this.steps;
+    var effThreshold = this._stepBonusThreshold + this._bonusSteps;  // 含「+3步」加成
+    if (effThreshold <= 0) return;                       // 无步数预算（旧关卡）不判失败
+    var remaining = effThreshold - this.steps;
     if (remaining <= 0) {
       this._triggerFail();
     }
@@ -1311,11 +1369,16 @@ class PlayingEngine {
   /** 触发失败：弹出失败面板，屏蔽棋盘与提示操作 */
   _triggerFail() {
     this._failed = true;
-    this._showHintCommon = false;
-    this._uiBottomBar.setHintHidden(true);
     this._uiFailPopup.visible = true;
     this._uiFailPopup.open();
     console.log('[LOG_fail] 通关失败！steps=' + this.steps + ' threshold=' + this._stepBonusThreshold);
+  }
+
+  /** 关卡内「+3步」：增加步数预算（不影响已用步数，剩余步数 +3，触发 RightStepWidget 滚动动画） */
+  _addBonusSteps(n) {
+    if (this._failed || this._victory) return;
+    this._bonusSteps += (n || 0);
+    console.log('[LOG_bonus] +' + (n || 0) + '步 bonusSteps=' + this._bonusSteps + ' eff=' + (this._stepBonusThreshold + this._bonusSteps));
   }
 
   _markCleared() {
@@ -1338,8 +1401,9 @@ class PlayingEngine {
     if (this._isFirstGoldClear) {
       var reward = GoldSystem.calculateReward(this._totalPigsInLevel);
       // 步数奖励：在阈值内通关，剩余步数转化为额外金币
-      if (this._stepBonusThreshold > 0 && this.steps < this._stepBonusThreshold) {
-        var stepBonus = this._stepBonusThreshold - this.steps;
+      var effThreshold2 = this._stepBonusThreshold + this._bonusSteps;  // 含「+3步」加成
+      if (effThreshold2 > 0 && this.steps < effThreshold2) {
+        var stepBonus = effThreshold2 - this.steps;
         if (stepBonus > 0) {
           this._stepBonusRemaining = stepBonus;
           reward += stepBonus;
@@ -1420,7 +1484,6 @@ class PlayingEngine {
       cloud.savePlayerData({
         lastLevelIndex: lastLevelIndex,
         gold: GoldSystem.getGold(),
-        goldClaimedLevels: GoldSystem.collectClaimHistory(),
         skins: SkinSystem.getCloudState(),
         avatarUrl: info.avatarUrl || '',
         nickname: info.nickName || ''
@@ -1599,6 +1662,38 @@ class PlayingEngine {
     audio.play('victory');
   }
 
+  /** 绘制关卡场景背景图（可被交叉淡变复用，alpha 控制不透明度） */
+  drawSceneBackground(alpha) {
+    if (!this._sceneBgLoaded) return;
+    var imgW = this._sceneBgImg.width;
+    var imgH = this._sceneBgImg.height;
+    var scale = Math.max(SCREEN_WIDTH / imgW, SCREEN_HEIGHT / imgH);
+    var dw = imgW * scale;
+    var dh = imgH * scale;
+    var dx = (SCREEN_WIDTH - dw) / 2;
+    var dy = (SCREEN_HEIGHT - dh) / 2;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(this._sceneBgImg, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  /**
+   * 绘制带按压/呼吸缩放的圆钮（关卡内 +5 / 提 复用）。
+   * 围绕按钮中心应用 _btnPress.getScale(key)，与顶部 hint/设置按钮反馈一致。
+   */
+  _drawPressRoundButton(ctx, key, x, y, size, label, shadow) {
+    var s = this._btnPress.getScale(key);
+    var cx = x + size / 2;
+    var cy = y + size / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.translate(-cx, -cy);
+    drawBottomBar.drawRoundMenuButton(ctx, x, y, size, label, shadow);
+    ctx.restore();
+  }
+
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
   render() {
     // 引导系统帧更新（所有状态下的引擎均需轮询）
@@ -1611,16 +1706,7 @@ class PlayingEngine {
     if (!this._uiTopBar) return;
 
     // ===== 场景背景图（覆盖 GameEngine 的菜单背景）=====
-    if (this._sceneBgLoaded) {
-      var imgW = this._sceneBgImg.width;
-      var imgH = this._sceneBgImg.height;
-      var scale = Math.max(SCREEN_WIDTH / imgW, SCREEN_HEIGHT / imgH);
-      var dw = imgW * scale;
-      var dh = imgH * scale;
-      var dx = (SCREEN_WIDTH - dw) / 2;
-      var dy = (SCREEN_HEIGHT - dh) / 2;
-      ctx.drawImage(this._sceneBgImg, dx, dy, dw, dh);
-    }
+    this.drawSceneBackground(1);
 
     const safeTop = databus.safeTop;
 
@@ -1835,7 +1921,20 @@ class PlayingEngine {
         }
       }
       // 5. 底部栏（UIManager）
-      this._uiBottomBar.render(ctx);
+      // 5.2 关卡内底栏：level_buttom 背景 + 双圆按钮（赛+3 / !提示）
+      // 底栏图片始终绘制（失败时由失败面板覆盖）；交互按钮在失败/通关后隐藏
+      drawBottomBar.drawLevelBottomBar(ctx);
+      if (!this._failed && !this._victory) {
+        var bSize = 68;
+        var bLeftX = 84;
+        var bLeftY = SCREEN_HEIGHT - 53 - bSize;
+        this._drawPressRoundButton(ctx, 'plus5', bLeftX, bLeftY, bSize, '+3', true);
+        if (this._hasHintData) {
+          var bRightX = SCREEN_WIDTH - 84 - bSize;
+          var bRightY = SCREEN_HEIGHT - 53 - bSize;
+          this._drawPressRoundButton(ctx, 'bottomHint', bRightX, bRightY, bSize, '!', true);
+        }
+      }
     } else if (es.phase === 'ui') {
       // UI 飞入动画（500ms，ease-out cubic）
       var uiT = Math.min(1, (eElapsed - es.uiStart) / es.uiDur);
@@ -1857,8 +1956,26 @@ class PlayingEngine {
         ctx.restore();
       }
       // 下方控件：从 y=+200 落到 y=0（同时）
+      var selfPE = this;
       var bottomItems = [
-        { comp: this._uiBottomBar,  cond: true },
+        // 关卡内底栏背景 + 双圆按钮（+3/!）一并滑入，与主菜单底栏动效语言统一
+        // 绘制逻辑与 done 段（5.2）完全一致，仅多出「从下方 +200 滑入」的位移包
+        { comp: {
+            render: function(c) {
+              drawBottomBar.drawLevelBottomBar(c);
+              if (!selfPE._failed && !selfPE._victory) {
+                var bSize = 68;
+                var bLeftX = 84;
+                var bLeftY = SCREEN_HEIGHT - 53 - bSize;
+                selfPE._drawPressRoundButton(c, 'plus5', bLeftX, bLeftY, bSize, '+3', true);
+                if (selfPE._hasHintData) {
+                  var bRightX = SCREEN_WIDTH - 84 - bSize;
+                  var bRightY = SCREEN_HEIGHT - 53 - bSize;
+                  selfPE._drawPressRoundButton(c, 'bottomHint', bRightX, bRightY, bSize, '!', true);
+                }
+              }
+            }
+          }, cond: true },
       ];
       for (var i = 0; i < bottomItems.length; i++) {
         var item = bottomItems[i];
@@ -1923,11 +2040,6 @@ class PlayingEngine {
     // 棋盘可用区域调试框
     if (this._showBoardBounds) {
       this._drawBoardBounds(ctx);
-    }
-
-    // 提示/移除按钮（CommonButton，右下角，入场后可见）
-    if (this._hintCommonBtn && this._hintCommonBtn.visible) {
-      this._hintCommonBtn.render(ctx);
     }
 
     // 6. 通关弹窗（UIManager）

@@ -37,6 +37,15 @@ var MENU_ENTRANCE = {
 };
 var MENU_ENTRANCE_END = 1260 + 440;
 
+// 出场动画：主菜单「底部区域」向下移出屏幕 + 渐隐，其余元素原地渐隐。
+// 时长 = 控件从原位滑出屏幕的自然时长（全屏高度下滑 + 同时渐隐），与入场时序无关。
+var MENU_EXIT_DURATION = 450;
+// 出场（控件滑出）完成后：先等关卡加载就绪，再做菜单背景↔关卡背景交叉淡变。
+// 交叉淡变时长 = 菜单背景渐隐(1→0) + 关卡背景渐显(0→1) 的重叠区间。
+var MENU_CROSSFADE_DURATION = 450;
+// 出场时真正「下拉」的元素集合（底部条 + 开始按钮 + 左下/右下双圆钮）；其余（设置/体力）仅渐隐。
+var MENU_EXIT_BOTTOM_KEYS = { bottomBar: 1, play: 1, dress: 1, challenge: 1 };
+
 class GameEngine {
   constructor() {
     console.log('[GameEngine] constructor 开始');
@@ -67,6 +76,10 @@ class GameEngine {
     this.menuButtons = [];
     this._pressedBtnIdx = -1;   // 当前被按下的按钮索引（用于按压动画）
     this._pressedBtnTime = 0;   // 按钮按下时间
+
+    // 菜单可见性 + 出场动画状态
+    this._menuVisible = false;  // 当前是否处于「可见的主菜单」（决定离场时是否播放反向出场动画）
+    this._menuExit = null;      // 出场动画状态 { phase:'exit', startTime, target, totalDuration }
 
     // 左下角快速 5 连击解锁编辑器入口 + DebugPanel
     this._cornerTapCount = 0;
@@ -214,28 +227,18 @@ class GameEngine {
 
     // 章节配置按需懒加载，在各引擎激活时读取，避免阻塞首帧渲染
 
-    // 菜单输入处理始终注册（自动进关卡路径也需要，以便后续返回菜单时能响应）
+    // 菜单输入处理始终注册（返回主菜单时能响应按钮）
     this.setupMenuInput();
 
     // 应用 LoadingManager 预加载的云端数据（替代原 _syncFromCloud + _syncCloudLevels）
     this._applyPreloadedPlayerData();
     this._applyPreloadedCloudLevels();
 
-    // 同步检查：第1关未通关 → 跳过主菜单，直接进关卡
-    var li = wx.getStorageSync('lastLevelIndex');
-    var liNum = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : -1;
-    if (liNum <= 0) {
-      console.log('[GameEngine] 第1关未通关，跳过主菜单直接进关卡');
-      this._didAutoStart = true;
-      this._hasLeftMenu = true;
-      this.startLastLevel();
-    } else {
-      databus.gameState = 'menu';
-      this._hasLeftMenu = false;
-      console.log('[GameEngine] 设置 gameState=menu');
-      // 云端数据已就绪，检查是否需要恢复存档
-      this._checkAutoStart();
-    }
+    // 始终进入主菜单（已移除"第1关自动进关"特殊处理，不再做任何关卡判断）
+    databus.gameState = 'menu';
+    this._hasLeftMenu = false;
+    this._menuVisible = true;   // 主菜单可见，离场时应播放出场动画
+    console.log('[GameEngine] 设置 gameState=menu（启动即主菜单）');
     console.log('[GameEngine] start() 完成');
   }
 
@@ -246,7 +249,6 @@ class GameEngine {
       console.log('[cloud] cloud.getPlayerData 成功回调，res.code=' + (res && res.code) + '，有data=' + !!(res && res.data));
       if (!res || res.code !== 0 || !res.data) {
         console.log('[cloud] 无云端存档或拉取失败，沿用本地数据');
-        self._checkAutoStart();
         return;
       }
       var cloudData = res.data;
@@ -258,14 +260,10 @@ class GameEngine {
         console.log('[cloud] 云端进度更新: lastLevelIndex ' + localLI + ' → ' + cloudLI);
         wx.setStorageSync('lastLevelIndex', cloudLI);
       }
-      // 金币：云端权威覆盖本地（不再取较大值，以服务器结算为准）
+      // 金币：本地与云端取最大值（以多者为准，防止任一侧数据落后）
       if (typeof cloudData.gold === 'number') {
-        GoldSystem.setGold(cloudData.gold);
-        console.log('[cloud] 云端金币同步: ' + cloudData.gold);
-      }
-      // 还原已领取金币的关卡记录
-      if (cloudData.goldClaimedLevels && Array.isArray(cloudData.goldClaimedLevels)) {
-        GoldSystem.restoreClaimHistory(cloudData.goldClaimedLevels);
+        GoldSystem.mergeFromCloud(cloudData.gold);
+        console.log('[cloud] 云端金币同步(取最大值): ' + cloudData.gold);
       }
       // 合并皮肤数据（云端优先覆盖本地）
       if (cloudData.skins) {
@@ -281,12 +279,9 @@ class GameEngine {
           });
         }
       }
-      console.log('[cloud] 云端数据同步完成 → 调用 _checkAutoStart');
-      self._checkAutoStart();
+      console.log('[cloud] 云端数据同步完成（启动即主菜单，不再自动进关）');
     }).catch(function(err) {
       console.warn('[cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
-      console.log('[cloud] cloud.getPlayerData 失败，走 catch → 调用 _checkAutoStart');
-      self._checkAutoStart();
     });
   }
 
@@ -379,11 +374,6 @@ class GameEngine {
       console.log('[cloud][GameEngine] 云端金币合并: cloud=' + cloudData.gold + ' local=' + GoldSystem.getGold() + ' → ' + merged);
     }
 
-    // 还原已领取金币的关卡记录
-    if (cloudData.goldClaimedLevels && Array.isArray(cloudData.goldClaimedLevels)) {
-      GoldSystem.restoreClaimHistory(cloudData.goldClaimedLevels);
-    }
-
     // 合并皮肤数据
     if (cloudData.skins) {
       SkinSystem.mergeFromCloud(cloudData.skins);
@@ -413,40 +403,6 @@ class GameEngine {
     } else {
       console.log('[cloud][GameEngine] 无预加载云端关卡范围');
     }
-  }
-
-  // 第1关未通关 → 自动进入关卡；否则留主菜单
-  // 杀进程恢复：存在有效存档 → 自动进入关卡
-  _checkAutoStart() {
-    // 入口日志：标记每次调用
-    console.log('[LOG] ===== _checkAutoStart 被调用 =====');
-    console.log('[LOG] _didAutoStart=' + this._didAutoStart + ' _hasLeftMenu=' + this._hasLeftMenu);
-    if (this._didAutoStart) {
-      console.log('[LOG] 已执行过，直接返回');
-      return;
-    }
-
-    if (this._hasLeftMenu) {
-      this._didAutoStart = true;
-      return;
-    }
-
-    this._didAutoStart = true;
-
-    var li = wx.getStorageSync('lastLevelIndex');
-    console.log('[LOG] wx.getStorageSync("lastLevelIndex") 原始值:', JSON.stringify(li), '类型:', typeof li);
-    var liNum = (li !== '' && li !== undefined && li !== null) ? parseInt(li, 10) : -1;
-    console.log('[LOG] 解析后 liNum=' + liNum + ' (<=0?' + (liNum <= 0) + ')');
-
-    if (liNum <= 0) {
-      // 第1关未通关 → 自动进入关卡
-      console.log('[LOG] ✓ 第1关未通关，自动进入关卡！');
-      this.startLastLevel();
-      console.log('[LOG] ===== _checkAutoStart 结束（自动进入） =====');
-      return;
-    }
-
-    console.log('[LOG] _checkAutoStart 完成，停在主菜单');
   }
 
   // ========== 设计常量 ==========
@@ -738,8 +694,7 @@ class GameEngine {
     databus.currentLevel = { name: lv.name, data: null };
     databus.currentLevelIndex = levelIndex;
     databus.returnState = 'menu';
-    databus.gameState = 'playing';
-    this._hasLeftMenu = true;   // 标记已离开主菜单，防止异步恢复弹窗
+    this._leaveMenu('playing');   // 菜单可见则播出场动画，否则直接进关
 
     // 同步 databus.projectLevels（PlayingEngine 下一关/重玩依赖）
     this._buildProjectLevels(totalLevels);
@@ -916,6 +871,80 @@ class GameEngine {
     };
   }
 
+  /**
+   * 菜单元素变换统一入口：出场动画进行中（任一阶段）返回整体下移渐隐变换，否则返回入场变换。
+   * renderMenu 6 处调用均走这里，无需各自判断状态。
+   */
+  _getMenuTransform(key) {
+    if (this._menuExit) {
+      return this._getExitTransform(key);
+    }
+    return this._getEntranceTransform(key);
+  }
+
+  /**
+   * 主菜单出场动画：底部区域（底部条 + 开始按钮 + 左下/右下双圆钮，视觉上连成一片）
+   * 整体向下移出屏幕 + 渐隐；其余元素（设置/体力）原地渐隐、不下移。
+   * 按 key 区分：仅 BOTTOM_KEYS 下滑，其余 dy=0 仅 alpha 渐隐。
+   * 返回 { dx, dy, scale, alpha }。
+   */
+  _getExitTransform(key) {
+    var elapsed = Date.now() - this._menuExit.startTime;
+    var p = Math.min(1, elapsed / MENU_EXIT_DURATION);
+    var dy = MENU_EXIT_BOTTOM_KEYS[key] ? SCREEN_HEIGHT * p : 0;
+    return {
+      dx: 0,
+      dy: dy,
+      scale: 1,
+      alpha: 1 - p,
+    };
+  }
+
+  /**
+   * 触发主菜单出场动画（整体下移+渐隐），结束后由 update() 提交状态切换。
+   * @param {string} target 目标状态 'playing' | 'editor'
+   */
+  _startMenuExit(target) {
+    this._pressedBtnIdx = -1;   // 清按压态，出场过渡干净
+    this._menuExit = {
+      phase: 'slide',                 // slide → wait → crossfade → commit
+      startTime: Date.now(),
+      target: target,
+      totalDuration: MENU_EXIT_DURATION,
+      crossStart: 0,
+      crossDuration: MENU_CROSSFADE_DURATION,
+    };
+    // 出场开始即并行加载关卡内容（重活在「菜单下滑」期间完成，避免切场景那一帧卡顿）
+    if (target === 'playing') {
+      this.playing.prepareLevel(databus.currentLevel ? databus.currentLevel.name : '');
+    }
+  }
+
+  /** 提交菜单出场：切状态 +（playing）启动关卡入场；不空一帧。 */
+  _commitMenuExit(targetState) {
+    this._menuExit = null;
+    this._menuVisible = false;
+    this._hasLeftMenu = true;
+    databus.gameState = targetState;
+    if (targetState === 'playing') {
+      this.playing.beginEntrance();   // 关卡背景已在交叉淡变中显示，现在启动棋盘/猪/UI 入场
+    }
+    this.checkStateTransition();      // 激活 playing/editor
+  }
+
+  /**
+   * 离开主菜单：菜单可见时播放出场动画；否则直接切换（如启动即自动进关，菜单从未显示）。
+   * @param {string} target 目标状态 'playing' | 'editor'
+   */
+  _leaveMenu(target) {
+    if (this._menuVisible && databus.gameState === 'menu' && !this._menuExit) {
+      this._startMenuExit(target);
+    } else {
+      this._hasLeftMenu = true;
+      databus.gameState = target;
+    }
+  }
+
   renderMenu() {
     var C = this.COLORS;
     var safeTop = databus.safeTop;
@@ -923,7 +952,7 @@ class GameEngine {
 
     // ===== 底部功能区域背景（stretched，最底层，在所有按钮之下）=====
     // 底部条入场：上移 + 渐显（t=500 起）
-    var barT = this._getEntranceTransform('bottomBar');
+    var barT = this._getMenuTransform('bottomBar');
     ctx.save();
     ctx.globalAlpha = barT.alpha;
     if (barT.dy !== 0) ctx.translate(0, barT.dy);
@@ -940,12 +969,12 @@ class GameEngine {
       this._challengeBtnRect = _challengeRect;
     }
 
-    // 计算按钮按压缩放
+    // 计算按钮按压缩放（menuButtons 顺序：0=play 1=settings 2=dress 3=challenge 4=editor 5=debug）
     var pressScale = this._getBtnPressScale();
     var mainScale = this._pressedBtnIdx === 0 ? pressScale : 1;
-    var secScale  = this._pressedBtnIdx === 1 ? pressScale : 1;
-    var arenaScale = this._pressedBtnIdx === 2 ? pressScale : 1;
-    var setScale   = this._pressedBtnIdx === 3 ? pressScale : 1;
+    var setScale   = this._pressedBtnIdx === 1 ? pressScale : 1;
+    var dressPress = this._pressedBtnIdx === 2 ? pressScale : 1;
+    var challengePress = this._pressedBtnIdx === 3 ? pressScale : 1;
     var editScale  = this._pressedBtnIdx === 4 ? pressScale : 1;
     var debugScale = this._pressedBtnIdx === 5 ? pressScale : 1;
 
@@ -960,7 +989,7 @@ class GameEngine {
     var setBtnCY = setBtnY + setIconSize / 2;
 
     // 入场动画
-    var st = this._getEntranceTransform('settings');
+    var st = this._getMenuTransform('settings');
     ctx.save();
     ctx.translate(setBtnCX + st.dx, setBtnCY + st.dy);
     ctx.scale(setScale, setScale);
@@ -971,7 +1000,7 @@ class GameEngine {
     ctx.restore();
 
     // ===== 体力 UI（左上角：5 图标 + 倒计时），与设置按钮同批原地渐显 =====
-    var staT = this._getEntranceTransform('stamina');
+    var staT = this._getMenuTransform('stamina');
     ctx.save();
     ctx.globalAlpha *= staT.alpha;
     this._renderStaminaUI(ctx, setBtnY + setIconSize);
@@ -987,7 +1016,7 @@ class GameEngine {
     var startCX = startX + startW / 2;
     var startCY = startY + startH / 2;
 
-    var playT = this._getEntranceTransform('play');
+    var playT = this._getMenuTransform('play');
     ctx.save();
     ctx.globalAlpha = playT.alpha;
     // 围绕按钮中心：按压缩放 × 入场缩放（easeOutBack 回弹）
@@ -1084,7 +1113,7 @@ class GameEngine {
     if (editArea) {
       this.menuButtons.push({
         x: editArea.x, y: editArea.y, w: editArea.w, h: editArea.h,
-        action: function() { self._hasLeftMenu = true; databus.gameState = 'editor'; }
+        action: function() { self._leaveMenu('editor'); }
       });
     }
     if (debugArea) {
@@ -1097,8 +1126,8 @@ class GameEngine {
     // ===== 底部圆形功能按钮（装扮 / 挑战赛）绘制，位于各面板之下 =====
     // 入场：与开始按钮相同的「缩放回弹 + 渐显」，t=1260 同批出场
     if (bottomBar) {
-      var _dBt = this._getEntranceTransform('dress');
-      var _cBt = this._getEntranceTransform('challenge');
+      var _dBt = this._getMenuTransform('dress');
+      var _cBt = this._getMenuTransform('challenge');
       var _dCx = this._dressBtnRect.x + this._dressBtnRect.w / 2;
       var _dCy = this._dressBtnRect.y + this._dressBtnRect.h / 2;
       var _cCx = this._challengeBtnRect.x + this._challengeBtnRect.w / 2;
@@ -1110,8 +1139,9 @@ class GameEngine {
       // 装扮（右）
       ctx.save();
       ctx.globalAlpha = _dBt.alpha;
+      ctx.translate(_dBt.dx, _dBt.dy);   // 出场时随底部整体下移（入场 dx/dy=0 无影响）
       ctx.translate(_dCx, _dCy);
-      ctx.scale(_dBt.scale, _dBt.scale);
+      ctx.scale(_dBt.scale * dressPress, _dBt.scale * dressPress);
       ctx.translate(-_dCx, -_dCy);
       drawBottomBar.drawRoundMenuButton(ctx, this._dressBtnRect.x, this._dressBtnRect.y, this._dressBtnRect.w, '衣', _sideShadow);
       ctx.restore();
@@ -1119,8 +1149,9 @@ class GameEngine {
       // 挑战赛（左）
       ctx.save();
       ctx.globalAlpha = _cBt.alpha;
+      ctx.translate(_cBt.dx, _cBt.dy);   // 出场时随底部整体下移（入场 dx/dy=0 无影响）
       ctx.translate(_cCx, _cCy);
-      ctx.scale(_cBt.scale, _cBt.scale);
+      ctx.scale(_cBt.scale * challengePress, _cBt.scale * challengePress);
       ctx.translate(-_cCx, -_cCy);
       drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '赛', _sideShadow);
       ctx.restore();
@@ -1316,10 +1347,49 @@ class GameEngine {
       return;
     }
 
+    // 菜单出场动画进行中 → 屏蔽输入
+    if (this._menuExit) {
+      var m = this._menuExit;
+      var now = Date.now();
+      if (m.phase === 'slide') {
+        // 控件下滑 + 渐隐（期间并行加载关卡内容）
+        if (now - m.startTime >= m.totalDuration) {
+          if (m.target === 'editor') {
+            this._commitMenuExit('editor');   // 编辑器无交叉淡变，直接切
+          } else {
+            m.phase = 'wait';                 // 等关卡加载就绪
+          }
+        }
+      } else if (m.phase === 'wait') {
+        // 控件已滑出，仅菜单背景可见；等关卡就绪后做交叉淡变
+        if (this.playing._levelLoadFailed) {
+          // 加载失败 → 退回主菜单（toast 已在 prepareLevel 内弹出）
+          this._menuExit = null;
+          this._menuVisible = true;
+          this._hasLeftMenu = false;
+        } else if (this.playing._levelReady) {
+          m.phase = 'crossfade';
+          m.crossStart = now;
+        }
+        // 否则继续等（关卡还在加载）
+      } else if (m.phase === 'crossfade') {
+        // 菜单背景渐隐 + 关卡背景渐显；结束后切场景并启动关卡入场
+        if (now - m.crossStart >= m.crossDuration) {
+          this._commitMenuExit('playing');
+        }
+      }
+      return;
+    }
+
     // 状态切换（在事件处理之前，确保引擎已激活）
     this.checkStateTransition();
 
     this.input.handlePendingEvents();
+
+    // 事件处理可能在本帧内改变 gameState（如关卡内"返回主菜单"），
+    // 若等到下一帧才 checkStateTransition 会导致一帧内 _menuEntrance 仍为 null、
+    // 主菜单按钮以全透明度渲染一帧（闪一下）。故事件后再查一次，确保同帧初始化入场动画。
+    this.checkStateTransition();
 
     // 游玩状态更新动画
     if (databus.gameState === 'playing') {
@@ -1351,6 +1421,7 @@ class GameEngine {
     switch (curr) {
       case 'menu':
         audio.playMusic('menu');
+        this._menuVisible = true;   // 回到主菜单：可见，未来离场播出场动画
         // 从其他界面返回 → 触发主菜单入场动画（与 loading 进入一致）
         if (prev) {
           this._menuEntrance = {
@@ -1369,9 +1440,20 @@ class GameEngine {
 
   render() {
     beginFrame();
-    this.drawBackground();
 
-    this._renderCurrentScene();
+    if (this._menuExit && this._menuExit.phase === 'crossfade') {
+      // 交叉淡变：菜单背景渐隐(1→0) + 关卡场景背景渐显(0→1)
+      var cp = Math.min(1, (Date.now() - this._menuExit.crossStart) / this._menuExit.crossDuration);
+      ctx.save();
+      ctx.globalAlpha = 1 - cp;
+      this.drawBackground();
+      ctx.restore();
+      this._renderCurrentScene();              // 菜单控件（已滑出，透明）照常绘制
+      this.playing.drawSceneBackground(cp);    // 关卡背景叠在最上层渐显
+    } else {
+      this.drawBackground();
+      this._renderCurrentScene();
+    }
 
     // 开发者调试面板 — 最顶层渲染
     DebugPanel.render(databus, this);

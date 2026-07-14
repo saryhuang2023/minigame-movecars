@@ -33,6 +33,7 @@ var PHASE2 = {
     'assets/images/main_buttom.png',
     'assets/images/main_start.png',
     'assets/images/level_bg.jpg',
+    'assets/images/level_buttom.png',
   ],
   // 非 idle 动画帧 (run 8 + escape 8 + hint 8 = 24)
   animationTotalFrames: 24,
@@ -59,6 +60,7 @@ var ASSET_PRELOADER_MAP = {
   win_cancel:  'assets/images/win_cancel.png',
   icon_music:  'assets/images/icon_music.png',
   icon_sound:  'assets/images/icon_sound.png',
+  level_bottom: 'assets/images/level_buttom.png',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====

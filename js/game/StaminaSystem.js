@@ -59,8 +59,10 @@ StaminaSystem.prototype._sync = function () {
     this._data.count = Math.min(this._data.count + recovered, ST.MAX);
     this._data.lastRecoveryTime += recovered * ST.RECOVERY_INTERVAL;
     this._addFlips(oldCount, this._data.count);
+    this._save();   // 懒写入：仅在体力「真的恢复」时才落盘
   }
-  this._save();
+  // recovered === 0 时不写盘：避免启动即重写 player_stamina，
+  // 清缓存后该 key 不再被「复活」（只在消耗/领广告等真实变更时才会重建）
 };
 
 /** 保存到本地 */
