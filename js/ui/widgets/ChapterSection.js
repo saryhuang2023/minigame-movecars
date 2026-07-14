@@ -268,25 +268,12 @@ ChapterSection.prototype.render = function (ctx) {
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
       ctx.font = '20px ' + Theme.font.family;
 
-      var prefix = '通关 ';
-      var suffix = (this.chapter.unlockClearNum || 0) + ' 关解锁专属背景和皮肤';
-      var iconKey = 'leftStep';
-      var iconW = 23, iconH = 21, gap = 4;
-
-      var prefixW = ctx.measureText(prefix).width;
-      var suffixW = ctx.measureText(suffix).width;
-      var totalW = prefixW + iconW + gap + suffixW;
-      var startX = (w - totalW) / 2;
+      var text = '通关 ' + (this.chapter.unlockClearNum || 0) + ' 关解锁专属背景和皮肤';
+      var textW = ctx.measureText(text).width;
+      var startX = (w - textW) / 2;
       var textY = gridBottom + 25;
 
-      // 画 "获得 "
-      ctx.fillText(prefix, startX, textY);
-      // 画图标
-      if (AssetPreloader.isReady(iconKey)) {
-        ctx.drawImage(AssetPreloader.get(iconKey), startX + prefixW, textY, iconW, iconH);
-      }
-      // 画 "x5 解锁..."
-      ctx.fillText(suffix, startX + prefixW + iconW + gap, textY);
+      ctx.fillText(text, startX, textY);
     }
   }
 

@@ -3,7 +3,7 @@
 
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../../define/GameDefine.js').THEME;
-var commonIcons = require('../commonIcons.js');
+var { drawSettingsButton } = require('../drawSettingsButton.js');
 var databus = require('../../databus.js');
 var { SCREEN_WIDTH } = require('../../render.js');
 
@@ -75,7 +75,7 @@ TopBar.prototype.render = function (ctx) {
   // === 左上角设置按钮 ===
   var backW = 32, backH = 32;
   var backX = 16;
-  var backY = 45;
+  var backY = 78;
 
   var setScale = this._buttonPress ? this._buttonPress.getScale('settings') : 1;
   var setCX = backX + backW / 2;
@@ -98,33 +98,33 @@ TopBar.prototype.render = function (ctx) {
     ctx.lineTo(setCX + 5, setCY + 8);
     ctx.stroke();
   } else {
-    // 正常模式：设置图标
+    // 正常模式：设置按钮（圆形底 + 矢量齿轮，纯代码绘制）
     var iconSz = 32;
-    ctx.drawImage(commonIcons.setting, setCX - iconSz / 2, setCY - iconSz / 2, iconSz, iconSz);
+    drawSettingsButton(ctx, setCX - iconSz / 2, setCY - iconSz / 2, iconSz);
   }
   ctx.restore();
 
-  // === 关卡徽章 ===
+  // === 关卡徽章（左上角，Figma: left 16 / top 48 / 62×20 / 白字绿框 1.5px，无圆角）===
   if (this.mode !== 'trial') {
-    var badgeW = 29;
-    var badgeX = SCREEN_WIDTH / 2 - 122;
-    var badgeY = 53;
-    var badgeH = 16;
+    var badgeX = 16;
+    var badgeY = 48;
+    var badgeW = 62;
+    var badgeH = 20;
     var badgeCX = badgeX + badgeW / 2;
     var badgeCY = badgeY + badgeH / 2;
 
     var breathScale = this._getBreatheScale();
 
     var chars = this.levelText.split('');
-    var fontSize = 16;
-    var letterSpacing = 1;
+    var fontSize = 20;
+    var letterSpacing = 4;
     ctx.font = '400 ' + fontSize + 'px ' + Theme.font.family;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.lineWidth = 1;
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 1.5;
     ctx.lineJoin = 'round';
 
-    // 计算总文本宽度（逐字测量）
+    // 计算总文本宽度（逐字测量 + 字间距）
     var totalTextW = 0;
     var charWidths = [];
     for (var i = 0; i < chars.length; i++) {
@@ -133,8 +133,8 @@ TopBar.prototype.render = function (ctx) {
       totalTextW += w + (i < chars.length - 1 ? letterSpacing : 0);
     }
 
-    // 水平居中
     var baseCursorX = badgeX + (badgeW - totalTextW) / 2;
+    var textCY = badgeY + badgeH / 2;
 
     ctx.save();
     if (breathScale !== 1) {
@@ -143,13 +143,11 @@ TopBar.prototype.render = function (ctx) {
       ctx.translate(-badgeCX, -badgeCY);
     }
 
+    // 文字：白色（按 Figma，无描边无边框）
+    ctx.fillStyle = '#FFFFFF';
     var cursorX = baseCursorX;
     for (var i = 0; i < chars.length; i++) {
-      // 先画描边（黑色 1px），再画填充（白色），实现每字描边
-      ctx.strokeStyle = '#000000';
-      ctx.strokeText(chars[i], cursorX, badgeY);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(chars[i], cursorX, badgeY);
+      ctx.fillText(chars[i], cursorX, textCY);
       cursorX += charWidths[i] + letterSpacing;
     }
 

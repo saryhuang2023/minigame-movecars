@@ -28,6 +28,8 @@ const SkinSystem = require('./SkinSystem.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const CommonButton = require('../ui/widgets/CommonButton.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
+const { drawFlower } = require('../ui/drawFlower.js');
+const { drawPigCounter } = require('../ui/drawPigCounter.js');
 const SceneDefaults = require('../define/GameDefine.js').SCENE;
 var PlayDefine = require('../define/PlayingDefine.js');
 var GAME_DEF = require('../define/GameDefine.js').GAME;
@@ -302,7 +304,7 @@ class PlayingEngine {
 
     // TopBar 位置 + 内容（屏幕坐标系，y=0）
     this._uiTopBar.setBounds(0, 0, this._boardCardW, Theme.layout.topBarH);
-    this._uiTopBar.setLevelText(parseInt(this.levelName || 1) + '关');
+    this._uiTopBar.setLevelText('第' + (parseInt(this.levelName || 1)) + '关');
     this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
 
     // GoldWidget — 显示余额（步数奖励动画期间递减展示）
@@ -845,8 +847,8 @@ class PlayingEngine {
         return;
       }
 
-      // 左上角金币（覆盖金币+文字整个区域，试玩无）
-      if (this._uiGoldWidget && _hitRect(t.x, t.y, { x: 10, y: 78, w: 100, h: 50 })) {
+      // 左上角金币（覆盖金币+文字整个区域，试玩无）— 命中区对齐新位置(底框23-101 / 图标16-48 / y122-154)
+      if (this._uiGoldWidget && _hitRect(t.x, t.y, { x: 10, y: 118, w: 100, h: 42 })) {
         this._uiGoldWidget.triggerBreathe();
         return;
       }
@@ -896,14 +898,16 @@ class PlayingEngine {
       }
 
       // 顶部关卡徽章（仅呼吸反馈，不触发功能，trial 模式下无徽章但 hit rect 可能误触）
-      var badgeX = (SCREEN_WIDTH - 80) / 2;
-      if (databus.returnState !== 'editor' && _hitRect(t.x, t.y, { x: badgeX, y: 86, w: 80, h: 32 })) {
+      var badgeX = 16;
+      if (databus.returnState !== 'editor' && _hitRect(t.x, t.y, { x: badgeX, y: 48, w: 62, h: 20 })) {
         this._uiTopBar.triggerBreathe();
         return;
       }
 
       // 顶部返回/设置按钮
-      if (_hitRect(t.x, t.y, { x: Theme.spacing.padding, y: 26, w: 49, h: 47 })) {
+      // ⚠️ 命中区必须与 TopBar.js 绘制位置一致：TopBar 把设置按钮画在 backX=16 / backY=78（32×32，见 TopBar.js:76-82），
+      // 故命中区 y 取 78（原 y:26 是一处遗留错位，导致绘制在 y≈78~110 而命中最远只到 73，点击完全接不上）。
+      if (_hitRect(t.x, t.y, { x: Theme.spacing.padding, y: 78, w: 49, h: 47 })) {
         this._btnPress.press('settings');
         this._btnPress.breathe('settings');
         audio.play('button_click');
@@ -1205,7 +1209,7 @@ class PlayingEngine {
 
           // 金币区硬币中心（GoldWidget 在 (0,0)，COIN_X=16 COIN_SIZE=32）
           var goldCX = PlayDefine.PLAY.GOLD_FLY_TARGET.cx;  // = 32
-          var goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;  // = 106
+          var goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;  // = 138
 
           // 猪飞出动画用 easeOutCubic：猪在动画前半段就覆盖了大部分距离
           // 计算猪尾部到达屏幕边缘的实际时间（而非动画总时长）
@@ -1693,6 +1697,35 @@ class PlayingEngine {
       guidePigId: this._guide.getActiveGuidePigId(),
       entrancePigAlpha: pigAlpha,
     });
+
+    // 背景物件（image 718）：固定屏幕位置，绘制于棋盘之上（确保不被棋盘/孔位遮挡）
+    if (AssetPreloader.isReady('bg_deco_718')) {
+      ctx.drawImage(AssetPreloader.get('bg_deco_718'), 10, 61, 279, 85);
+    }
+
+    // 装饰花朵（可复用 drawFlower）：绘制于棋盘之上
+    // Figma 三处：14×14@(98,101) / 14×14@(162,91) / 13×13@(242,100)
+    drawFlower(ctx, 98, 101, 14);
+    drawFlower(ctx, 162, 91, 14);
+    drawFlower(ctx, 242, 100, 13);
+
+    // 草丛装饰（Figma 草丛节点）：替换原 Vector 6/7/8 三层纯色装饰
+    // 坐标全部为「相对屏幕左上角」的 Figma 原值，按屏幕坐标直接绘制（left:0, top:39, 69.32×121.07）
+    // 绘制于棋盘之上（确保不被棋盘/孔位遮挡）
+    if (AssetPreloader.isReady('level_brush')) {
+      ctx.drawImage(AssetPreloader.get('level_brush'), 0, 39, 69.32, 121.07);
+    }
+
+    // 剩余未逃脱猪数量组件（可复用 drawPigCounter，父 frame 宽 55）
+    // 按 SCREEN_WIDTH 动态水平居中：设备宽 ≠375 时硬编码 160 会偏左，故实时算 frameX
+    // ⚠️ -9 的由来：Figma 内可见内容(pill/panel/猪头)相对 frame 左缘右偏 9px（pill left:169 vs frame left:160），
+    //    仅让 frame 盒子居中会让"眼睛看到的猪头"偏右 9px。故在 frame 居中的基础上再左移 9px，
+    //    使可见猪头计数器的视觉中心落于屏幕正中（而非仅 frame 盒子居中）。
+    // 剩余数 = 棋盘上仍在的猪
+    if (this.gp && this.gp.pigs) {
+      var pigFrameX = Math.round((SCREEN_WIDTH - 55) / 2) - 9; // 55=frame宽，-9=内容视觉居中补偿
+      drawPigCounter(ctx, pigFrameX, -48, { iconKey: 'pig_icon', value: this.gp.pigs.length });
+    }
 
     // 通关后孔洞渐隐（1s 内 alpha 1→0）
     if (this._victory) {

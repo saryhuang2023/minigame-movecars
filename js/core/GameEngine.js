@@ -4,7 +4,7 @@ const databus = require('../databus.js');
 const cloud = require('../cloud.js');
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
-const commonIcons = require('../ui/commonIcons.js');
+const { drawSettingsButton } = require('../ui/drawSettingsButton.js');
 const GoldSystem = require('../game/GoldSystem.js');
 const SkinSystem = require('../game/SkinSystem.js');
 const StaminaSystem = require('../game/StaminaSystem.js');
@@ -91,10 +91,10 @@ class GameEngine {
     var self = this;
     var filled = wx.createImage();
     filled.onload = function () { self._staminaIcons.filled = filled; };
-    filled.src = 'assets/images/common/energy.png';
+    filled.src = 'assets/images/energy.png';
     var empty = wx.createImage();
     empty.onload = function () { self._staminaIcons.empty = empty; };
-    empty.src = 'assets/images/common/energy_empty.png';
+    empty.src = 'assets/images/energy_empty.png';
   }
 
   // ===== 加载画面 =====
@@ -656,17 +656,10 @@ class GameEngine {
   }
 
   /**
-   * 画设置按钮 — 与 drawIconBtn 同款圆形底，但图标用矢量齿轮
+   * 画设置按钮 — 纯代码绘制（圆形底 + 矢量齿轮），委托 drawSettingsButton
    */
   _drawSettingsBtn(x, y, iconSize) {
-    var C = this.COLORS;
-    var cx = x + iconSize / 2;
-    var cy = y + iconSize / 2;
-
-    // 设置图标
-    ctx.drawImage(commonIcons.setting, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
-
-    return { x: x, y: y, w: iconSize, h: iconSize };
+    return drawSettingsButton(ctx, x, y, iconSize);
   }
 
   /**

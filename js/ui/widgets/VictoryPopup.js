@@ -397,10 +397,6 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  // 步数
-  var stepIconAnim = _elAnim();
-  _drawIcon(stepIconAnim, 'leftStep', iconX, py + 205);
-
   // 金币
   var coinIconAnim = _elAnim();
   _drawIcon(coinIconAnim, 'coin', iconX, py + 249);

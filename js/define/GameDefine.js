@@ -97,7 +97,7 @@ var GAME = {
     sceneId: 0,
     name: '默认场景',
 
-    background: 'assets/images/levels/0/bg.jpg',
+    background: 'assets/images/level_bg.jpg',
 
     boardColors: {
       holeEmpty: '#7ED038',

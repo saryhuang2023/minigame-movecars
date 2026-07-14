@@ -8,27 +8,27 @@ var Easing = require('../../core/Easing.js');
 var audio = require('../../audio/AudioManager.js');
 
 // Figma 设计常量
-var BG_X = 23;           // 底框 left
-var BG_Y = 90;            // 底框 top
-var BG_W = 90;            // 底框 width
-var BG_H = 32;            // 底框 height
-var BG_RADIUS = 16;       // 底框 border-radius
+var BG_X = 23;           // 底框 left（Figma left:23）
+var BG_Y = 122;           // 底框 top（Figma top:122）
+var BG_W = 78;            // 底框 width（Figma w:78）
+var BG_H = 32;            // 底框 height（Figma h:32）
+var BG_RADIUS = 16;       // 底框 border-radius（Figma r:16）
 
-var COIN_X = 16;          // 金币图标 left
-var COIN_Y = 90;          // 金币图标 top
-var COIN_SIZE = 32;       // 金币图标宽高
+var COIN_X = 16;          // 金币图标 left（Figma left:16，图标向左探出底框左缘）
+var COIN_Y = 122;          // 金币图标 top（Figma top:122）
+var COIN_SIZE = 32;       // 金币图标宽高（Figma 32×32）
 
-var TEXT_X = BG_X + BG_W / 2;  // 金币数字居中
-var TEXT_Y = 98;          // 金币数字 top（baseline）
-var TEXT_SIZE = 16;       // 字体大小
+var TEXT_X = 70;          // 金币数字 center-x（Figma 文字框 left53/w34 → 中心 70）
+var TEXT_Y = 132;         // 金币数字 top（Figma top:130，textBaseline=top 再 -2 微调）
+var TEXT_SIZE = 16;       // 字体大小（Figma 16px 大宝桃桃体）
 
 class GoldWidget extends UIComponent {
   constructor(opts) {
   super({
     x: opts.x || 0,
     y: opts.y || 0,
-    w: opts.w || COIN_X + COIN_SIZE + 16,
-    h: opts.h || COIN_Y + COIN_SIZE,
+    w: opts.w || BG_X + BG_W + 8,
+    h: opts.h || BG_Y + BG_H + 8,
     zIndex: opts.zIndex || 2,
   });
 

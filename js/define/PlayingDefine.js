@@ -20,7 +20,7 @@ var PLAY = {
   LOAD_TIMEOUT: 6000,                   // 关卡加载超时 ms
 
   // ---------- 金币飞行 ----------
-  GOLD_FLY_TARGET: { cx: 32, cy: 106 }, // 金币磁吸目标坐标
+  GOLD_FLY_TARGET: { cx: 32, cy: 138 }, // 金币磁吸目标坐标（对齐 GoldWidget 金币中心 COIN_Y=122+16）
 
   // ---------- 胜利动画 ----------
   VICTORY: {

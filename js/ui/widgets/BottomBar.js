@@ -8,7 +8,7 @@ var AssetPreloader = require('../AssetPreloader.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 var { roundRect } = require('../../render/PigRenderer.js');
 
-var AD_ICON = 'assets/images/levels/ad_icon.png';
+var AD_ICON = 'assets/images/ad_icon.png';
 
 // 提示按钮尺寸（白色外框 146×63）
 var HINT_W = 146;
