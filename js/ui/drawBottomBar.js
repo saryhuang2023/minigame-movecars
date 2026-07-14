@@ -62,18 +62,21 @@ function figmaToScreen(bar, fx, fy) {
  * @param {number} size 实际像素尺寸
  * @param {string} label 单字（如 衣 / 赛）
  */
-function drawRoundMenuButton(ctx, x, y, size, label) {
+function drawRoundMenuButton(ctx, x, y, size, label, withShadow) {
   var cx = x + size / 2;
   var cy = y + size / 2;
   var r = size / 2;
   var scale = size / 58; // 相对 Figma 58px 基准
 
-  // ===== 外圈：金色圆 + 向下投影 =====
+  // ===== 外圈：金色圆 + 可选投影 =====
+  // 投影在入场动画期间关闭（避免与缩放回弹不同步），动画完成后由调用方开启
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-  ctx.shadowBlur = 4 * scale;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 4 * scale;
+  if (withShadow) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 4 * scale;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 4 * scale;
+  }
   ctx.fillStyle = '#F6CF78';
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);

@@ -1104,13 +1104,16 @@ class GameEngine {
       var _cCx = this._challengeBtnRect.x + this._challengeBtnRect.w / 2;
       var _cCy = this._challengeBtnRect.y + this._challengeBtnRect.h / 2;
 
+      // 入场动画完成后才加阴影（避免与缩放回弹不同步）
+      var _sideShadow = this._isEntranceDone('dress');
+
       // 装扮（右）
       ctx.save();
       ctx.globalAlpha = _dBt.alpha;
       ctx.translate(_dCx, _dCy);
       ctx.scale(_dBt.scale, _dBt.scale);
       ctx.translate(-_dCx, -_dCy);
-      drawBottomBar.drawRoundMenuButton(ctx, this._dressBtnRect.x, this._dressBtnRect.y, this._dressBtnRect.w, '衣');
+      drawBottomBar.drawRoundMenuButton(ctx, this._dressBtnRect.x, this._dressBtnRect.y, this._dressBtnRect.w, '衣', _sideShadow);
       ctx.restore();
 
       // 挑战赛（左）
@@ -1119,7 +1122,7 @@ class GameEngine {
       ctx.translate(_cCx, _cCy);
       ctx.scale(_cBt.scale, _cBt.scale);
       ctx.translate(-_cCx, -_cCy);
-      drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '赛');
+      drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '赛', _sideShadow);
       ctx.restore();
     }
 
