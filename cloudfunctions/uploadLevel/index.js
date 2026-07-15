@@ -11,6 +11,7 @@ exports.main = async (event, context) => {
 
   const clientVersion = (typeof version === 'number') ? version : 0;
   const pigCount = (data.pigs && data.pigs.length) || 0;
+  const starScores = (Array.isArray(data.starScores) && data.starScores.length === 4) ? data.starScores : null;
   const hasPublishedParam = (published !== null && published !== undefined);
   const now = Date.now();
 
@@ -26,12 +27,12 @@ exports.main = async (event, context) => {
       var pub = hasPublishedParam ? !!published : false;
       const res = await db.collection('levels').add({
         data: {
-          _openid: OPENID, name, data, pigCount, stepBonusThreshold,
+          _openid: OPENID, name, data, pigCount, stepBonusThreshold, starScores,
           version: 1, published: pub,
           createdAt: now, updatedAt: now
         }
       });
-      return { code: 0, msg: 'created', id: res._id, version: 1, stepBonusThreshold };
+      return { code: 0, msg: 'created', id: res._id, version: 1, stepBonusThreshold, starScores };
     }
 
     // 已存在 — 版本号检查（乐观并发）
@@ -57,7 +58,7 @@ exports.main = async (event, context) => {
       : { _id: doc._id };
     
     // published: null/undefined → 保持现有值不变
-    var updateData = { data: mergedData, pigCount, stepBonusThreshold, version: newVersion, updatedAt: now };
+    var updateData = { data: mergedData, pigCount, stepBonusThreshold, starScores, version: newVersion, updatedAt: now };
     if (hasPublishedParam) updateData.published = !!published;
     
     const result = await db.collection('levels')
@@ -69,7 +70,7 @@ exports.main = async (event, context) => {
       return { code: 2, msg: 'conflict', serverVersion };
     }
 
-    return { code: 0, msg: 'updated', id: doc._id, version: newVersion, stepBonusThreshold };
+    return { code: 0, msg: 'updated', id: doc._id, version: newVersion, stepBonusThreshold, starScores };
   } catch (err) {
     return { code: -1, msg: err.message };
   }

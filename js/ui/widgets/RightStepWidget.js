@@ -154,6 +154,15 @@ class RightStepWidget extends UIComponent {
     this._hidden = !!hidden;
   }
 
+  /** 剩余步数数字中心屏幕坐标（供积分花朵飞行起点定位） */
+  getStepNumberPos() {
+    return { x: NUM_CX, y: NUM_CY };
+  }
+
+  isHidden() {
+    return this._hidden;
+  }
+
   /** 触发呼吸动画（单次缓慢呼吸，纯 UI 反馈） */
   triggerBreathe() {
     this._breatheStart = Date.now();

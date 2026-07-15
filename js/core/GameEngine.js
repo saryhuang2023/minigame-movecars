@@ -284,10 +284,42 @@ class GameEngine {
           });
         }
       }
+      // 星级：云端合并到本地（按关卡 key 取最高），有变化时回写云端保持权威
+      if (cloudData.stars) {
+        var starChanged = self._mergeLevelStarsFromCloud(cloudData.stars);
+        if (starChanged) {
+          cloud.savePlayerData({ stars: wx.getStorageSync('levelStars') }).catch(function (e) {
+            console.warn('[cloud] 星级回写失败（非阻塞）:', e && e.message);
+          });
+        }
+      }
       console.log('[cloud] 云端数据同步完成（启动即主菜单，不再自动进关）');
     }).catch(function(err) {
       console.warn('[cloud] 拉取云端数据失败（非阻塞）:', err && err.message);
     });
+  }
+
+  /**
+   * 将云端星级合并到本地（按关卡 key 取最大值），返回是否发生了变化。
+   * 星级结构：{ [levelName]: bestStar }，本地存储 key = 'levelStars'
+   */
+  _mergeLevelStarsFromCloud(cloudStars) {
+    if (!cloudStars || typeof cloudStars !== 'object') return false;
+    var local = wx.getStorageSync('levelStars');
+    if (typeof local !== 'object' || local === null) local = {};
+    var changed = false;
+    Object.keys(cloudStars).forEach(function (key) {
+      var c = cloudStars[key];
+      if (typeof c === 'number' && c > (local[key] || 0)) {
+        local[key] = c;
+        changed = true;
+      }
+    });
+    if (changed) {
+      wx.setStorageSync('levelStars', local);
+      console.log('[cloud] 云端星级合并到本地(取最高): ' + JSON.stringify(cloudStars));
+    }
+    return changed;
   }
 
   // 异步从云端拉取关卡范围和章节配置（fire-and-forget，不阻塞启动）
@@ -391,6 +423,15 @@ class GameEngine {
         wx.setStorageSync('userinfo_cache', {
           nickName: cloudData.nickname,
           avatarUrl: cloudData.avatarUrl
+        });
+      }
+    }
+    // 星级：云端合并到本地（按关卡 key 取最高），有变化时回写云端保持权威
+    if (cloudData.stars) {
+      var starChanged = this._mergeLevelStarsFromCloud(cloudData.stars);
+      if (starChanged) {
+        cloud.savePlayerData({ stars: wx.getStorageSync('levelStars') }).catch(function (e) {
+          console.warn('[cloud] 星级回写失败（非阻塞）:', e && e.message);
         });
       }
     }

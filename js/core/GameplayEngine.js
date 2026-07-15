@@ -926,9 +926,9 @@ class GameplayEngine {
     for (const a of this.animations) {
       const elapsed = now - a.startTime;
       const progress = Math.min(1, elapsed / a.duration);
-      const eased = Easing.easeOutCubic(progress);
-      a.currentDx = a.dirX * a.totalDist * eased;
-      a.currentDy = a.dirY * a.totalDist * eased;
+      // 固定速度直线飞出（非 easeOutCubic 减速）：progress 线性，尾孔在 progress=1 时恰好抵达屏幕边缘
+      a.currentDx = a.dirX * a.totalDist * progress;
+      a.currentDy = a.dirY * a.totalDist * progress;
     }
     // 先清理失效的幽灵条目（对应猪已不存在）
     for (var gi = this.ghostAnimations.length - 1; gi >= 0; gi--) {
@@ -940,13 +940,21 @@ class GameplayEngine {
       var elapsed = now - g.startTime;
       var progress = elapsed / g.duration;
       if (progress >= 1) {
-        // 循环：动画播完后立即从头开始
+        // 一次播放结束 → 猪已「飞出销毁」，进入间隔期：期间完全不显示（hidden）
+        if (g.cooldownStart == null) g.cooldownStart = now;
+        if (now - g.cooldownStart < (g.loopGap || 1000)) {
+          g.hidden = true;   // 间隔期隐藏，不再画在原地
+          continue;
+        }
+        // 间隔结束 → 重建一只新猪从头飞出
         g.startTime = now;
+        g.cooldownStart = null;
+        g.hidden = false;
         progress = 0;
       }
-      const eased = Easing.easeOutCubic(Math.min(1, progress));
-      g.currentDx = g.dirX * g.totalDist * eased;
-      g.currentDy = g.dirY * g.totalDist * eased;
+      // 与本体猪一致：固定速度直线、线性推进（无 easeOutCubic 减速）
+      g.currentDx = g.dirX * g.totalDist * progress;
+      g.currentDy = g.dirY * g.totalDist * progress;
     }
     this._cleanFlashingPigs();
   }
@@ -1096,14 +1104,21 @@ class GameplayEngine {
 
     // 幽灵动画（面向 hintAngle 飞行，前 10% 淡入，循环播放）
     for (const g of this.ghostAnimations) {
+      if (g.hidden) continue;   // 间隔期：前一只已销毁，期间不显示
       const pig = this.pigs.find(p => p.id === g.pigId);
       if (pig) {
         const savedAngle = pig.angle;
-        pig.angle = g.hintAngle != null ? g.hintAngle : pig.angle;
-        // 前 10% 淡入，后 90% 保持 70% 透明度（不淡出，循环时自然从头淡入）
+        pig.angle = g.hintAngle != null ? g.hintAngle : savedAngle;
+        // 拖拽本体猪时 PigRenderer.getDisplayAngle 会优先返回 dragState.displayAngle
+        // （判定 ds.pigId===pig.id），覆盖上面的 g.hintAngle，导致幽灵跟着转向。
+        // 临时让 dragState 脱钩该猪，画完即还原，幽灵才能锁定在 hintAngle。
+        const ds = this.dragState;
+        const savedDragPigId = ds ? ds.pigId : undefined;
+        if (ds) ds.pigId = -1;
         ctx.globalAlpha = 0.50;
         pr.draw(ctx, pig, g.currentDx, g.currentDy, AnimType.ESCAPE);
         ctx.globalAlpha = 1;
+        if (ds) ds.pigId = savedDragPigId;
         pig.angle = savedAngle;
       }
     }

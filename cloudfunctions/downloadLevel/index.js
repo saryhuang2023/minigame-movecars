@@ -15,7 +15,7 @@ exports.main = async (event, context) => {
       var condition = { name: name };
       if (publishedOnly) condition.published = true;
       const res = await db.collection('levels').where(condition)
-        .field({ _id: true, name: true, data: true, version: true, published: true, stepBonusThreshold: true })
+        .field({ _id: true, name: true, data: true, version: true, published: true, stepBonusThreshold: true, starScores: true })
         .get();
       if (res.data.length === 0) {
         return { code: -1, msg: publishedOnly ? '关卡未发布' : '关卡不存在' };

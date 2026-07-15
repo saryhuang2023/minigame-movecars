@@ -470,7 +470,6 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.translate(-cx, -cy);
     this._continueBtn.x = CONT_BTN_X;
     this._continueBtn.y = CONT_BTN_Y;
-    this._continueBtn.label = '返回';
     this._continueBtn.render(ctx);
     ctx.restore();
   };
@@ -490,68 +489,24 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  var rState = this._returnState;
+  // ── 统一绘制：无论试玩/正式、有无金币，结算面板按钮布局完全一致 ──
+  // 始终绘制「返回」(右) + 「重玩」(左)；双倍金币按钮仅由 showGold 控制（上方已处理）。
+  // 试玩与正式的差异只在点击时分流（onContinue / onReplay 回调按 returnState 判断），
+  // 绘制层不区分，保证视觉一致。
 
-  if (showGold) {
-    // ── 有金币：继续(左) + 重玩(右)（双倍按钮已在上方 large button 区域绘制）──
-      var contAnim = _elAnim();
-    this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
-    _renderContinueBtn(contAnim);
+  // 重玩按钮（左）
+  var restAnim = _elAnim();
+  this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
+  _renderReplayBtn(restAnim);
 
-      var restAnim = _elAnim();
-    this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
-    _renderReplayBtn(restAnim);
+  // 返回按钮（右）：试玩/正式统一文案「返回」，不区分模式
+  var contAnim = _elAnim();
+  this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
+  this._continueBtn.label = '返回';
+  _renderContinueBtn(contAnim);
 
-    this._exitBtn = null;
-
-  } else if (rState === 'menu') {
-    // ── 无金币 menu：继续 + 重玩 ──
-    this._exitBtn = null;
-    this._doubleGoldBtn = null;
-      var restAnim3 = _elAnim();
-    this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
-    _renderReplayBtn(restAnim3);
-      var contAnim2 = _elAnim();
-    this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
-    _renderContinueBtn(contAnim2);
-  } else {
-    // ── 编辑器返回 ──
-    this._nextBtn = null;
-    this._restartBtn = null;
-    this._doubleGoldBtn = null;
-    var exitBtnW = 100, exitBtnH = 42;
-    var exitBtnX = (SCREEN_WIDTH - exitBtnW) / 2;
-    var exitBtnY = CONT_BTN_Y + 3;
-      var exitAnim = _elAnim();
-    this._exitBtn = { x: exitBtnX, y: exitBtnY, w: exitBtnW, h: exitBtnH };
-    var exitLabel = rState === 'editor' ? '返回编辑' : '退出';
-    ctx.save();
-    ctx.globalAlpha = exitAnim.alpha;
-    var ecx = exitBtnX + exitBtnW / 2, ecy = exitBtnY + exitBtnH / 2;
-    ctx.translate(ecx, ecy);
-    ctx.scale(exitAnim.scale, exitAnim.scale);
-    ctx.translate(-ecx, -ecy);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    var ebr = 8;
-    ctx.beginPath();
-    ctx.moveTo(exitBtnX + ebr, exitBtnY);
-    ctx.lineTo(exitBtnX + exitBtnW - ebr, exitBtnY);
-    ctx.arcTo(exitBtnX + exitBtnW, exitBtnY, exitBtnX + exitBtnW, exitBtnY + ebr, ebr);
-    ctx.lineTo(exitBtnX + exitBtnW, exitBtnY + exitBtnH - ebr);
-    ctx.arcTo(exitBtnX + exitBtnW, exitBtnY + exitBtnH, exitBtnX + exitBtnW - ebr, exitBtnY + exitBtnH, ebr);
-    ctx.lineTo(exitBtnX + ebr, exitBtnY + exitBtnH);
-    ctx.arcTo(exitBtnX, exitBtnY + exitBtnH, exitBtnX, exitBtnY + exitBtnH - ebr, ebr);
-    ctx.lineTo(exitBtnX, exitBtnY + ebr);
-    ctx.arcTo(exitBtnX, exitBtnY, exitBtnX + ebr, exitBtnY, ebr);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px ' + Theme.font.family;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(exitLabel, ecx, ecy);
-    ctx.restore();
-  }
+  // 旧 _exitBtn 已并入 _nextBtn，不再单独维护
+  this._exitBtn = null;
 
   ctx.restore();
 };

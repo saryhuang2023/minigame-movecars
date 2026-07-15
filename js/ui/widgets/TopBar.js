@@ -14,7 +14,7 @@ var PADDING = Theme.layout.padding || 16;
 /**
  * @param {Object} opts
  * @param {string} opts.levelText - 关卡文字（如 "2关"）
- * @param {string} opts.mode - 'normal' | 'trial'（试玩模式）
+ * @param {string} opts.mode - 'normal'（试玩与正式一致显示齿轮+关卡徽章）
  * @param {Object} opts.buttonPress - ButtonPress 实例（用于按压缩放）
  * @param {Function} opts.onBack - 返回按钮点击回调
  */
@@ -61,26 +61,14 @@ TopBar.prototype.render = function (ctx) {
   ctx.scale(setScale, setScale);
   ctx.translate(-setCX, -setCY);
 
-  if (this.mode === 'trial') {
-    // 试玩模式：返回箭头
-    ctx.strokeStyle = DARK;
-    ctx.lineWidth = 2.8;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(setCX + 5, setCY - 8);
-    ctx.lineTo(setCX - 5, setCY);
-    ctx.lineTo(setCX + 5, setCY + 8);
-    ctx.stroke();
-  } else {
-    // 正常模式：设置按钮（圆形底 + 矢量齿轮，纯代码绘制）
-    var iconSz = 32;
-    drawSettingsButton(ctx, setCX - iconSz / 2, setCY - iconSz / 2, iconSz);
-  }
+  // 设置按钮（圆形底 + 矢量齿轮，纯代码绘制）— 试玩与正式一致，无 trial 专属返回箭头
+  var iconSz = 32;
+  drawSettingsButton(ctx, setCX - iconSz / 2, setCY - iconSz / 2, iconSz);
   ctx.restore();
 
   // === 关卡徽章（左上角，Figma: left 15 / top 23 / 32×16 / 大宝桃桃体 16px / letter-spacing 4px / 白字，无边框）===
-  if (this.mode !== 'trial') {
+  // 试玩与正式一致显示关卡徽章
+  {
     var badgeX = 15;
     var badgeY = 23;
     var badgeW = 32;

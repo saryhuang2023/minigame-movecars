@@ -27,6 +27,18 @@ exports.main = async (event, context) => {
           updateData.lastLevelIndex < existing.lastLevelIndex) {
         updateData.lastLevelIndex = existing.lastLevelIndex;
       }
+      // 星级：按关卡 key 取最大值合并（只记录最高星级，防止整 map 覆盖丢失其它关）
+      if (data.stars && typeof data.stars === 'object' &&
+          existing.stars && typeof existing.stars === 'object') {
+        var mergedStars = Object.assign({}, existing.stars);
+        Object.keys(data.stars).forEach(function (k) {
+          var v = data.stars[k];
+          if (typeof v === 'number' && (typeof mergedStars[k] !== 'number' || v > mergedStars[k])) {
+            mergedStars[k] = v;
+          }
+        });
+        updateData.stars = mergedStars;
+      }
       await db.collection('players')
         .doc(exist.data[0]._id)
         .update({ data: updateData });

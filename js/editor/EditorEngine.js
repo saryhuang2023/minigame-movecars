@@ -18,6 +18,7 @@ const databus = require('../databus.js');
 const GameplayEngine = require('../core/GameplayEngine.js');
 const { roundRect } = require('../render/PigRenderer.js');
 const cloud = require('../cloud.js');
+const StarScores = require('../utils/starScores.js');
 const LevelCache = require('../preload/LevelCache.js');
 const audio = require('../audio/AudioManager.js');
 const ButtonPress = require('../anim/ButtonPress.js');
@@ -77,6 +78,11 @@ class EditorEngine {
 
     // ===== 步数（通关步数要求；兼作剩余步数→金币阈值）=====
     this._stepBonusThreshold = 0;
+    // ===== 星级积分门槛 [s1,s2,s3,s4]（每逃 1 猪=1 分；剩余每 1 步=2 分）=====
+    this._starScores = [0, 0, 0, 0];
+    // ===== 星级配置浮层 =====
+    this._starPanelOpen = false;
+    this._starPanelBtns = [];
 
     // ===== 碰撞框全局开关 =====
     this._showAllCollisionBoxes = false;
@@ -185,6 +191,11 @@ class EditorEngine {
         if (this.checkSheetButtons(x, y)) return;
         return;
       }
+      // 星级配置面板
+      if (this._starPanelOpen) {
+        this._checkStarPanelButtons(x, y);
+        return;
+      }
       // 底部控制条（关卡管理 + 棋盘参数 + 小猪面板）
       if (y > SCREEN_HEIGHT - this.gp.bottomStripH) {
         this.checkBottomButtons(x, y);
@@ -220,6 +231,7 @@ class EditorEngine {
         return;
       }
       if (this.showPigSheet) return;
+      if (this._starPanelOpen) return;
       // 暂存触摸 + 无拖拽 → 纯点击
       if (this._pendingTouch) {
         this.onPigTap(this._pendingTouch.pig);
@@ -716,6 +728,7 @@ class EditorEngine {
       return obj;
     });
     base.stepBonusThreshold = this._stepBonusThreshold || 0;  // 序列化 stepBonusThreshold 字段
+    base.starScores = this._starScores.slice();  // 序列化星级积分门槛 [s1,s2,s3,s4]
     base.ready = (curData && curData.ready != null) ? curData.ready : 0;
     return base;
   }
@@ -728,6 +741,12 @@ class EditorEngine {
       this.gp.boardRate = data.board.boardRate || 2.74;
     }
     this._stepBonusThreshold = (data && data.stepBonusThreshold != null) ? data.stepBonusThreshold : ((data && data.crownSteps) || 0);
+    // 星级积分门槛：优先读关卡配置，否则按默认公式（猪数 + 总步数×0.5）填充
+    var pigCountForStar = (data && data.pigs) ? data.pigs.length : 0;
+    this._starScores = (data && data.starScores && data.starScores.length === 4)
+      ? data.starScores.slice()
+      : StarScores.computeDefaultStarScores(pigCountForStar, this._stepBonusThreshold);
+    this._starPanelOpen = false;  // 切换关卡时关闭配置浮层
     this.gp.pigs = (data.pigs || []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       type: p.type || 'pig', skinId: p.skinId || 0,
@@ -1492,6 +1511,7 @@ class EditorEngine {
 
     if (this.showPigSheet) this.renderPigSheet();
     if (this.showLevelSheet) this.renderLevelSheet();
+    if (this._starPanelOpen) this.renderStarPanel();
     if (this.confirmDialog) this.renderConfirmDialog();
 
     // 懒加载遮罩
@@ -1865,22 +1885,7 @@ class EditorEngine {
       x: x, y: btnY1, w: stepBonusW, h: stepBonusH, id: 'btm:stepBonus',
       onClick: (function() {
         var engine = this;
-        wx.showModal({
-          title: '步数要求',
-          editable: true,
-          placeholderText: '输入通关步数，0 表示无限步',
-          content: String(engine._stepBonusThreshold),
-          success: function(res) {
-            if (res.confirm && res.content != null) {
-              var v = parseInt(res.content, 10);
-              if (!isNaN(v)) {
-                v = Math.max(0, Math.min(999, v));
-                engine._stepBonusThreshold = v;
-                engine.markCurrentDirty();
-              }
-            }
-          }
-        });
+        engine._starPanelOpen = true;  // 升级为弹出面板：总步数 + 1~4 星积分配置
       }).bind(this)
     });
     x += stepBonusW;
@@ -2266,6 +2271,120 @@ class EditorEngine {
 
   hitRect(x, y, r) {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+
+  // ============================================================
+  // === 星级配置浮层（总步数 + 1~4 星积分，±1 步进） ===
+  // ============================================================
+  renderStarPanel() {
+    this._starPanelBtns = [];
+    // 背景遮罩
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    var pw = 320, ph = 372;
+    var px = Math.round((SCREEN_WIDTH - pw) / 2);
+    var py = Math.round((SCREEN_HEIGHT - ph) / 2);
+
+    ctx.fillStyle = '#fff';
+    roundRect(ctx, px, py, pw, ph, 16, true);
+    ctx.fill();
+
+    // 标题
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 15px ' + Theme.font.family + '';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('星级配置（逃1猪=1分，剩1步=2分）', px + pw / 2, py + 24);
+
+    // 关闭
+    var closeX = px + pw - 44, closeY = py + 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.font = '20px ' + Theme.font.family + '';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✕', closeX + 16, closeY + 16);
+    this._starPanelCloseRect = { x: closeX, y: closeY, w: 44, h: 44 };
+
+    // 步进器行：总步数 + 1~4 星
+    var stepperH = 32, rowGap = 12, sx = px + 16, rowY = py + 52;
+    sx = this._drawCompactStepper(sx, rowY, stepperH, '总步数', this._stepBonusThreshold, 0, 999,
+      (v) => { this._stepBonusThreshold = v; }, 1, this._starPanelBtns);
+    rowY += stepperH + rowGap;
+    for (let i = 0; i < 4; i++) {
+      sx = px + 16;
+      sx = this._drawCompactStepper(sx, rowY, stepperH, (i + 1) + '星', this._starScores[i], 0, 999,
+        (v) => { this._setStarScore(i, v); }, 1, this._starPanelBtns);
+      rowY += stepperH + rowGap;
+    }
+
+    // 恢复默认（按 猪数 + 总步数×0.5 公式重算）
+    var resetW = 116, resetH = 38, resetX = px + 16, resetY = py + ph - 52;
+    ctx.fillStyle = '#eee';
+    roundRect(ctx, resetX, resetY, resetW, resetH, 8); ctx.fill();
+    ctx.fillStyle = '#555';
+    ctx.font = 'bold 14px ' + Theme.font.family + '';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('恢复默认', resetX + resetW / 2, resetY + resetH / 2);
+    this._starPanelResetRect = { x: resetX, y: resetY, w: resetW, h: resetH };
+
+    // 完成（关闭面板）
+    var doneW = 116, doneH = 38, doneX = px + pw - 16 - doneW, doneY = resetY;
+    ctx.fillStyle = '#FF8C00';
+    roundRect(ctx, doneX, doneY, doneW, doneH, 8); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px ' + Theme.font.family + '';
+    ctx.fillText('完成', doneX + doneW / 2, doneY + doneH / 2);
+    this._starPanelDoneRect = { x: doneX, y: doneY, w: doneW, h: doneH };
+
+    this._starPanelRect = { x: px, y: py, w: pw, h: ph };
+  }
+
+  _checkStarPanelButtons(x, y) {
+    // 点击面板外 → 关闭
+    if (this._starPanelRect && (x < this._starPanelRect.x || x > this._starPanelRect.x + this._starPanelRect.w ||
+        y < this._starPanelRect.y || y > this._starPanelRect.y + this._starPanelRect.h)) {
+      this._starPanelOpen = false;
+      return true;
+    }
+    if (this._starPanelCloseRect && this.hitRect(x, y, this._starPanelCloseRect)) {
+      this._starPanelOpen = false;
+      return true;
+    }
+    if (this._starPanelDoneRect && this.hitRect(x, y, this._starPanelDoneRect)) {
+      this._starPanelOpen = false;
+      return true;
+    }
+    if (this._starPanelResetRect && this.hitRect(x, y, this._starPanelResetRect)) {
+      this._resetStarScores();
+      return true;
+    }
+    // 步进器（总步数 + 1~4 星）
+    for (const btn of this._starPanelBtns) {
+      if (btn.onClick && this.hitRect(x, y, btn)) {
+        audio.play('button_click');
+        btn.onClick();
+        return true;
+      }
+    }
+    return true;  // 面板内点击吞掉，不穿透棋盘
+  }
+
+  // 设置某档星级积分，并保证 s1<=s2<=s3<=s4 单调
+  _setStarScore(idx, v) {
+    v = Math.max(0, Math.min(999, v));
+    this._starScores[idx] = v;
+    for (var j = idx + 1; j < 4; j++) {
+      if (this._starScores[j] < this._starScores[j - 1]) this._starScores[j] = this._starScores[j - 1];
+    }
+    for (var k = idx - 1; k >= 0; k--) {
+      if (this._starScores[k] > this._starScores[k + 1]) this._starScores[k] = this._starScores[k + 1];
+    }
+  }
+
+  _resetStarScores() {
+    var pigCount = this.gp.pigs.length;
+    this._starScores = StarScores.computeDefaultStarScores(pigCount, this._stepBonusThreshold);
   }
 
   // ============================================================
