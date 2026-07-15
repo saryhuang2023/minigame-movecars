@@ -1087,62 +1087,40 @@ class PlayingEngine {
       // 逃脱音效
       audio.play('escape');
 
-      // 尾孔到屏幕边缘的直线距离（不含补偿）—— 金币从此点（屏幕边缘）飞出
-      const eTailHole = this.gp.holes[pig.tailIndex];
-      const eTailSX = this.gp.boardOffsetX + eTailHole.x;
-      const eTailSY = this.gp.topBarH + this.gp.boardOffsetY + eTailHole.y;
-      const eDX = result.dirX, eDY = result.dirY;
-      let edgeDist;
-      if (eDX > 0.001) edgeDist = (SCREEN_WIDTH - eTailSX) / eDX;
-      else if (eDX < -0.001) edgeDist = eTailSX / -eDX;
-      else if (eDY > 0.001) edgeDist = (SCREEN_HEIGHT - eTailSY) / eDY;
-      else if (eDY < -0.001) edgeDist = eTailSY / -eDY;
-      else edgeDist = result.totalDist;
-      const safeExit = edgeDist > 1 ? edgeDist : 1; // 金币起飞点距离（尾孔到屏边，不含补偿）
-
-      // 精确计算「整只猪完全离开屏幕」所需平移距离：用猪的轴对齐包围盒（AABB）反解，
-      // 不再靠补偿上界猜测，轴向/对角都严格正确。
-      const d = this.gp.scaledDiameter;
-      const escRect = this.gp.getPigRect(pig.tailIndex, pig.length, pig.angle);
-      // 绘制半宽约 d*0.7（pigBodyWidth = d*1.4），取 max 覆盖碰撞半径，确保整只绘制出屏才销毁
-      const aabbR = Math.max(escRect.capRadius, d * 0.7);
-      const minX0 = Math.min(escRect.capTailX, escRect.capHeadX) - aabbR;
-      const maxX0 = Math.max(escRect.capTailX, escRect.capHeadX) + aabbR;
-      const minY0 = Math.min(escRect.capTailY, escRect.capHeadY) - aabbR;
-      const maxY0 = Math.max(escRect.capTailY, escRect.capHeadY) + aabbR;
-      const aMinX = this.gp.boardOffsetX + minX0;
-      const aMaxX = this.gp.boardOffsetX + maxX0;
-      const aMinY = this.gp.topBarH + this.gp.boardOffsetY + minY0;
-      const aMaxY = this.gp.topBarH + this.gp.boardOffsetY + maxY0;
-      // 沿推离方向平移 s，使 AABB 完全在屏外（minX>W 或 maxX<0 或 minY>H 或 maxY<0）
-      let sToExit = Infinity;
-      if (eDX > 0.001) sToExit = Math.min(sToExit, (SCREEN_WIDTH - aMinX) / eDX);
-      else if (eDX < -0.001) sToExit = Math.min(sToExit, (0 - aMaxX) / eDX);
-      if (eDY > 0.001) sToExit = Math.min(sToExit, (SCREEN_HEIGHT - aMinY) / eDY);
-      else if (eDY < -0.001) sToExit = Math.min(sToExit, (0 - aMaxY) / eDY);
-      if (!isFinite(sToExit) || sToExit < 1) sToExit = safeExit; // 兜底
-      // 直线飞出：猪恰好飞完 sToExit（整只出屏）时动画结束 → 销毁
-      const animTotalDist = sToExit;
-      const animDuration = animTotalDist / ESCAPE_SPEED * 1000;
-      const exitTime = animDuration;
-      result.totalDist = animTotalDist; // 动画统一使用精确距离（不随格子大小漂移）
-
-      // 记录猪头屏幕坐标（供连击浮字使用）
-      const pigRect = this.gp.getPigRect(pig.tailIndex, pig.length, pig.angle);
-      const headX = pigRect
-        ? this.gp.boardOffsetX + pigRect.cx + pigRect.hw * pigRect.cosL
-        : 0;
-      const headY = pigRect
-        ? this.gp.topBarH + this.gp.boardOffsetY + pigRect.cy + pigRect.hw * pigRect.sinL
-        : 0;
-
-      // 推出动画
-      this.gp.animations.push({
+      // 简化逃脱方案（替换 sToExit 预计算 + setTimeout）：
+      // 固定速度沿推离方向每帧直线推进，由 GameplayEngine 实时检测「整只猪（含屁股）完全离屏」即结束。
+      // 速度恒为 ESCAPE_SPEED（不随 scale / 格子大小变化），距离不再预计算。
+      const tailHole = this.gp.holes[pig.tailIndex];
+      const tailSX = this.gp.boardOffsetX + tailHole.x;
+      const tailSY = this.gp.topBarH + this.gp.boardOffsetY + tailHole.y;
+      const now0 = Date.now();
+      const anim = {
         pigId,
         dirX: result.dirX, dirY: result.dirY,
-        totalDist: result.totalDist, currentDx: 0, currentDy: 0,
-        startTime: Date.now(), duration: result.totalDist / ESCAPE_SPEED * 1000
-      });
+        currentDx: 0, currentDy: 0,
+        speed: ESCAPE_SPEED,
+        lastT: now0,
+        tailSX, tailSY,
+        tailIndex: pig.tailIndex, length: pig.length, angle: pig.angle,
+        done: false,
+      };
+      const self = this;
+      // 离屏回调：清理飞行猪/动画 + 从「尾巴当前所在的屏幕边缘」弹金币（中心落在边缘上）
+      anim.onExit = function () {
+        const tailX = anim.tailSX + anim.currentDx;
+        const tailY = anim.tailSY + anim.currentDy;
+        const ex = Math.max(0, Math.min(SCREEN_WIDTH, tailX));
+        const ey = Math.max(0, Math.min(SCREEN_HEIGHT, tailY));
+        if (self && self._uiGoldWidget && (databus.returnState === 'editor' || self._isFirstGoldClear)) {
+          const goldCX = PlayDefine.PLAY.GOLD_FLY_TARGET.cx;
+          const goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;
+          audio.play('coin_fly');
+          self._coinFlyEffect.trigger(ex, ey, goldCX, goldCY);
+        }
+        self.gp.flyingPigs = self.gp.flyingPigs.filter(function (p) { return p.id !== pigId; });
+        self.gp.animations = self.gp.animations.filter(function (a) { return a.pigId !== pigId; });
+      };
+      this.gp.animations.push(anim);
       // 逻辑层立即移除（结算/计分不受动画影响）
       const idx = this.gp.pigs.findIndex(p => p.id === pigId);
       this.gp.flyingPigs.push(this.gp.pigs[idx]);
@@ -1155,45 +1133,6 @@ class PlayingEngine {
       this._hint.onPigExited(pigId);
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
 
-      // 金币磁吸飞行：仅「首通本关」才飞金币（与金币发放逻辑一致），重玩已通关关卡不再飞金币
-      if (this._uiGoldWidget && (databus.returnState === 'editor' || this._isFirstGoldClear)) {
-        var tailHole = this.gp.holes[pig.tailIndex];
-        if (tailHole) {
-          var tailSX = this.gp.boardOffsetX + tailHole.x;
-          var tailSY = this.gp.topBarH + this.gp.boardOffsetY + tailHole.y;
-          var pushDirX = result.dirX;
-          var pushDirY = result.dirY;
-
-          // 金币出生点：猪只会沿推离方向飞出，故「尾孔最近的屏幕边缘」限定在推离方向所指向的半平面内挑选，
-          // 避免纯横向推时「最近边」误判成上/下边导致金币与猪飞出方向脱节。选出的边让金币中心恰好落在边缘上。
-          var W = SCREEN_WIDTH, H = SCREEN_HEIGHT;
-          var cand = [];
-          // 仅收集推离方向指向的那一侧边
-          if (pushDirX > 0.001) cand.push({ d: W - tailSX, ex: W, ey: tailSY, along: (W - tailSX) / pushDirX });
-          else if (pushDirX < -0.001) cand.push({ d: tailSX, ex: 0, ey: tailSY, along: tailSX / -pushDirX });
-          if (pushDirY > 0.001) cand.push({ d: H - tailSY, ex: tailSX, ey: H, along: (H - tailSY) / pushDirY });
-          else if (pushDirY < -0.001) cand.push({ d: tailSY, ex: tailSX, ey: 0, along: tailSY / -pushDirY });
-          // 取「尾孔到该边垂线距离」最小者
-          cand.sort(function (a, b) { return a.d - b.d; });
-          var chosen = cand[0];
-          var edgeX = chosen.ex, edgeY = chosen.ey;
-          var distAlong = chosen.along;
-          if (!isFinite(distAlong) || distAlong < 1) distAlong = safeExit; // 兜底
-
-          // 金币区硬币中心（GoldWidget 在 (0,0)，COIN_X=7 COIN_SIZE=21）
-          var goldCX = PlayDefine.PLAY.GOLD_FLY_TARGET.cx;  // = 18
-          var goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;  // = 90
-
-          // 金币起飞时刻 = 尾孔中心沿推离方向走 distAlong 抵达该边缘的时刻 → 金币中心恰好落在边缘上
-          var delay = (distAlong / ESCAPE_SPEED) * 1000 + 40;
-          var self = this;
-          setTimeout(function () {
-            audio.play('coin_fly');
-            self._coinFlyEffect.trigger(edgeX, edgeY, goldCX, goldCY);
-            // 不在此处 _levelAccumulatedGold++，等 CoinFlyEffect.update() 返回 arrived 时再 +1
-          }, delay);
-        }
-      }
 
       // 统一逻辑：猪逃脱时缓存提示数据（通关后统一写入关卡配置）
       if (!this._hintMerged) {
@@ -1232,11 +1171,6 @@ class PlayingEngine {
         this._victoryTime = Date.now();
         console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
       }
-      // 猪飞出屏幕后清理：尾巴离开屏幕边缘即销毁（不再等整段虚高动画结束）
-      setTimeout(() => {
-        this.gp.flyingPigs = this.gp.flyingPigs.filter(p => p.id !== pigId);
-        this.gp.animations = this.gp.animations.filter(a => a.pigId !== pigId);
-      }, exitTime + 200);
       return true;
     } else if (result.collidedPigId !== undefined) {
       if (!opts.silentBlock) {

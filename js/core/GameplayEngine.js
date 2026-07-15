@@ -918,17 +918,58 @@ class GameplayEngine {
     return { canPush: true, dirX, dirY, totalDist: maxSteps * stepSize };
   }
 
+  // 实时判定：猪（含屁股，AABB 含绘制半宽 d*0.7）是否已完全离开屏幕矩形
+  _isPigFullyOffScreen(a) {
+    const r = this.getPigRect(a.tailIndex, a.length, a.angle);
+    if (!r) return false;
+    const d = this.scaledDiameter;
+    const aabbR = Math.max(r.capRadius, d * 0.7);
+    const offY = this.topBarH + this.boardOffsetY;
+
+    // 板面坐标 AABB（未缩放）
+    const bxMin = this.boardOffsetX + Math.min(r.capTailX, r.capHeadX) - aabbR + a.currentDx;
+    const bxMax = this.boardOffsetX + Math.max(r.capTailX, r.capHeadX) + aabbR + a.currentDx;
+    const byMin = offY + Math.min(r.capTailY, r.capHeadY) - aabbR + a.currentDy;
+    const byMax = offY + Math.max(r.capTailY, r.capHeadY) + aabbR + a.currentDy;
+
+    // 板面过高会被整体 autoScale 缩放+居中绘制（见 renderBoard），出屏判定必须换算到
+    // 屏幕坐标空间，否则缩放关卡（如第三关）会按未缩放坐标提前判定 → 猪离边还差一截就消失。
+    // 仅 autoScale<1 时启用换算；autoScale>=1 不缩放，板面坐标即屏幕坐标（与渲染一致）。
+    const visualW = this.boardWidth;
+    const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
+    const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
+    const autoScale = Math.min(SCREEN_WIDTH / visualW, availH / visualH, 1.0);
+    if (autoScale < 1) {
+      const boardCX = this.boardOffsetX + visualW / 2;
+      const boardCY = offY + visualH / 2;
+      const screenCX = SCREEN_WIDTH / 2;
+      const screenCY = this.topBarH + availH / 2;
+      const sxMin = screenCX + autoScale * (bxMin - boardCX);
+      const sxMax = screenCX + autoScale * (bxMax - boardCX);
+      const syMin = screenCY + autoScale * (byMin - boardCY);
+      const syMax = screenCY + autoScale * (byMax - boardCY);
+      return (sxMax < 0) || (sxMin > SCREEN_WIDTH) || (syMax < 0) || (syMin > SCREEN_HEIGHT);
+    }
+    return (bxMax < 0) || (bxMin > SCREEN_WIDTH) || (byMax < 0) || (byMin > SCREEN_HEIGHT);
+  }
+
   // ============================================================
   // 动画更新
   // ============================================================
   update() {
     const now = Date.now();
+    // 本体猪逃脱：固定速度每帧直线推进 + 实时检测整只猪（含屁股）完全离屏即结束（不再预计算距离）
     for (const a of this.animations) {
-      const elapsed = now - a.startTime;
-      const progress = Math.min(1, elapsed / a.duration);
-      // 固定速度直线飞出（非 easeOutCubic 减速）：progress 线性，尾孔在 progress=1 时恰好抵达屏幕边缘
-      a.currentDx = a.dirX * a.totalDist * progress;
-      a.currentDy = a.dirY * a.totalDist * progress;
+      if (a.done) continue;
+      const dt = (now - a.lastT) / 1000;
+      a.lastT = now;
+      // 速度恒为 ESCAPE_SPEED（px/s），不随 scale / 格子大小变化
+      a.currentDx += a.dirX * a.speed * dt;
+      a.currentDy += a.dirY * a.speed * dt;
+      if (this._isPigFullyOffScreen(a)) {
+        a.done = true;
+        if (typeof a.onExit === 'function') a.onExit();
+      }
     }
     // 先清理失效的幽灵条目（对应猪已不存在）
     for (var gi = this.ghostAnimations.length - 1; gi >= 0; gi--) {
@@ -937,24 +978,30 @@ class GameplayEngine {
       }
     }
     for (const g of this.ghostAnimations) {
-      var elapsed = now - g.startTime;
-      var progress = elapsed / g.duration;
-      if (progress >= 1) {
-        // 一次播放结束 → 猪已「飞出销毁」，进入间隔期：期间完全不显示（hidden）
+      if (g.hidden) {
+        // 间隔期：前一只已「飞出销毁」，期间完全不显示；满 loopGap 后重建一只从起点飞出
         if (g.cooldownStart == null) g.cooldownStart = now;
-        if (now - g.cooldownStart < (g.loopGap || 1000)) {
-          g.hidden = true;   // 间隔期隐藏，不再画在原地
-          continue;
+        if (now - g.cooldownStart >= (g.loopGap || 1500)) {
+          g.currentDx = 0;
+          g.currentDy = 0;
+          g.lastT = now;
+          g.cooldownStart = null;
+          g.hidden = false;
+          g.done = false;
         }
-        // 间隔结束 → 重建一只新猪从头飞出
-        g.startTime = now;
-        g.cooldownStart = null;
-        g.hidden = false;
-        progress = 0;
+        continue;
       }
-      // 与本体猪一致：固定速度直线、线性推进（无 easeOutCubic 减速）
-      g.currentDx = g.dirX * g.totalDist * progress;
-      g.currentDy = g.dirY * g.totalDist * progress;
+      // 与本体猪同算法：固定速度每帧直线推进（仅速度 = ESCAPE_SPEED*2/3 不同），
+      // 实时检测整只猪（含屁股）完全离屏 → 进入间隔期
+      const gdt = (now - g.lastT) / 1000;
+      g.lastT = now;
+      g.currentDx += g.dirX * g.speed * gdt;
+      g.currentDy += g.dirY * g.speed * gdt;
+      if (this._isPigFullyOffScreen(g)) {
+        // 整只猪（含屁股）完全离屏 → 隐藏，等 loopGap 后由上面分支重建一只
+        g.hidden = true;
+        g.cooldownStart = now;
+      }
     }
     this._cleanFlashingPigs();
   }
