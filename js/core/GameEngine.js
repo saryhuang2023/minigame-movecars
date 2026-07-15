@@ -106,6 +106,18 @@ class GameEngine {
     this._preloadedPlayerData = null;
     this._preloadedCloudRange = null;
 
+    // 注册前台/后台生命周期：切到后台暂停音乐、回到前台恢复。
+    // 否则真机切窗口回来 BGM 不再播放（系统只自动暂停、不自动恢复 InnerAudioContext）。
+    var audioMgr = audio;
+    wx.onHide(function () {
+      console.log('[GameEngine] onHide — 进入后台');
+      audioMgr.onHide();
+    });
+    wx.onShow(function () {
+      console.log('[GameEngine] onShow — 回到前台');
+      audioMgr.onShow();
+    });
+
     console.log('[GameEngine] constructor 完成，启动加载画面...');
     this._startLoading();
   }
