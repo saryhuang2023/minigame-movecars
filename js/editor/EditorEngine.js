@@ -75,7 +75,7 @@ class EditorEngine {
     this._levelSheetTouchStartScrollY = 0;
     this._levelSheetIsScrolling = false;
 
-    // ===== 金猪/步数奖励阈值（剩余步数转化为金币）=====
+    // ===== 步数（通关步数要求；兼作剩余步数→金币阈值）=====
     this._stepBonusThreshold = 0;
 
     // ===== 碰撞框全局开关 =====
@@ -1769,7 +1769,7 @@ class EditorEngine {
 
   // ============================================================
   // === 渲染 — 底部控制条 ===
-  // 第一行：[猪] [提示] [金猪 输入框]
+  // 第一行：[猪] [提示] [步数 输入框]
   // 第二行：[关卡▼] [新建] [保存] [复制] [本地同步] [发布]
   // 棋盘控件（列/行/径/横距/纵距）已迁至关卡选择面板
   // ============================================================
@@ -1794,7 +1794,7 @@ class EditorEngine {
     var x;
 
     // ============================
-    // 第一行：猪 + 提示 + 金猪
+    // 第一行：猪 + 提示 + 步数
     // ============================
     const row1Y = baseY + 3;
     const btnY1 = row1Y + (rowH - btnH) / 2;
@@ -1843,12 +1843,12 @@ class EditorEngine {
     }});
     x += infoBtnW + 12;
 
-    // 金猪阈值（剩余步数转化为金币的阈值）
+    // 步数（通关步数要求；0=无限步；同时兼作剩余步数→金币阈值）
     ctx.fillStyle = '#999';
     ctx.font = '12px ' + Theme.font.family + '';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('金猪', x, midY1);
+    ctx.fillText('步数', x, midY1);
     x += 30;
     const stepBonusW = 54, stepBonusH = btnH;
     ctx.strokeStyle = '#FF8C00';
@@ -1866,9 +1866,9 @@ class EditorEngine {
       onClick: (function() {
         var engine = this;
         wx.showModal({
-          title: '金猪阈值',
+          title: '步数要求',
           editable: true,
-          placeholderText: '输入数字，0 表示无',
+          placeholderText: '输入通关步数，0 表示无限步',
           content: String(engine._stepBonusThreshold),
           success: function(res) {
             if (res.confirm && res.content != null) {
@@ -2380,7 +2380,7 @@ class EditorEngine {
         this._adaptPigsToBoard();
         this.markCurrentDirty();
       }, 0.01, this._levelSheetStepperBtns, 42);
-    // 点击数值区域可直接输入（像金猪阈值一样）
+    // 点击数值区域可直接输入（像步数一样）
     this._levelSheetStepperBtns.push({
       x: bx + 30, y: boardY3, w: 42, h: stepperH,
       onClick: () => {} // no-op — 小游戏不支持 showModal editable，Rate 已有 +/- 步进器

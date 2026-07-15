@@ -20,6 +20,8 @@ const RightStepWidget = require('../ui/widgets/RightStepWidget.js');
 const LevelCache = require('../preload/LevelCache.js');
 const HintSystem = require('./HintSystem.js');
 const CoinFlyEffect = require('../effects/CoinFlyEffect.js');
+const ScoreFlyEffect = require('../effects/ScoreFlyEffect.js');
+const BranchProgressWidget = require('../ui/widgets/BranchProgressWidget.js');
 const GoldWidget = require('../ui/widgets/GoldWidget.js');
 const { showToast } = require('../ui/widgets/ToastWidget.js');
 const GuideManager = require('../guide/GuideManager.js');
@@ -107,6 +109,11 @@ class PlayingEngine {
     this._levelAccumulatedGold = 0;  // 本关实时累积金币（猪退出+1，异步递增仅用于 UI 实时显示）
     this._totalPigsInLevel = 0;      // 本关原始猪数量（loadLevel 时快照，结算用，不受 setTimeout 时序影响）
     this._coinFlyEffect = new CoinFlyEffect();  // 金币磁吸飞行动画
+    this._totalScore = 30;            // 测试写死：总积分（进度条分母），后续改关卡配置读取
+    this._scoreFlyEffect = new ScoreFlyEffect();  // 积分粒子飞行动画
+    this._scoreBonusRemaining = 0;    // 通关后剩余步数转化的积分粒子数
+    this._scoreBonusProgress = 0;     // 已落地的积分粒子数
+    this._scoreBonusSettled = false;  // 积分粒子结算完毕（防重入 _finishVictorySequence）
     this._showBoardBounds = false;    // 调试框：棋盘可用区域
     this._goldSettled = false;        // 通关结算已入库（入账后不再累积 _levelAccumulatedGold）
     this._isFirstGoldClear = false;    // 进入关卡时计算：本关是否首通（决定飞金币 + 金币发放）
@@ -159,6 +166,13 @@ class PlayingEngine {
     this._stepBonusRemaining = 0;
     this._levelAccumulatedGold = 0;
     this._bonusSteps = 0;          // 关卡内「+3步」累计加成（每关重置）
+    // 积分进度条状态（每关重置）
+    this._totalScore = 30;
+    this._scoreBonusRemaining = 0;
+    this._scoreBonusProgress = 0;
+    this._scoreBonusSettled = false;
+    this._scoreFlyEffect = new ScoreFlyEffect();
+    if (this._uiBranchProgress) this._uiBranchProgress.setScore(0, 30);
     this._hasHintData = true;      // 关卡是否有 hint 数据（无则隐藏「提」按钮，与旧逻辑一致）
     this._totalPigsInLevel = 0;
     this._coinFlyEffect = new CoinFlyEffect();  // 重置飞行中动画
@@ -242,6 +256,10 @@ class PlayingEngine {
       this._uiRightStep = new RightStepWidget({ zIndex: UIManager.LAYER.INFO });
       this.ui.add(this._uiRightStep, UIManager.LAYER.INFO);
 
+      // Layer INFO — 树枝进度条（小虫沿树枝爬动表示进度）
+      this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 61, zIndex: UIManager.LAYER.INFO });
+      this.ui.add(this._uiBranchProgress, UIManager.LAYER.INFO);
+
       // Layer 4 — VictoryPopup
       this._uiVictoryPopup = new VictoryPopup({
         zIndex: UIManager.LAYER.MODAL,
@@ -271,6 +289,7 @@ class PlayingEngine {
       this._uiVictoryPopup = null;
       this._uiFailPopup = null;
       this._uiRightStep = null;
+      this._uiBranchProgress = null;
     }
   }
 
@@ -283,11 +302,9 @@ class PlayingEngine {
     this._uiTopBar.setLevelText((parseInt(this.levelName || 1)) + '关');
     this._uiTopBar.setMode(databus.returnState === 'editor' ? 'trial' : 'normal');
 
-    // GoldWidget — 显示余额（步数奖励动画期间递减展示）
+    // GoldWidget — 显示余额（步数奖励已改为积分粒子，不再影响金币显示）
     var goldDisplay;
-    if (this._goldSettled && this._stepBonusRemaining > 0) {
-      goldDisplay = GoldSystem.getGold() - this._stepBonusRemaining;
-    } else if (this._goldSettled) {
+    if (this._goldSettled) {
       goldDisplay = GoldSystem.getGold();  // 已结算，不再叠加旧累积
     } else {
       goldDisplay = GoldSystem.getGold() + this._levelAccumulatedGold;
@@ -734,6 +751,10 @@ class PlayingEngine {
       console.warn('[StepHUD] 关卡 ' + (data && data.name) + ' stepBonusThreshold=' + this._stepBonusThreshold + ' → 剩余步数 HUD 隐藏（无步数预算；检查关卡 JSON 是否含 stepBonusThreshold）');
     }
     this._levelVersion = (data && data.version) || 0;
+    // 总积分（进度条分母）：与猪数解耦，由关卡 JSON 顶层独立配置；
+    // 旧关卡缺字段时默认 30 兜底，保证历史关卡行为不变。
+    this._totalScore = (data && data.totalScore != null) ? data.totalScore : 30;
+    if (this._uiBranchProgress) this._uiBranchProgress.setScore(0, this._totalScore);
     this.gp.pigs = (data && data.pigs ? data.pigs : []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       type: p.type || 'pig', skinId: p.skinId || 0,
@@ -1217,6 +1238,8 @@ class PlayingEngine {
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
       this._escapedCount++;
+      // 推猪进度：每跑出一头猪，分支进度积分 +1
+      if (this._uiBranchProgress) this._uiBranchProgress.setScore(this._escapedCount, this._totalScore);
       // 如果推出的是提示目标 → 清除提示
       this._hint.onPigExited(pigId);
       if (!opts.skipStep) { this.steps++; databus.currentStep = this.steps; }
@@ -1386,15 +1409,16 @@ class PlayingEngine {
     //   首通判定与「飞金币」动画同源（this._isFirstGoldClear，进入关卡时计算）
     this._goldAmount = 0;
     this._stepBonusRemaining = 0;
+    this._scoreBonusRemaining = 0;
     if (this._isFirstGoldClear) {
       var reward = GoldSystem.calculateReward(this._totalPigsInLevel);
-      // 步数奖励：在阈值内通关，剩余步数转化为额外金币
+      // 步数奖励（改为积分，不再转金币）：在阈值内通关，剩余步数 → 积分粒子飞向小虫
       var effThreshold2 = this._stepBonusThreshold + this._bonusSteps;  // 含「+3步」加成
       if (effThreshold2 > 0 && this.steps < effThreshold2) {
         var stepBonus = effThreshold2 - this.steps;
         if (stepBonus > 0) {
-          this._stepBonusRemaining = stepBonus;
-          reward += stepBonus;
+          this._scoreBonusRemaining = stepBonus;  // 改为积分，不进 reward
+          // reward += stepBonus;  // 已删除：步数不再转金币
         }
       }
       if (reward > 0) {
@@ -1524,7 +1548,7 @@ class PlayingEngine {
     // 强制同步 GoldWidget 内部值到「基础金币」(排除步数奖励)，让步数奖励在 ticker 中逐 tick 滚上去。
     // 若 forceSet 到终值(GoldSystem.getGold())，数字会先 snap 到终值，再被 _syncUIData 的
     // getGold-_stepBonusRemaining 拉回基础值，看着像「没滚、飞币是装饰」。改为基础值后随 tick 干净上滚。
-    if (this._uiGoldWidget) this._uiGoldWidget.forceSet(GoldSystem.getGold() - this._stepBonusRemaining);
+    if (this._uiGoldWidget) this._uiGoldWidget.forceSet(GoldSystem.getGold());
     // 清除兜底定时器（正常路径已完成结算）
     if (this._settlementTimer) { clearTimeout(this._settlementTimer); this._settlementTimer = null; }
 
@@ -1532,13 +1556,31 @@ class PlayingEngine {
     this._syncToCloud();
 
     var self = this;
-    // 步数奖励 → 结束后弹出结算面板
-    if (self._stepBonusRemaining > 0) {
-      console.log('[LOG_victory] → 启动步数ticker(' + self._stepBonusRemaining + '步)');
-      self._startStepBonusTicker(self._stepBonusRemaining);
+    // 积分奖励（剩余步数 → 积分粒子飞向小虫）→ 结束后弹出结算面板
+    if (self._scoreBonusRemaining > 0) {
+      console.log('[LOG_victory] → 启动积分粒子飞行(' + self._scoreBonusRemaining + '步)');
+      self._spawnScoreParticles(self._scoreBonusRemaining);
       return;
     }
     self._finishVictorySequence();
+  }
+
+  /**
+   * 通关后：把剩余步数转化为积分粒子，从结算面板位置飞向小虫。
+   * 每枚粒子落地 → 分支进度积分 +1（PlayingEngine.render 的积分粒子块里处理）。
+   */
+  _spawnScoreParticles(n) {
+    if (!this._scoreFlyEffect || !this._uiBranchProgress) {
+      this._finishVictorySequence();
+      return;
+    }
+    var worm = this._uiBranchProgress.getWormScreenPos();
+    var fromX = SCREEN_WIDTH - 98;   // 结算面板区域
+    var fromY = 106;
+    for (var i = 0; i < n; i++) {
+      // 错峰发射，粒子依次飞向小虫
+      this._scoreFlyEffect.trigger(fromX, fromY, worm.x, worm.y, i * 90);
+    }
   }
 
   /**
@@ -1776,6 +1818,9 @@ class PlayingEngine {
     if (AssetPreloader.isReady('bg_deco_718')) {
       ctx.drawImage(AssetPreloader.get('bg_deco_718'), 10, 61, 279, 85);
     }
+
+    // 树枝进度条：绘制于背景框之上（轨迹 + 小虫 + 调试曲线）
+    if (this._uiBranchProgress) this._uiBranchProgress.render(ctx);
 
     // 装饰花朵（可复用 drawFlower）：绘制于棋盘之上
     // Figma 三处：14×14@(98,101) / 14×14@(162,91) / 13×13@(242,100)
@@ -2049,6 +2094,8 @@ class PlayingEngine {
     // 9. 金币磁吸飞行动画（推猪时触发，飞向金币区）—— 最高层级，不被任何 UI 遮挡
     var coinArrived = this._coinFlyEffect.update();
     this._coinFlyEffect.render(ctx);
+    // 树枝进度条缓动更新（位置爬动 / 溢出旋转）
+    if (this._uiBranchProgress) this._uiBranchProgress.update();
     // 金币到达 → 播放音效 + 触发 GoldWidget 呼吸 + "+1" 浮字
     if (coinArrived > 0 && this._uiGoldWidget && !this._testAnimActive) {
       // 结算已入库 → 不再累加计数（保留视觉效果）
@@ -2074,6 +2121,25 @@ class PlayingEngine {
     if (this._uiGoldWidget) {
       this._uiGoldWidget.setMagnetGlow(this._coinFlyEffect.getNearestProgress());
     }
+
+    // 9b. 积分粒子（剩余步数 → 飞向小虫）：更新 + 渲染 + 落地驱动进度
+    if (this._scoreFlyEffect) {
+      var scoreArrived = this._scoreFlyEffect.update();
+      this._scoreFlyEffect.render(ctx);
+      if (scoreArrived > 0) {
+        this._scoreBonusProgress += scoreArrived;
+        if (this._uiBranchProgress) {
+          this._uiBranchProgress.setScore(this._escapedCount + this._scoreBonusProgress, this._totalScore);
+        }
+      }
+      // 全部积分粒子落地 → 弹出结算面板
+      if (!this._scoreBonusSettled && this._scoreBonusRemaining > 0 &&
+          !this._scoreFlyEffect.isActive() && this._scoreBonusProgress >= this._scoreBonusRemaining) {
+        this._scoreBonusSettled = true;
+        this._finishVictorySequence();
+      }
+    }
+
     // 结算触发：通关后所有金币到齐（或超时兜底）
     if (this._victory && !this._settlementTriggered && databus.returnState !== 'editor') {
       var coinsDone = this._levelAccumulatedGold >= this._totalPigsInLevel;
