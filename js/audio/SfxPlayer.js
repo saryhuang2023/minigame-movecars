@@ -13,6 +13,19 @@ var _handleCounter = 0;
 var _loopedHandles = {};
 
 /**
+ * 清理因解码失败而损坏的 SFX 缓存
+ * @param {Object} slot - 发生错误的槽位
+ */
+function _invalidateSlotCache(slot) {
+  if (!slot || !slot.key) return;
+  var evt = config.SFX_EVENTS[slot.key];
+  if (!evt) return;
+  for (var j = 0; j < evt.files.length; j++) {
+    loader.invalidateFile(evt.files[j]);
+  }
+}
+
+/**
  * 初始化池
  */
 function init() {
@@ -23,7 +36,17 @@ function init() {
       _onCtxEnded(ctx);
     });
     ctx.onError(function (err) {
-      console.warn('[SfxPlayer] error:', err.errMsg);
+      var errMsg = (err && err.errMsg) || '';
+      console.warn('[SfxPlayer] error:', errMsg);
+      // 解码失败 → 清理对应文件的缓存，下次重下载
+      if (errMsg.indexOf('decode') >= 0 || errMsg.indexOf('Decode') >= 0) {
+        for (var si = 0; si < _pool.length; si++) {
+          if (_pool[si].ctx === ctx) {
+            _invalidateSlotCache(_pool[si]);
+            break;
+          }
+        }
+      }
       _onCtxEnded(ctx);
     });
     _pool.push({

@@ -406,6 +406,28 @@ function _syncResolve(filename) {
   }
 }
 
+/**
+ * 丢弃指定音频文件的本地缓存并重置状态
+ * 用于 InnerAudioContext 解码失败（文件损坏）时触发重下载
+ * @param {string} filename - 文件名（如 'bgm_explore.mp3'）
+ * @returns {boolean} 是否成功
+ */
+function invalidateFile(filename) {
+  var info = _files[filename];
+  if (!info) {
+    console.warn('[AudioLoader] invalidateFile: unknown file', filename);
+    return false;
+  }
+  // 删除本地缓存文件
+  try { _fs.unlinkSync(info.cachePath); } catch (e) { /* 文件可能不存在 */ }
+  // 重置状态，下次播放时将通过 _syncResolve 或重新下载获取
+  info.loaded = false;
+  info.resolvedPath = null;
+  info.source = 'none';
+  console.log('[AudioLoader] invalidated cache:', filename);
+  return true;
+}
+
 module.exports = {
   startDownload: startDownload,
   getLocalPath: getLocalPath,
@@ -413,4 +435,5 @@ module.exports = {
   isReady: isReady,
   diagnostics: diagnostics,
   _syncResolve: _syncResolve,
+  invalidateFile: invalidateFile,
 };

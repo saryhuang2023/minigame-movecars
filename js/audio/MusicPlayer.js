@@ -21,7 +21,16 @@ function init() {
   _ctx.loop = true;
   _ctx.volume = config.MUSIC.explore.volume;
   _ctx.onError(function (err) {
-    console.warn('[MusicPlayer] error:', err.errMsg);
+    var errMsg = (err && err.errMsg) || '';
+    console.warn('[MusicPlayer] error:', errMsg);
+    // 解码失败 → 清理 BGM 缓存，下次尝试重新下载
+    if ((errMsg.indexOf('decode') >= 0 || errMsg.indexOf('Decode') >= 0) && _currentTrack) {
+      var cfg = config.MUSIC[_currentTrack];
+      if (cfg) {
+        loader.invalidateFile(cfg.file);
+        console.log('[MusicPlayer] invalidated cache for', cfg.file, '— will re-download');
+      }
+    }
   });
 }
 
