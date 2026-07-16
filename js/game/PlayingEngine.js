@@ -1108,10 +1108,12 @@ class PlayingEngine {
       const self = this;
       // 离屏回调：清理飞行猪/动画 + 从「尾巴当前所在的屏幕边缘」弹金币（中心落在边缘上）
       anim.onExit = function () {
-        const tailX = anim.tailSX + anim.currentDx;
-        const tailY = anim.tailSY + anim.currentDy;
-        const ex = Math.max(0, Math.min(SCREEN_WIDTH, tailX));
-        const ey = Math.max(0, Math.min(SCREEN_HEIGHT, tailY));
+        // tailSX/tailSY 与 currentDx/currentDy 均为「板面坐标」，须经与 renderBoard 一致的
+        // autoScale 缩放/居中变换转成「屏幕坐标」，金币才会从猪真正飞出的屏幕边缘弹出
+        // （之前直接把板面坐标当屏幕坐标 clamp，第三关缩放后出生点严重偏移）。
+        const sp = self.gp._boardToScreen(anim.tailSX + anim.currentDx, anim.tailSY + anim.currentDy);
+        const ex = Math.max(0, Math.min(SCREEN_WIDTH, sp.x));
+        const ey = Math.max(0, Math.min(SCREEN_HEIGHT, sp.y));
         if (self && self._uiGoldWidget && (databus.returnState === 'editor' || self._isFirstGoldClear)) {
           const goldCX = PlayDefine.PLAY.GOLD_FLY_TARGET.cx;
           const goldCY = PlayDefine.PLAY.GOLD_FLY_TARGET.cy;
@@ -1868,9 +1870,12 @@ class PlayingEngine {
           sa.progress++;
           sa.lastAdvance += sa.interval;
           this._scoreBonusProgress = sa.progress;
-          // 每步触发一朵飞花 → 飞向 4 星花
+          // 每步触发一朵飞花 → 飞向 4 星花；起点取「剩余步数」数字中心（RightStepWidget.getStepNumberPos）
           if (this._uiBranchProgress) {
-            this._uiBranchProgress.spawnStepFlowers(1, SCREEN_WIDTH - 98, 106);
+            var sp = (this._uiRightStep && this._uiRightStep.getStepNumberPos)
+              ? this._uiRightStep.getStepNumberPos()
+              : { x: SCREEN_WIDTH - 47, y: 109 };
+            this._uiBranchProgress.spawnStepFlowers(1, sp.x, sp.y);
             this._uiBranchProgress.setScore(
               this._escapedCount + this._scoreBonusProgress,
               this._totalScore

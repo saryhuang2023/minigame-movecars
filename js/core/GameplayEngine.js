@@ -938,7 +938,7 @@ class GameplayEngine {
     const visualW = this.boardWidth;
     const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
     const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
-    const autoScale = Math.min(SCREEN_WIDTH / visualW, availH / visualH, 1.0);
+    const autoScale = this._getAutoScale();
     if (autoScale < 1) {
       const boardCX = this.boardOffsetX + visualW / 2;
       const boardCY = offY + visualH / 2;
@@ -953,19 +953,54 @@ class GameplayEngine {
     return (bxMax < 0) || (bxMin > SCREEN_WIDTH) || (byMax < 0) || (byMin > SCREEN_HEIGHT);
   }
 
+  // 整盘自适应缩放因子（与 renderBoard 完全一致的公式）。
+  // autoScale<1 表示棋盘被整体缩小绘制（如第三关），各关屏幕速度需据此补偿。
+  _getAutoScale() {
+    const visualW = this.boardWidth;
+    const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
+    const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
+    return Math.min(SCREEN_WIDTH / visualW, availH / visualH, 1.0);
+  }
+
+  // 板面坐标 → 屏幕坐标：套用与 renderBoard 相同的 autoScale 缩放 + 居中变换。
+  // 供逃脱结束（onExit）将猪尾巴的板面坐标正确换算为屏幕坐标，使金币从真实屏幕边缘弹出。
+  _boardToScreen(bx, by) {
+    const autoScale = this._getAutoScale();
+    if (autoScale < 1) {
+      const visualW = this.boardWidth;
+      const visualH = (this.rows - 1) * this.vSpacing + this.scaledDiameter;
+      const availH = SCREEN_HEIGHT - this.topBarH - this.bottomStripH;
+      const offY = this.topBarH + this.boardOffsetY;
+      const boardCX = this.boardOffsetX + visualW / 2;
+      const boardCY = offY + visualH / 2;
+      const screenCX = SCREEN_WIDTH / 2;
+      const screenCY = this.topBarH + availH / 2;
+      return {
+        x: screenCX + autoScale * (bx - boardCX),
+        y: screenCY + autoScale * (by - boardCY),
+      };
+    }
+    return { x: bx, y: by };
+  }
+
   // ============================================================
   // 动画更新
   // ============================================================
   update() {
     const now = Date.now();
+    // 速度补偿：renderBoard 整盘按 autoScale 缩放绘制，板面位移经缩放后屏幕速度会变小
+    // （第三关 autoScale<1 尤其明显 → 猪「跑得慢」）。这里把板面推进速度反补偿 1/autoScale，
+    // 使各关屏幕速度恒定 = ESCAPE_SPEED；判定/渲染坐标空间不变，无回归。
+    const _as = this._getAutoScale();
+    const comp = (_as > 0 && _as < 1) ? 1 / _as : 1;
     // 本体猪逃脱：固定速度每帧直线推进 + 实时检测整只猪（含屁股）完全离屏即结束（不再预计算距离）
     for (const a of this.animations) {
       if (a.done) continue;
       const dt = (now - a.lastT) / 1000;
       a.lastT = now;
-      // 速度恒为 ESCAPE_SPEED（px/s），不随 scale / 格子大小变化
-      a.currentDx += a.dirX * a.speed * dt;
-      a.currentDy += a.dirY * a.speed * dt;
+      // 速度恒为 ESCAPE_SPEED（px/s，板面坐标），乘 comp 抵消整盘缩放带来的屏幕速度衰减
+      a.currentDx += a.dirX * a.speed * dt * comp;
+      a.currentDy += a.dirY * a.speed * dt * comp;
       if (this._isPigFullyOffScreen(a)) {
         a.done = true;
         if (typeof a.onExit === 'function') a.onExit();
@@ -995,8 +1030,8 @@ class GameplayEngine {
       // 实时检测整只猪（含屁股）完全离屏 → 进入间隔期
       const gdt = (now - g.lastT) / 1000;
       g.lastT = now;
-      g.currentDx += g.dirX * g.speed * gdt;
-      g.currentDy += g.dirY * g.speed * gdt;
+      g.currentDx += g.dirX * g.speed * gdt * comp;
+      g.currentDy += g.dirY * g.speed * gdt * comp;
       if (this._isPigFullyOffScreen(g)) {
         // 整只猪（含屁股）完全离屏 → 隐藏，等 loopGap 后由上面分支重建一只
         g.hidden = true;
