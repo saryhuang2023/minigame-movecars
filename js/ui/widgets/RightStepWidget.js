@@ -188,29 +188,37 @@ class RightStepWidget extends UIComponent {
     this._breatheActive = true;
   }
 
-  /** 触发被击中抖动（单次脉冲，道具图标飞行到达 / 步数变少时调用；可叠加） */
+  /** 触发被击中抖动（单次脉冲；每个脉冲在创建时定一组随机系数，使每次摆动幅度/快慢/起手方向略不同，避免多板一致机械感） */
   triggerHitShake() {
     var now = Date.now();
-    this._shakes.push(now);
+    var p = {
+      ts: now,
+      amp: this._SHAKE_AMP * (0.75 + Math.random() * 0.5),   // 振幅 ±25%（每次撞击力度不同）
+      tau: this._SHAKE_TAU * (0.9 + Math.random() * 0.2),    // 衰减 ±10%（尾韵长短微差）
+      omega: this._SHAKE_OMEGA * (0.9 + Math.random() * 0.2),// 频率 ±10%（快慢微差）
+      dir: Math.random() < 0.5 ? 1 : -1,                     // 起手方向随机（先右/先左，更自然）
+    };
+    this._shakes.push(p);
     if (this._shakes.length > this._SHAKE_MAX) {
       this._shakes.splice(0, this._shakes.length - this._SHAKE_MAX);
     }
   }
 
-  /** 获取当前摆动角度（多个脉冲叠加：每个绕吊绳顶端、被撞后从 0 甩出、衰减回正，再求和） */
+  /** 获取当前摆动角度（多个脉冲叠加：每个绕吊绳顶端、被撞后从 0 甩出、衰减回正，再求和；各脉冲用自身随机系数） */
   _getShakeAngle() {
     if (this._shakes.length === 0) return 0;
     var now = Date.now();
     var total = 0;
     for (var i = this._shakes.length - 1; i >= 0; i--) {
-      var elapsed = now - this._shakes[i];
+      var p = this._shakes[i];
+      var elapsed = now - p.ts;
       if (elapsed >= this._SHAKE_DURATION) {
         this._shakes.splice(i, 1);   // 过期脉冲移除
         continue;
       }
-      var decay = Math.exp(-elapsed / this._SHAKE_TAU);   // 指数衰减
-      // 先向右(顺时针/正角)甩出，再来回衰减；叠加时各脉冲相位不同 → 自然累加
-      total += this._SHAKE_AMP * decay * Math.sin(this._SHAKE_OMEGA * elapsed / 1000);
+      var decay = Math.exp(-elapsed / p.tau);   // 指数衰减（每脉冲各自 tau）
+      // 先甩出再来回衰减；dir 决定起手方向，叠加时各脉冲相位/方向/快慢不同 → 自然累加、不再机械一致
+      total += p.amp * decay * Math.sin(p.dir * p.omega * elapsed / 1000);
     }
     return total;
   }

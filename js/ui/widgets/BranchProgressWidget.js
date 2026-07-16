@@ -408,6 +408,7 @@ class BranchProgressWidget extends UIComponent {
     if (!this._diagDone) {
       this._diagDone = true;
       console.log('[BranchProgress] render 已接入 | level_worm就绪=' + AssetPreloader.isReady('level_worm') +
+        ' | big_flower就绪=' + AssetPreloader.isReady('big_flower') +
         ' | 初始进度=' + this._progress.toFixed(3) +
       ' | 虫图=' + (AssetPreloader.isReady('level_worm') ? 'OK' : '兜底自绘'));
     }
@@ -683,6 +684,16 @@ class BranchProgressWidget extends UIComponent {
     ctx.beginPath();
     ctx.ellipse(0, s * 0.55, s * 0.5, s * 0.18, 0, 0, Math.PI * 2);
     ctx.fill();
+    // 彩花：改用 big_flower.png 图片绘制（图片未就绪时兜底走下方代码绘制，避免空图）
+    if (colored) {
+      var flowerImg = AssetPreloader.get('big_flower');
+      if (flowerImg) {
+        ctx.drawImage(flowerImg, -s / 2, -s / 2, s, s);
+        ctx.restore();
+        return;
+      }
+    }
+    // 以下：代码绘制（普通花 / 彩花图片未就绪兜底）
     // 花瓣（bloom 控制聚拢→散开；彩色时换色）
     var petalOff = s * (0.05 + 0.23 * b);
     var petalR = s * (0.30 + 0.20 * b);

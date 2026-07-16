@@ -1132,9 +1132,9 @@ class PlayingEngine {
       const self = this;
       // 离屏回调：清理飞行猪/动画 + 从「尾巴当前所在的屏幕边缘」弹金币（中心落在边缘上）
       anim.onExit = function () {
-        // 猪真正离屏（用户眼里的「猪逃脱」瞬间）→ 剩余步数面板吊牌单摆。
-        // 比 setData 的「松手记步」检测晚约 1 秒，正好对齐猪飞出屏幕的观感；与「步数变少」检测、道具飞行到达的抖动可叠加。
-        if (self && self._uiRightStep) self._uiRightStep.triggerHitShake();
+        // 注意：猪离屏时【不再】触发面板摆动 —— 摆动已在「松手记步」那一刻由
+        // RightStepWidget.setData 的「剩余步数下降」检测触发（每次逃猪恰好一次，干净单脉冲）。
+        // 若在此处再 triggerHitShake，会与松手那次叠加成双脉冲（猪飞出屏幕后又荡一下，冗余）。
         // tailSX/tailSY 与 currentDx/currentDy 均为「板面坐标」，须经与 renderBoard 一致的
         // autoScale 缩放/居中变换转成「屏幕坐标」，金币才会从猪真正飞出的屏幕边缘弹出
         // （之前直接把板面坐标当屏幕坐标 clamp，第三关缩放后出生点严重偏移）。

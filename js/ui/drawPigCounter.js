@@ -35,6 +35,59 @@ var GEOM = {
   count: { x: 40, y: 99, w: 18, h: 13 },                                                            // 数量数字框（Figma 33 节点）
 };
 
+// ===== 吊牌单摆（剩余猪数减少时播放；参数与 RightStepWidget 完全一致）=====
+// 本组件是纯绘制函数、无实例状态，故用模块级变量保存脉冲队列与上次数字。
+// 数字「变小」= 逃猪 → 触发摆动；「变大」视为换关/重玩 → 仅更新基线、不弹（避免进关误触发）。
+var _pcShakes = [];
+var _pcLastValue = undefined;
+var _PC_SHAKE_DURATION = 850;            // 单个脉冲摆动收住时间
+var _PC_SHAKE_AMP = 0.15;                // 初始摆角(弧度) ≈ 8.6°
+var _PC_SHAKE_TAU = 400;                 // 衰减常数(ms)，越大摆得越久、收尾越飘
+var _PC_SHAKE_OMEGA = 2 * Math.PI * 2;  // 摆动角频率(≈2Hz，慢悠悠晃)
+var _PC_SHAKE_MAX = 4;                   // 最多叠加脉冲数（防失控）
+
+function _pcTriggerShake() {
+  var now = Date.now();
+  var p = {
+    ts: now,
+    amp: _PC_SHAKE_AMP * (0.75 + Math.random() * 0.5),    // 振幅 ±25%
+    tau: _PC_SHAKE_TAU * (0.9 + Math.random() * 0.2),     // 衰减 ±10%
+    omega: _PC_SHAKE_OMEGA * (0.9 + Math.random() * 0.2), // 频率 ±10%
+    dir: Math.random() < 0.5 ? 1 : -1,                    // 起手方向随机（先右/先左）
+  };
+  _pcShakes.push(p);
+  if (_pcShakes.length > _PC_SHAKE_MAX) _pcShakes.splice(0, _pcShakes.length - _PC_SHAKE_MAX);
+}
+
+function _pcGetShakeAngle() {
+  if (_pcShakes.length === 0) return 0;
+  var now = Date.now();
+  var total = 0;
+  for (var i = _pcShakes.length - 1; i >= 0; i--) {
+    var p = _pcShakes[i];
+    var elapsed = now - p.ts;
+    if (elapsed >= _PC_SHAKE_DURATION) { _pcShakes.splice(i, 1); continue; }
+    var decay = Math.exp(-elapsed / p.tau);
+    total += p.amp * decay * Math.sin(p.dir * p.omega * elapsed / 1000);
+  }
+  return total;
+}
+
+// 检测数字变化：减少才弹（逃猪）；变大视为换关/重玩，仅更新基线不弹
+function _pcDetectChange(valueStr) {
+  var prev = _pcLastValue;
+  if (prev === undefined) { _pcLastValue = valueStr; return; }
+  var a = parseInt(valueStr, 10);
+  var b = parseInt(prev, 10);
+  if (!isNaN(a) && !isNaN(b)) {
+    if (a < b) _pcTriggerShake();
+    // a > b（换关/重玩数字变大）→ 仅更新基线，不弹，避免进关误触发
+  } else if (valueStr !== prev) {
+    _pcTriggerShake();
+  }
+  _pcLastValue = valueStr;
+}
+
 /**
  * 绘制「剩余猪数量」组件
  * @param {CanvasRenderingContext2D} ctx
@@ -53,6 +106,20 @@ function drawPigCounter(ctx, frameX, frameY, opts) {
 
   var ox = frameX;
   var oy = frameY;
+
+  // 剩余猪数变化检测 → 自动触发吊牌单摆（减少才弹；变大视为换关不弹）
+  _pcDetectChange(value);
+
+  // 单摆：整块计数器绕「吊绳顶端」(bar 顶部中心) 旋转摆动，与步数面板同款
+  var pcAngle = _pcGetShakeAngle();
+  ctx.save();
+  if (pcAngle !== 0) {
+    var pcPivotX = ox + GEOM.bar.x + GEOM.bar.w / 2;
+    var pcPivotY = oy + GEOM.bar.y;
+    ctx.translate(pcPivotX, pcPivotY);
+    ctx.rotate(pcAngle);
+    ctx.translate(-pcPivotX, -pcPivotY);
+  }
 
   // 1) 竖条（最底层，无圆角，无阴影）
   ctx.fillStyle = GEOM.bar.color;
@@ -129,6 +196,8 @@ function drawPigCounter(ctx, frameX, frameY, opts) {
   ctx.strokeText(value, ccx, ccy);
   ctx.fillStyle = '#FFFFFF';
   ctx.fillText(value, ccx, ccy);
+
+  ctx.restore();   // 单摆旋转 transform 作用域收尾（与开头 ctx.save 配对）
 }
 
 module.exports = { drawPigCounter };
