@@ -77,7 +77,7 @@ class RightStepWidget extends UIComponent {
     this._BREATHE_DURATION = 400;
     this._BREATHE_AMPLITUDE = 0.26;
 
-    // 数字滚动动画（增加步数时向上滚动 1秒；减少时直接 snap）
+    // 数字滚动动画（增减都滚，方向=常规里程表）
     this._displayValue = undefined;  // 当前显示值（首次进入直接显示，不滚动）
     this._animFrom = 0;
     this._animTo = 0;
@@ -137,17 +137,17 @@ class RightStepWidget extends UIComponent {
       this._displayValue = target;   // 首次进入直接显示，不滚动
       return;
     }
-    if (target > this._displayValue && !this._animActive) {
-      // 步数增加（+3步）→ 触发向上滚动动画
-      this._animFrom = this._displayValue;
+    if (target === this._displayValue) return;
+    if (this._animActive) {
+      // 正在滚 → 无缝更新目标，继续滚到新值
       this._animTo = target;
-      this._animStart = Date.now();
-      this._animActive = true;
-    } else if (target < this._displayValue) {
-      // 步数减少（正常移动）→ 直接 snap，不滚动
-      this._displayValue = target;
-      this._animActive = false;
+      return;
     }
+    // 启动新滚动（增减都滚；方向由 render 里 to vs from 决定）
+    this._animFrom = this._displayValue;
+    this._animTo = target;
+    this._animStart = Date.now();
+    this._animActive = true;
   }
 
   setHidden(hidden) {
@@ -247,30 +247,31 @@ class RightStepWidget extends UIComponent {
     ctx.textBaseline = 'middle';
     ctx.fillText('剩余步数', LABEL_CX, LABEL_CY);
 
-    // === 剩余步数数字（滚动动画：增加步数时向上滚动 1秒；减少时直接 snap）===
-    var curValue;
+    // === 剩余步数数字（位移滚动：增减都滚；方向=常规里程表
+    //   变大→旧数字向上滑出顶部、新数字从底部滑入；变小→旧数字向下滑出底部、新数字从顶部滑入）===
+    var ROLL_DIST = 22; // 滚动距离（px）
     if (this._animActive) {
       var elapsed = Date.now() - this._animStart;
       var t = Math.min(1, elapsed / this._ANIM_DURATION);
       var e2 = this._easeOutCubic(t);
-      curValue = this._animFrom + (this._animTo - this._animFrom) * e2;
       if (t >= 1) {
         this._animActive = false;
         this._displayValue = this._animTo;
-        curValue = this._animTo;
+        this._drawStepNumber(ctx, String(this._animTo), NUM_CY, 1);
+      } else {
+        var goingUp = this._animTo > this._animFrom;  // 变大→视觉向上滚
+        if (goingUp) {
+          this._drawStepNumber(ctx, String(this._animFrom), NUM_CY - e2 * ROLL_DIST, 1 - e2);
+          this._drawStepNumber(ctx, String(this._animTo), NUM_CY + (1 - e2) * ROLL_DIST, e2);
+        } else {
+          // 变小→视觉向下滚：旧数字向下滑出、新数字从顶部滑入
+          this._drawStepNumber(ctx, String(this._animFrom), NUM_CY + e2 * ROLL_DIST, 1 - e2);
+          this._drawStepNumber(ctx, String(this._animTo), NUM_CY - (1 - e2) * ROLL_DIST, e2);
+        }
       }
     } else {
-      curValue = (this._displayValue === undefined) ? 0 : this._displayValue;
-    }
-    var numStr = String(Math.round(curValue));
-
-    var ROLL_DIST = 22; // 滚动距离（px）
-    if (this._animActive) {
-      // 旧数字上移淡出 + 新数字从下进（向上滚动效果）
-      this._drawStepNumber(ctx, String(Math.round(this._animFrom)), NUM_CY - e2 * ROLL_DIST, 1 - e2);
-      this._drawStepNumber(ctx, String(Math.round(this._animTo)), NUM_CY + (1 - e2) * ROLL_DIST, e2);
-    } else {
-      this._drawStepNumber(ctx, numStr, NUM_CY, 1);
+      var curValue = (this._displayValue === undefined) ? 0 : this._displayValue;
+      this._drawStepNumber(ctx, String(Math.round(curValue)), NUM_CY, 1);
     }
 
     ctx.restore();
