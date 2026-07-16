@@ -419,8 +419,17 @@ class BranchProgressWidget extends UIComponent {
     this._renderFlowers(ctx, ox, oy);
     this._renderWorm(ctx, ox, oy);
     if (this._petals.length) this._renderPetals(ctx);
-    if (this._stepFlowers.length) this._renderStepFlowers(ctx);
     this._renderCastFlash(ctx);
+  }
+
+  /**
+   * 步数→飞小花「独立最高层」渲染：本方法只画从右上角步数牌中心飞出的彩虹小花，
+   * 由 PlayingEngine 在步数牌/顶栏/金币之后调用，确保飞花盖过右上角步数牌
+   * （PlayingEngine.render 为手写按行序绘制，UIManager 的 zIndex 不生效，故需独立层）。
+   * 其它粒子（4 星花瓣/施法高光）位置均在进度条范围内、不溢出步数牌，仍走基础层 render()。
+   */
+  renderStepFlowersLayer(ctx) {
+    if (this._stepFlowers.length) this._renderStepFlowers(ctx);
   }
 
   _renderDebug(ctx, ox, oy) {

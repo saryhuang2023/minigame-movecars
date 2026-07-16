@@ -2,12 +2,12 @@
 // 计分：每逃 1 猪 = 1 分；剩余每 1 步 = 1 分（achievedScore = escapedCount + stepBonus）。
 //
 // 默认星级门槛（2026-07-16 方案，详见 document/关卡星级算法-设计方案.md）：
-//   难度3档(easy/normal/hard)，minSteps倍率 1.1/1.2/1.3，可省步数 = totalSteps − N×minMul，
+//   难度3档(easy/normal/hard)，minSteps倍率 1.3/1.4/1.5，可省步数 = totalSteps − N×minMul，
 //   3星 = N + 可省×0.55，4星 = N + 可省×0.80；1星 = 3星×1/4，2星 = 3星×2/3（每步1分）。
 //   difficulty 优先读关卡字段，否则按 levelId 默认(≤20简单/≤100标准/>100难)，再否则 normal。
 
 var TOTAL_MUL = { easy: 2.5, normal: 2.0, hard: 1.7 };
-var MIN_MUL   = { easy: 1.1, normal: 1.2, hard: 1.3 };
+var MIN_MUL   = { easy: 1.3, normal: 1.4, hard: 1.5 };
 var RATIOS    = [0, 0.25, 0.55, 0.80];   // 1星0%(通关) / 2星25% / 3星55% / 4星80% （占可省步数比例）
 
 /** 按关卡 ID 默认难度 */

@@ -141,6 +141,7 @@ class PlayingEngine {
     this._hint.clear();
     this._guide.reset();
     this._lastFrameTime = 0;       // 防止切关卡时 dt 突增
+    if (this._scoreBonusTimer) { clearTimeout(this._scoreBonusTimer); this._scoreBonusTimer = null; } // 清理上一关残留的步数转积分定时器
     // 金币奖励状态
     this._goldAmount = 0;
     this._levelAccumulatedGold = 0;
@@ -227,9 +228,11 @@ class PlayingEngine {
       this._uiRightStep = new RightStepWidget({ zIndex: UIManager.LAYER.INFO });
       this.ui.add(this._uiRightStep, UIManager.LAYER.INFO);
 
-      // Layer INFO — 树枝进度条（小虫沿树枝爬动表示进度）
-      this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 61, zIndex: UIManager.LAYER.INFO });
-      this.ui.add(this._uiBranchProgress, UIManager.LAYER.INFO);
+      // Layer OVERLAY — 树枝进度条（小虫沿树枝爬动表示进度）；层级高于 INFO/CONTROL，
+      // 使「步数→积分」飞花能盖过右上角步数牌（飞花是 BranchProgressWidget 内部绘制内容，
+      // 无法单独提层，故整体提升到非模态最高层 OVERLAY，仍低于结算面板 MODAL）。
+      this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 61, zIndex: UIManager.LAYER.OVERLAY });
+      this.ui.add(this._uiBranchProgress, UIManager.LAYER.OVERLAY);
 
       // Layer 4 — VictoryPopup
       this._uiVictoryPopup = new VictoryPopup({
@@ -1244,6 +1247,20 @@ class PlayingEngine {
         this._scoreBonusRemaining = stepBonus;  // 每剩余 1 步 = 1 积分（飞小花数 = stepBonus = _scoreBonusRemaining）
       }
     }
+    // 步数转积分：最后一只猪开始逃脱后 500ms 启动（不等金币飞行到位），由独立定时器触发
+    var selfBonus = this;
+    if (this._scoreBonusTimer) { clearTimeout(this._scoreBonusTimer); this._scoreBonusTimer = null; }
+    if (this._scoreBonusRemaining > 0) {
+      this._scoreBonusSettled = false;
+      this._stepFlowersSettled = false;
+      this._scoreBonusTimer = setTimeout(function () {
+        selfBonus._scoreBonusTimer = null;
+        if (!selfBonus._scoreBonusAnim) {
+          console.log('[LOG_victory] 步数转积分提前启动(最后一只猪逃脱+500ms)');
+          selfBonus._spawnScoreParticles(selfBonus._scoreBonusRemaining);
+        }
+      }, 500);
+    }
     // 金币奖励：仅正式模式首次通关本关（试玩不结算金币）
     if (this._isFirstGoldClear) {
       var reward = GoldSystem.calculateReward(this._totalPigsInLevel);
@@ -1444,14 +1461,9 @@ class PlayingEngine {
     this._syncToCloud();
 
     var self = this;
-    // 步数→飞小花：随积分步进每 200ms 触发一朵，由积分灌入循环驱动（见 update 中 _scoreBonusAnim 块）。
-    // 此处不再批量 spawnStepFlowers，统一在每步转化时单次触发。
-    self._stepFlowersSettled = false;
-    // 积分奖励（剩余步数 → 离散步进灌入分支进度，每 200ms 转化 1 步 + 1 朵飞花）→ 结束后弹出结算面板
-    if (self._scoreBonusRemaining > 0) {
-      self._scoreBonusSettled = false;
-      console.log('[LOG_victory] → 启动积分离散灌入(' + self._scoreBonusRemaining + '步, 200ms/步)');
-      self._spawnScoreParticles(self._scoreBonusRemaining);
+    // 步数转积分动画已交由「最后一只猪逃脱+500ms」定时器独立启动（见 _markCleared），
+    // 此处不再启动；仅负责金币入账。若步数转积分动画仍在进行，等待其结束（update 会触发 _tryFinishVictory）。
+    if (self._scoreBonusAnim && self._scoreBonusAnim.active) {
       return;
     }
     self._scoreBonusSettled = true;
@@ -1707,6 +1719,10 @@ class PlayingEngine {
       if (this._uiGoldWidget) {
         this._uiGoldWidget.render(ctx);
       }
+      // 5.0. 步数→飞小花「独立最高层」：绘制于步数牌/顶栏/金币之上，
+      //       确保飞花从右上角步数牌中心飞出时盖过步数牌（PlayingEngine.render 为手写按行序绘制，
+      //       UIManager 的 zIndex 不生效，故飞花需单独后画）。仍在结算面板之下（动画结束后面板才弹出）。
+      if (this._uiBranchProgress) this._uiBranchProgress.renderStepFlowersLayer(ctx);
       // 5. 底部栏（UIManager）
       // 5.2 关卡内底栏：level_buttom 背景 + 双圆按钮（赛+3 / !提示）
       // 底栏图片始终绘制（失败时由失败面板覆盖）；交互按钮在失败/通关后隐藏
@@ -1781,6 +1797,11 @@ class PlayingEngine {
 
     // 5.5 测试按钮 — 编辑器后门解锁后出现
     if (databus.debugUnlocked) {
+    // 自包含绘制：显式定死文字对齐，避免继承前面 widget 泄漏的 textAlign/textBaseline（否则文字会随入场动画结束从居中跳到右对齐）
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '16px sans-serif';
     var testBx = 10, testBy = 120, testBw = 30, testBh = 30;
     // "框" 按钮（棋盘可用区域）
     var boundBx = testBx, boundBy = testBy;
@@ -1806,6 +1827,7 @@ class PlayingEngine {
     } else {
       this._testAutoBtn = null;
     }
+    ctx.restore();
     } else {
       this._testBoundBtn = null;
       this._testAutoBtn = null;

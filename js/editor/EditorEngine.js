@@ -2355,7 +2355,7 @@ class EditorEngine {
     ctx.fillText('✕', closeX + 16, closeY + 16);
     this._starPanelCloseRect = { x: closeX, y: closeY, w: 44, h: 44 };
 
-    // 难度档选择（影响"恢复默认"公式：简单2.5N/标准2.0N/难1.7N 步数 + minSteps倍率1.1/1.2/1.3）
+    // 难度档选择（影响"恢复默认"公式：简单2.5N/标准2.0N/难1.7N 步数 + minSteps倍率1.3/1.4/1.5）
     this._starPanelDiffBtns = [];
     var diffLabels = ['简单', '标准', '难'];
     var diffKeys = ['easy', 'normal', 'hard'];
