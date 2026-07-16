@@ -76,10 +76,15 @@ async function callFunction(name, data = {}, tag = '') {
     }
     console.log(`${prefix} ← ${name}  ${duration}ms  ${sizeStr}  ${resultSummary}`);
 
-    if (result && typeof result === 'object' && result.code === undefined) {
-      console.warn(`${prefix} ⚠ ${name} 返回结果缺少 code 字段`);
-      console.warn(`${prefix} res顶层keys:`, Object.keys(res).join(','), `| errMsg:`, res.errMsg);
-      console.warn(`${prefix} res.result:`, JSON.stringify(result).substring(0, 500));
+    if (result && typeof result === 'object') {
+      if (result.code === undefined) {
+        console.error(`${prefix} ✗ ${name} 返回结果缺少 code 字段`);
+        console.error(`${prefix} res顶层keys:`, Object.keys(res).join(','), `| errMsg:`, res.errMsg);
+        console.error(`${prefix} res.result:`, JSON.stringify(result).substring(0, 500));
+      } else if (result.code !== 0) {
+        // 云函数逻辑失败（如版本冲突、权限、参数错误等）
+        console.error(`${prefix} ✗ ${name}  code=${result.code}  msg=${result.msg || '?'}  ${JSON.stringify(result).substring(0, 300)}`);
+      }
     }
 
     return result;

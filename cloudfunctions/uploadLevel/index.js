@@ -26,8 +26,8 @@ exports.main = async (event, context) => {
       data.version = 1;
       var pub = hasPublishedParam ? !!published : false;
       const res = await db.collection('levels').add({
-        data: {
-          _openid: OPENID, name, data, pigCount, stepBonusThreshold, starScores,
+          data: {
+            name, data, pigCount, stepBonusThreshold, starScores,
           version: 1, published: pub,
           createdAt: now, updatedAt: now
         }
@@ -42,7 +42,7 @@ exports.main = async (event, context) => {
     const mergedData = Object.assign({}, doc.data, data);
     mergedData.version = serverVersion + 1;
 
-    if (serverVersion > 0 && clientVersion !== serverVersion) {
+    if (clientVersion > 0 && serverVersion > 0 && clientVersion !== serverVersion) {
       return {
         code: 2, msg: 'conflict',
         serverVersion,

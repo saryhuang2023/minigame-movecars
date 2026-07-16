@@ -690,11 +690,12 @@ class PlayingEngine {
       console.warn('[StepHUD] 关卡 ' + (data && data.name) + ' stepBonusThreshold=' + this._stepBonusThreshold + ' → 剩余步数 HUD 隐藏（无步数预算；检查关卡 JSON 是否含 stepBonusThreshold）');
     }
     this._levelVersion = (data && data.version) || 0;
-    // 星级积分门槛：优先读关卡配置，否则按默认公式（猪数 + 总步数×0.5）填充
+    // 星级积分门槛：优先读关卡配置，否则按默认公式（新方案：难度档+可省步数比例）填充
     var pigCountForStar = (data && data.pigs) ? data.pigs.length : 0;
     this._starScores = (data && data.starScores && data.starScores.length === 4)
       ? data.starScores.slice()
-      : StarScores.computeDefaultStarScores(pigCountForStar, this._stepBonusThreshold);
+      : StarScores.computeDefaultStarScores(pigCountForStar, this._stepBonusThreshold,
+          StarScores.resolveDifficulty(data, databus.currentLevelIndex));
     // 进度条分母 = 4 星门槛（小虫跑到底 = 4 星）；缺失时回退 totalScore→30
     this._totalScore = StarScores.getStar4Score(this._starScores, (data && data.totalScore != null) ? data.totalScore : 30);
     if (this._uiBranchProgress) {
@@ -1238,7 +1239,7 @@ class PlayingEngine {
     if (effThreshold2 > 0 && this.steps < effThreshold2) {
       var stepBonus = effThreshold2 - this.steps;
       if (stepBonus > 0) {
-        this._scoreBonusRemaining = stepBonus * 2;  // 每剩余 1 步 = 2 积分（飞小花数 = stepBonus，由 _scoreBonusRemaining/2 推算）
+        this._scoreBonusRemaining = stepBonus;  // 每剩余 1 步 = 1 积分（飞小花数 = stepBonus = _scoreBonusRemaining）
       }
     }
     // 金币奖励：仅正式模式首次通关本关（试玩不结算金币）
@@ -1438,8 +1439,8 @@ class PlayingEngine {
 
     var self = this;
     // 步数→飞小花：剩余步数不转金币，而是从步数框飞出「一小堆彩虹小花」飞向 4 星花朵（纯视觉积分转化的表现）。
-    // 小花数量 = 剩余步数（由 _scoreBonusRemaining/2 反推），与积分灌入同源，但视觉上从步数框飞向 4 星花。
-    var flowerCount = self._scoreBonusRemaining > 0 ? Math.floor(self._scoreBonusRemaining / 2) : 0;
+    // 小花数量 = 剩余步数（= _scoreBonusRemaining，每步1分），与积分灌入同源，视觉上从步数框飞向 4 星花。
+    var flowerCount = self._scoreBonusRemaining > 0 ? self._scoreBonusRemaining : 0;
     if (flowerCount > 0 && self._uiBranchProgress) {
       self._stepFlowersSettled = false;
       console.log('[LOG_victory] → 启动步数→飞小花(' + flowerCount + '朵) 飞向4星花');
@@ -1449,9 +1450,9 @@ class PlayingEngine {
     }
     // 积分奖励（剩余步数 → 平滑灌入分支进度，小花朵在树枝上原地旋转变大）→ 结束后弹出结算面板
     if (self._scoreBonusRemaining > 0) {
-      var flowerCount = Math.floor(self._scoreBonusRemaining / 2);  // 每朵花 = 2 分
+      var flowerCount = self._scoreBonusRemaining;  // 每朵花 = 1 分（= 剩余步数）
       self._scoreBonusSettled = false;
-      console.log('[LOG_victory] → 启动积分进度灌入(' + flowerCount + '朵, 每朵2分)，小花朵原地旋转变大（不再飞粒子）');
+      console.log('[LOG_victory] → 启动积分进度灌入(' + flowerCount + '朵, 每朵1分)，小花朵原地旋转变大（不再飞粒子）');
       self._spawnScoreParticles(flowerCount);
       return;
     }
@@ -1669,15 +1670,14 @@ class PlayingEngine {
       ctx.drawImage(AssetPreloader.get('bg_deco_718'), 10, 61, 279, 85);
     }
 
-    // 树枝进度条：绘制于背景框之上（轨迹 + 小虫 + 调试曲线 + 常驻 4 朵小花）
-    if (this._uiBranchProgress) this._uiBranchProgress.render(ctx);
-
     // 草丛装饰（Figma 草丛节点）：替换原 Vector 6/7/8 三层纯色装饰
     // 坐标全部为「相对屏幕左上角」的 Figma 原值，按屏幕坐标直接绘制（left:0, top:39, 69.32×121.07）
     // 绘制于棋盘之上（确保不被棋盘/孔位遮挡）
     if (AssetPreloader.isReady('level_brush')) {
       ctx.drawImage(AssetPreloader.get('level_brush'), 0, 39, 69.32, 121.07);
     }
+    // 树枝进度条：绘制于草丛之上（轨迹 + 小虫 + 调试曲线 + 常驻 4 朵小花）
+    if (this._uiBranchProgress) this._uiBranchProgress.render(ctx);
 
     // 剩余未逃脱猪数量组件（可复用 drawPigCounter，父 frame 宽 55）
     // 按 SCREEN_WIDTH 动态水平居中：设备宽 ≠375 时硬编码 160 会偏左，故实时算 frameX

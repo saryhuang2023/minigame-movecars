@@ -19,6 +19,7 @@ const GameplayEngine = require('../core/GameplayEngine.js');
 const { roundRect } = require('../render/PigRenderer.js');
 const cloud = require('../cloud.js');
 const StarScores = require('../utils/starScores.js');
+const { showToast } = require('../ui/widgets/ToastWidget.js');
 const LevelCache = require('../preload/LevelCache.js');
 const audio = require('../audio/AudioManager.js');
 const ButtonPress = require('../anim/ButtonPress.js');
@@ -64,6 +65,14 @@ class EditorEngine {
     this.toastAlpha = 0;
     this.toastFade = null;
 
+    // ===== 长按检测（批量刷新星级） =====
+    this._touchX = 0;
+    this._touchY = 0;
+    this._touching = false;
+    this._touchInited = false;
+    this._starResetHoldStart = null;  // 恢复默认按钮长按计时
+    this._batchResetting = false;     // 批量刷新防重入
+
     // ===== 云端同步加载状态 =====
     this._editorLoading = false;     // 编辑器正在懒加载关卡数据
 
@@ -80,6 +89,8 @@ class EditorEngine {
     this._stepBonusThreshold = 0;
     // ===== 星级积分门槛 [s1,s2,s3,s4]（每逃 1 猪=1 分；剩余每 1 步=2 分）=====
     this._starScores = [0, 0, 0, 0];
+    // ===== 难度档（easy/normal/hard，影响星级默认公式；编辑器内可切换）=====
+    this._editDifficulty = 'normal';
     // ===== 星级配置浮层 =====
     this._starPanelOpen = false;
     this._starPanelBtns = [];
@@ -91,10 +102,25 @@ class EditorEngine {
     this._sceneBgImg = wx.createImage();
     this._sceneBgLoaded = false;
     var self = this;
+    this._initTouch();
     this._sceneBgImg.onload = function () {
       self._sceneBgLoaded = true;
     };
     this._sceneBgImg.src = SceneDefaults.background;
+  }
+
+  _initTouch() {
+    if (this._touchInited) return;
+    this._touchInited = true;
+    var self = this;
+    wx.onTouchStart(function (e) {
+      if (e.touches && e.touches.length > 0) {
+        self._touchX = e.touches[0].clientX;
+        self._touchY = e.touches[0].clientY;
+        self._touching = true;
+      }
+    });
+    wx.onTouchEnd(function (e) { self._touching = false; });
   }
 
   // ============================================================
@@ -729,6 +755,7 @@ class EditorEngine {
     });
     base.stepBonusThreshold = this._stepBonusThreshold || 0;  // 序列化 stepBonusThreshold 字段
     base.starScores = this._starScores.slice();  // 序列化星级积分门槛 [s1,s2,s3,s4]
+    base.difficulty = this._editDifficulty;      // 序列化难度档（easy/normal/hard）
     base.ready = (curData && curData.ready != null) ? curData.ready : 0;
     return base;
   }
@@ -741,11 +768,13 @@ class EditorEngine {
       this.gp.boardRate = data.board.boardRate || 2.74;
     }
     this._stepBonusThreshold = (data && data.stepBonusThreshold != null) ? data.stepBonusThreshold : ((data && data.crownSteps) || 0);
-    // 星级积分门槛：优先读关卡配置，否则按默认公式（猪数 + 总步数×0.5）填充
+    // 难度档：先读关卡字段，字段不存在则按关卡ID默认分档
+    this._editDifficulty = StarScores.resolveDifficulty(data, this.currentLevelIdx + 1);
+    // 星级积分门槛：优先读关卡配置，否则按默认公式（新方案：难度档+可省步数比例）填充
     var pigCountForStar = (data && data.pigs) ? data.pigs.length : 0;
     this._starScores = (data && data.starScores && data.starScores.length === 4)
       ? data.starScores.slice()
-      : StarScores.computeDefaultStarScores(pigCountForStar, this._stepBonusThreshold);
+      : StarScores.computeDefaultStarScores(pigCountForStar, this._stepBonusThreshold, this._editDifficulty);
     this._starPanelOpen = false;  // 切换关卡时关闭配置浮层
     this.gp.pigs = (data.pigs || []).map(p => ({
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
@@ -1180,9 +1209,11 @@ class EditorEngine {
         const fullPath = `${dir}/${entry.fileName}`;
         fs.writeFileSync(fullPath, JSON.stringify(entry.data, null, 2), 'utf8');
         console.log(`[cloud] 关卡 ${entry.name} 已同步云端 v${res.version}`);
+      } else {
+        console.error(`[cloud] 上传 ${entry.name} 失败: code=${res.code} msg=${res.msg || '?'}`, JSON.stringify(res).substring(0, 200));
       }
     } catch (e) {
-      console.warn(`[cloud] 上传 ${entry.name} 失败:`, e);
+      console.error(`[cloud] 上传 ${entry.name} 失败:`, e);
     }
   }
 
@@ -2282,7 +2313,7 @@ class EditorEngine {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    var pw = 320, ph = 372;
+    var pw = 320, ph = 416;
     var px = Math.round((SCREEN_WIDTH - pw) / 2);
     var py = Math.round((SCREEN_HEIGHT - ph) / 2);
 
@@ -2295,7 +2326,7 @@ class EditorEngine {
     ctx.font = 'bold 15px ' + Theme.font.family + '';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('星级配置（逃1猪=1分，剩1步=2分）', px + pw / 2, py + 24);
+    ctx.fillText('星级配置（逃1猪=1分，剩1步=1分）', px + pw / 2, py + 24);
 
     // 关闭
     var closeX = px + pw - 44, closeY = py + 6;
@@ -2306,8 +2337,31 @@ class EditorEngine {
     ctx.fillText('✕', closeX + 16, closeY + 16);
     this._starPanelCloseRect = { x: closeX, y: closeY, w: 44, h: 44 };
 
+    // 难度档选择（影响"恢复默认"公式：简单2.5N/标准2.0N/难1.7N 步数 + minSteps倍率1.1/1.2/1.3）
+    this._starPanelDiffBtns = [];
+    var diffLabels = ['简单', '标准', '难'];
+    var diffKeys = ['easy', 'normal', 'hard'];
+    var diffY = py + 44, diffBtnH = 28, diffBtnW = 60, diffGap = 8;
+    ctx.fillStyle = '#888';
+    ctx.font = 'bold 13px ' + Theme.font.family + '';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('难度', px + 16, diffY + diffBtnH / 2);
+    var diffX = px + 16 + 40;
+    for (let d = 0; d < 3; d++) {
+      var sel = (this._editDifficulty === diffKeys[d]);
+      ctx.fillStyle = sel ? '#FF8C00' : '#eee';
+      roundRect(ctx, diffX, diffY, diffBtnW, diffBtnH, 6); ctx.fill();
+      ctx.fillStyle = sel ? '#fff' : '#555';
+      ctx.font = 'bold 13px ' + Theme.font.family + '';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(diffLabels[d], diffX + diffBtnW / 2, diffY + diffBtnH / 2);
+      this._starPanelDiffBtns.push({ x: diffX, y: diffY, w: diffBtnW, h: diffBtnH, key: diffKeys[d] });
+      diffX += diffBtnW + diffGap;
+    }
+
     // 步进器行：总步数 + 1~4 星
-    var stepperH = 32, rowGap = 12, sx = px + 16, rowY = py + 52;
+    var stepperH = 32, rowGap = 12, sx = px + 16, rowY = py + 84;
     sx = this._drawCompactStepper(sx, rowY, stepperH, '总步数', this._stepBonusThreshold, 0, 999,
       (v) => { this._stepBonusThreshold = v; }, 1, this._starPanelBtns);
     rowY += stepperH + rowGap;
@@ -2338,6 +2392,32 @@ class EditorEngine {
     this._starPanelDoneRect = { x: doneX, y: doneY, w: doneW, h: doneH };
 
     this._starPanelRect = { x: px, y: py, w: pw, h: ph };
+
+    // 长按"恢复默认"5秒 → 批量刷新全部关卡星级 + 上传
+    if (this._touching && this._starPanelResetRect) {
+      var rr = this._starPanelResetRect;
+      if (this._touchX >= rr.x && this._touchX <= rr.x + rr.w &&
+          this._touchY >= rr.y && this._touchY <= rr.y + rr.h) {
+        if (!this._starResetHoldStart) this._starResetHoldStart = Date.now();
+        var held = Date.now() - this._starResetHoldStart;
+        var progress = Math.min(1, held / 5000);
+        // 进度环
+        ctx.strokeStyle = 'rgba(255,140,0,' + (0.4 + 0.6 * progress) + ')';
+        ctx.lineWidth = 3;
+        roundRect(ctx, rr.x - 3, rr.y - 3, rr.w + 6, rr.h + 6, 10);
+        ctx.stroke();
+        if (held >= 5000) {
+          this._starResetHoldStart = null;
+          showToast('准备恢复全部关卡星级...');
+          this._batchResetAllLevels();
+          return;
+        }
+      } else {
+        this._starResetHoldStart = null;
+      }
+    } else {
+      this._starResetHoldStart = null;
+    }
   }
 
   _checkStarPanelButtons(x, y) {
@@ -2352,12 +2432,22 @@ class EditorEngine {
       return true;
     }
     if (this._starPanelDoneRect && this.hitRect(x, y, this._starPanelDoneRect)) {
+      this._saveStarPanelChanges();
       this._starPanelOpen = false;
       return true;
     }
     if (this._starPanelResetRect && this.hitRect(x, y, this._starPanelResetRect)) {
       this._resetStarScores();
       return true;
+    }
+    // 难度档切换（切换即按新档重算默认星级）
+    for (const btn of this._starPanelDiffBtns) {
+      if (btn.key !== this._editDifficulty && this.hitRect(x, y, btn)) {
+        audio.play('button_click');
+        this._editDifficulty = btn.key;
+        this._resetStarScores();
+        return true;
+      }
     }
     // 步进器（总步数 + 1~4 星）
     for (const btn of this._starPanelBtns) {
@@ -2384,7 +2474,101 @@ class EditorEngine {
 
   _resetStarScores() {
     var pigCount = this.gp.pigs.length;
-    this._starScores = StarScores.computeDefaultStarScores(pigCount, this._stepBonusThreshold);
+    var diff = this._editDifficulty || 'normal';
+    // 总步数按难度档恢复默认（简单2.5N / 标准2.0N / 难1.7N）
+    this._stepBonusThreshold = Math.round(pigCount * StarScores.TOTAL_MUL[diff]);
+    this._starScores = StarScores.computeDefaultStarScores(pigCount, this._stepBonusThreshold, diff);
+  }
+
+  // 关闭星级面板时，把星级配置写回关卡 data 并保存上传
+  _saveStarPanelChanges() {
+    if (this.currentLevelIdx < 0 || this.currentLevelIdx >= this.levelList.length) return;
+    var entry = this.levelList[this.currentLevelIdx];
+    if (!entry || entry._readonly) return;
+    var data = entry.data || this._readLevelFile(entry.name);
+    if (!data) return;
+    data.starScores = this._starScores.slice();       // 显式写回星级阈值
+    data.stepBonusThreshold = this._stepBonusThreshold;
+    data.difficulty = this._editDifficulty;
+    entry.data = data;
+    entry.isDirty = true;
+    this.dirty = true;
+    this.saveLevel();  // 保存文件 + 上传云端
+  }
+
+  // 批量刷新全部关卡星级为默认（长按恢复默认5秒触发）
+  async _batchResetAllLevels() {
+    // 防重入：批量刷新运行中（异步+耗时），避免 renderStarPanel 每帧触发多次
+    if (this._batchResetting) return;
+    this._batchResetting = true;
+
+    var total = this.levelList.length;
+    var fs = wx.getFileSystemManager();
+    var dir = wx.env.USER_DATA_PATH + '/levels';
+    try { fs.accessSync(dir); } catch (e) { fs.mkdirSync(dir, true); }
+    var count = 0;
+
+    try {
+      for (var i = 0; i < total; i++) {
+        var entry = this.levelList[i];
+        try {
+          var data = entry.data || this._readLevelFile(entry.name);
+          if (!data) continue;
+          // 删除旧 starScores + difficulty（让系统走默认公式 + ID默认难度）
+          if (data.starScores) delete data.starScores;
+          if (data.difficulty) delete data.difficulty;
+          var N = (data.pigs || []).length;
+          var diff = StarScores.resolveDifficulty(data, i + 1);
+          var totalSteps = Math.round(N * StarScores.TOTAL_MUL[diff]);
+
+          data.stepBonusThreshold = totalSteps;
+
+          var fileName = entry.fileName || (entry.name + '.json');
+          try {
+            fs.writeFileSync(dir + '/' + fileName, JSON.stringify(data, null, 2), 'utf8');
+            // 同步回内存（删除旧字段后 entry.data 也要更新，否则 reopen 时读到旧值）
+            entry.data = data;
+            count++;
+          } catch (e) {
+            console.error('[Editor] 批量刷新：写入失败 ' + fileName, e);
+          }
+
+          // 上传云端（version=0 强制覆盖，不检查版本冲突）
+          try {
+            var upRes = await cloud.uploadLevel(entry.name, data, 0, !!(data.ready === 1));
+            if (upRes && upRes.version) {
+              entry._version = upRes.version;
+              entry._cloudId = upRes.id || entry._cloudId;
+            }
+          } catch (e) {
+            console.error('[Editor] 批量刷新：上传失败 ' + entry.name, e);
+          }
+        } catch (e) {
+          console.error('[Editor] 批量刷新：关卡处理异常 ' + (entry && entry.name), e);
+        }
+      }
+    } finally {
+      showToast('已刷新 ' + count + '/' + total + ' 关并上传');
+      this._batchResetting = false;
+    }
+
+    // 同步当前编辑关卡
+    if (this.currentLevelIdx >= 0 && this.currentLevelIdx < this.levelList.length) {
+      var curEntry = this.levelList[this.currentLevelIdx];
+      if (curEntry.data) {
+        if (curEntry.data.starScores) {
+          this._starScores = curEntry.data.starScores.slice();
+        } else {
+          this._starScores = StarScores.computeDefaultStarScores(
+            (curEntry.data.pigs || []).length,
+            curEntry.data.stepBonusThreshold || 0,
+            this._editDifficulty
+          );
+        }
+        this._stepBonusThreshold = curEntry.data.stepBonusThreshold || 0;
+      }
+    }
+    this._starPanelOpen = false;
   }
 
   // ============================================================
