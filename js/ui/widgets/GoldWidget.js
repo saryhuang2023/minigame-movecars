@@ -8,12 +8,12 @@ var Easing = require('../../core/Easing.js');
 var audio = require('../../audio/AudioManager.js');
 
 // Figma 设计常量（v2：去除数字底框，图标 21×21 + 数字 13px 左对齐堆叠在左上角）
-var COIN_X = 7;           // 金币图标 left（Figma left:7）
-var COIN_Y = 79;          // 金币图标 top（Figma top:79）
+var COIN_X = 57;          // 金币图标 left（Figma left:57）
+var COIN_Y = 51;          // 金币图标 top（Figma top:51）
 var COIN_SIZE = 21;       // 金币图标宽高（Figma 21×21）
 
-var TEXT_X = 30;          // 金币数字 左缘-x（左对齐；金币右缘 28 + 2px 间距 = 30，数字向右生长不再贴金币）
-var TEXT_Y = 85;          // 金币数字 top（Figma top:83，textBaseline=top；绘制处再 -2 回到 83）
+var TEXT_X = 80;          // 金币数字 左缘-x（金币右缘 78 + 2px 间距 = 80）
+var TEXT_Y = 57;          // 金币数字 top
 var TEXT_SIZE = 13;       // 字体大小（Figma 13px 大宝桃桃体）
 
 class GoldWidget extends UIComponent {

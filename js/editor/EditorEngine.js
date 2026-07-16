@@ -163,6 +163,24 @@ class EditorEngine {
           }
         }
       }
+
+      // 试玩中修改了关卡（如提示数据写回文件）→ 重读文件同步 entry.data + 设脏
+      if (databus._trialModifiedLevelName) {
+        var modifiedName = databus._trialModifiedLevelName;
+        delete databus._trialModifiedLevelName;
+        var entry = this.levelList.find(function (e) { return e.name === modifiedName; });
+        if (entry) {
+          try {
+            var path = wx.env.USER_DATA_PATH + '/levels/' + (entry.fileName || (entry.name + '.json'));
+            entry.data = JSON.parse(wx.getFileSystemManager().readFileSync(path, 'utf8'));
+            entry.isDirty = true;
+            this.dirty = true;
+            console.log('[Editor] 试玩修改已同步: ' + modifiedName);
+          } catch (e2) {
+            console.warn('[Editor] 试玩修改同步失败: ' + modifiedName, e2);
+          }
+        }
+      }
       return;
     }
 

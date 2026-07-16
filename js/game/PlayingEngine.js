@@ -289,10 +289,10 @@ class PlayingEngine {
     // 右上角剩余步数组件（还原旧版 CrownPigWidget 的步数显示）
     // 结算面板弹出或失败时隐藏；由面板自身及常规层管理可见性，不做特殊浮层处理。
     if (this._uiRightStep) {
-      // 步数转化积分进行中：剩余步数数字同步逐个递减（每 2 分 = 1 步已转化）
+      // 步数转化积分进行中：剩余步数数字同步逐个递减（每 1 分 = 1 步已转化）
       var displaySteps = this.steps;
       if (this._scoreBonusRemaining > 0) {
-        displaySteps = this.steps + Math.floor(this._scoreBonusProgress / 2);
+        displaySteps = this.steps + this._scoreBonusProgress;
       }
       this._uiRightStep.setData(this._stepBonusThreshold + this._bonusSteps, displaySteps);
       this._uiRightStep.setHidden(this._failed); // 仅失败时隐藏；结算面板期间不隐藏（由面板遮罩覆盖，符合预期）
@@ -1356,12 +1356,16 @@ class PlayingEngine {
         var writePath = wx.env.USER_DATA_PATH + '/levels/' + this.levelName + '.json';
         wx.getFileSystemManager().writeFileSync(writePath, JSON.stringify(data, null, 2), 'utf8');
         console.log('[Hint] 关卡已写入 ' + cache.length + ' 条提示: ' + this.levelName);
-        // 上传云端（已发布关卡也直接覆盖）
-        cloud.uploadLevel(this.levelName, data, data.version || 0, null).then(function() {
-          console.log('[cloud][Hint] 云端上传成功: ' + self.levelName);
-        }).catch(function(e) {
-          console.warn('[cloud][Hint] 云端上传失败:', e && e.message);
-        });
+        // 试玩模式：设标志让编辑器回来时设脏（不上传云端，避免版本冲突）
+        if (isTrial) {
+          databus._trialModifiedLevelName = this.levelName;
+        } else {
+          cloud.uploadLevel(this.levelName, data, data.version || 0, null).then(function() {
+            console.log('[cloud][Hint] 云端上传成功: ' + self.levelName);
+          }).catch(function(e) {
+            console.warn('[cloud][Hint] 云端上传失败:', e && e.message);
+          });
+        }
       }
     } catch (e) {
       console.warn('[Hint] 合并提示数据失败:', e && e.message);
@@ -1438,22 +1442,14 @@ class PlayingEngine {
     this._syncToCloud();
 
     var self = this;
-    // 步数→飞小花：剩余步数不转金币，而是从步数框飞出「一小堆彩虹小花」飞向 4 星花朵（纯视觉积分转化的表现）。
-    // 小花数量 = 剩余步数（= _scoreBonusRemaining，每步1分），与积分灌入同源，视觉上从步数框飞向 4 星花。
-    var flowerCount = self._scoreBonusRemaining > 0 ? self._scoreBonusRemaining : 0;
-    if (flowerCount > 0 && self._uiBranchProgress) {
-      self._stepFlowersSettled = false;
-      console.log('[LOG_victory] → 启动步数→飞小花(' + flowerCount + '朵) 飞向4星花');
-      self._uiBranchProgress.spawnStepFlowers(flowerCount, SCREEN_WIDTH - 98, 106);
-    } else {
-      self._stepFlowersSettled = true;
-    }
-    // 积分奖励（剩余步数 → 平滑灌入分支进度，小花朵在树枝上原地旋转变大）→ 结束后弹出结算面板
+    // 步数→飞小花：随积分步进每 200ms 触发一朵，由积分灌入循环驱动（见 update 中 _scoreBonusAnim 块）。
+    // 此处不再批量 spawnStepFlowers，统一在每步转化时单次触发。
+    self._stepFlowersSettled = false;
+    // 积分奖励（剩余步数 → 离散步进灌入分支进度，每 200ms 转化 1 步 + 1 朵飞花）→ 结束后弹出结算面板
     if (self._scoreBonusRemaining > 0) {
-      var flowerCount = self._scoreBonusRemaining;  // 每朵花 = 1 分（= 剩余步数）
       self._scoreBonusSettled = false;
-      console.log('[LOG_victory] → 启动积分进度灌入(' + flowerCount + '朵, 每朵1分)，小花朵原地旋转变大（不再飞粒子）');
-      self._spawnScoreParticles(flowerCount);
+      console.log('[LOG_victory] → 启动积分离散灌入(' + self._scoreBonusRemaining + '步, 200ms/步)');
+      self._spawnScoreParticles(self._scoreBonusRemaining);
       return;
     }
     self._scoreBonusSettled = true;
@@ -1470,12 +1466,14 @@ class PlayingEngine {
       this._finishVictorySequence();
       return;
     }
+    // 离散转化：每 200ms 前进一步，每步触发一朵飞花
     this._scoreBonusAnim = {
       active: true,
-      start: Date.now() + 150,                  // 轻微延迟，等通关金币飞完
-      dur: Math.max(900, n * 110),              // 总时长随花数自适应，慢到看得清
-      from: this._scoreBonusProgress,           // 当前已灌入（通常 0）
-      to: this._scoreBonusRemaining,            // 目标积分
+      lastAdvance: 0,           // 首次 tick 时设为 now（延迟 150ms 等金币飞完后再开始）
+      interval: 200,            // 200ms/步
+      total: n,                 // 总步数
+      progress: 0,              // 已转化步数
+      delayStart: Date.now() + 150,
     };
   }
 
@@ -1862,15 +1860,25 @@ class PlayingEngine {
     if (this._scoreBonusAnim && this._scoreBonusAnim.active) {
       var sa = this._scoreBonusAnim;
       var saNow = Date.now();
-      if (saNow >= sa.start) {
-        var saT = (saNow - sa.start) / sa.dur;
-        if (saT > 1) saT = 1;
-        var saE = 1 - Math.pow(1 - saT, 3);            // easeOutCubic：先快后稳，符合小虫「爬」的节奏
-        this._scoreBonusProgress = Math.round(sa.from + (sa.to - sa.from) * saE);
-        if (this._uiBranchProgress) {
-          this._uiBranchProgress.setScore(this._escapedCount + this._scoreBonusProgress, this._totalScore);
+      if (saNow >= sa.delayStart) {
+        // 首次 tick 初始化计时起点
+        if (!sa.lastAdvance) sa.lastAdvance = saNow;
+        // 每 interval ms 前进一步
+        while (saNow - sa.lastAdvance >= sa.interval && sa.progress < sa.total) {
+          sa.progress++;
+          sa.lastAdvance += sa.interval;
+          this._scoreBonusProgress = sa.progress;
+          // 每步触发一朵飞花 → 飞向 4 星花
+          if (this._uiBranchProgress) {
+            this._uiBranchProgress.spawnStepFlowers(1, SCREEN_WIDTH - 98, 106);
+            this._uiBranchProgress.setScore(
+              this._escapedCount + this._scoreBonusProgress,
+              this._totalScore
+            );
+          }
         }
-        if (saT >= 1) {
+        // 全部转化完毕
+        if (sa.progress >= sa.total) {
           this._scoreBonusAnim.active = false;
           if (!this._scoreBonusSettled) {
             this._scoreBonusSettled = true;

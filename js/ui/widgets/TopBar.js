@@ -47,10 +47,10 @@ TopBar.prototype.setMode = function (mode) {
 TopBar.prototype.render = function (ctx) {
   var barW = this.w;
 
-  // === 左上角设置按钮（Figma: left 15 / top 43 / 32×32）===
+  // === 左上角设置按钮（Figma: left 15 / top 16 / 32×32）===
   var backW = 32, backH = 32;
   var backX = 15;
-  var backY = 43;
+  var backY = 16;
 
   var setScale = this._buttonPress ? this._buttonPress.getScale('settings') : 1;
   var setCX = backX + backW / 2;
@@ -66,11 +66,10 @@ TopBar.prototype.render = function (ctx) {
   drawSettingsButton(ctx, setCX - iconSz / 2, setCY - iconSz / 2, iconSz);
   ctx.restore();
 
-  // === 关卡徽章（左上角，Figma: left 15 / top 23 / 32×16 / 大宝桃桃体 16px / letter-spacing 4px / 白字，无边框）===
-  // 试玩与正式一致显示关卡徽章
+  // === 关卡徽章（左上角，Figma: left 15 / top 53 / 32×16 / 大宝桃桃体 16px）===
   {
     var badgeX = 15;
-    var badgeY = 23;
+    var badgeY = 53;
     var badgeW = 32;
     var badgeH = 16;
 
