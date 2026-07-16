@@ -49,15 +49,15 @@ function drawMenuBottomBar(ctx) {
 
 /**
  * 绘制关卡内底部拉伸背景（level_buttom.png）。
- * 与主菜单 drawMenuBottomBar 同风格（向上投影），但高度为用户指定的 94 逻辑像素（固定，不随屏宽缩放），
+ * 与主菜单 drawMenuBottomBar 同风格（向上投影），宽度拉伸贴合屏幕左右、高度固定（逻辑像素，不随图片/屏宽变化），
  * 铺满屏宽、底部对齐。关卡内直接显示，不参与入场动画。
  * @returns {Object|null} 容器几何 { x, y, width, height }，资源未就绪时返回 null
  */
 function drawLevelBottomBar(ctx) {
   if (!AssetPreloader.isReady('level_bottom')) return null;
   var img = AssetPreloader.get('level_bottom');
-  var barW = SCREEN_WIDTH;
-  var barH = 94;                 // 用户指定高度（逻辑像素）
+  var barW = SCREEN_WIDTH;                                          // 宽度拉伸贴合屏幕左右
+  var barH = 94;                                                    // 高度固定（逻辑像素），不随图片源尺寸/屏宽变化
   var barX = 0;
   var barY = SCREEN_HEIGHT - barH;
 
@@ -90,7 +90,7 @@ function figmaToScreen(bar, fx, fy) {
  * @param {number} size 实际像素尺寸
  * @param {string} label 单字（如 衣 / 赛）
  */
-function drawRoundMenuButton(ctx, x, y, size, label, withShadow) {
+function drawRoundMenuButton(ctx, x, y, size, label, withShadow, iconKey) {
   var cx = x + size / 2;
   var cy = y + size / 2;
   var r = size / 2;
@@ -142,21 +142,34 @@ function drawRoundMenuButton(ctx, x, y, size, label, withShadow) {
   ctx.fillRect(cx - ir, cy - ir, ir * 2, ir * 2);
   ctx.restore();
 
-  // ===== 居中文字：白色 + #733C29 描边 =====
-  ctx.save();
-  ctx.fillStyle = '#FFFFFF';
-  ctx.strokeStyle = '#733C29';
-  ctx.lineWidth = 1 * scale;
-  ctx.lineJoin = 'round';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  if ('letterSpacing' in ctx) {
-    try { ctx.letterSpacing = (2 * scale) + 'px'; } catch (e) { /* 不支持则忽略 */ }
+  // ===== 图标或文字：优先图标（居中 52×52，带 drop-shadow 0px 2px 2px rgba(0,0,0,0.25)），否则回退文字 =====
+  if (iconKey && AssetPreloader.isReady(iconKey)) {
+    var _icon = AssetPreloader.get(iconKey);
+    var _iconSize = 52;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+    ctx.drawImage(_icon, cx - _iconSize / 2, cy - _iconSize / 2, _iconSize, _iconSize);
+    ctx.restore();
+  } else {
+    // ===== 居中文字：白色 + #733C29 描边（无图标时的回退） =====
+    ctx.save();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = '#733C29';
+    ctx.lineWidth = 1 * scale;
+    ctx.lineJoin = 'round';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if ('letterSpacing' in ctx) {
+      try { ctx.letterSpacing = (2 * scale) + 'px'; } catch (e) { /* 不支持则忽略 */ }
+    }
+    ctx.font = '400 ' + (24 * scale) + 'px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
+    ctx.strokeText(label, cx, cy);
+    ctx.fillText(label, cx, cy);
+    ctx.restore();
   }
-  ctx.font = '400 ' + (24 * scale) + 'px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
-  ctx.strokeText(label, cx, cy);
-  ctx.fillText(label, cx, cy);
-  ctx.restore();
 }
 
 module.exports = {

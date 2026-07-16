@@ -861,12 +861,12 @@ class PlayingEngine {
       var entranceActive = this._entranceState && this._entranceState.phase !== 'done';
       if (!entranceActive && !this._failed && !this._victory) {
         var bSize = 68;
-        var bonusX = 84;                        // 左：+3 步（屏幕底部 left:84 bottom:53）
-        var bonusY = SCREEN_HEIGHT - 53 - bSize;
-        var hintX = SCREEN_WIDTH - 84 - bSize;  // 右：提示（屏幕底部 right:84 bottom:53）
-        var hintY = SCREEN_HEIGHT - 53 - bSize;
-        // 左按钮：+3 步
-        if (_hitRect(t.x, t.y, { x: bonusX, y: bonusY, w: bSize, h: bSize })) {
+        var hintX = SCREEN_WIDTH - 84 - bSize;  // 右：提示（屏幕底部 right:84 bottom:63）
+        var hintY = SCREEN_HEIGHT - 63 - bSize;
+        // 左按钮：+3 步（新设计 frame left:80 bottom:42 → 左上角 (80, SCREEN_HEIGHT-121)，包围盒 78×79）
+        var addX = 80;
+        var addY = SCREEN_HEIGHT - 121;
+        if (_hitRect(t.x, t.y, { x: addX, y: addY, w: 78, h: 79 })) {
           audio.play('button_click');
           this._btnPress.press('plus5');
           this._btnPress.breathe('plus5');
@@ -913,38 +913,43 @@ class PlayingEngine {
     // === 按钮检测（回放中跳过） ===
     if (!this._isPlayingBack) {
     var self = this;
-    // 顶栏按钮（试玩模式返回编辑器，其他打开设置面板）
-    if (this.backBtn && x >= this.backBtn.x && x <= this.backBtn.x + this.backBtn.w &&
-        y >= this.backBtn.y && y <= this.backBtn.y + this.backBtn.h) {
-      audio.play('button_click');
-      if (databus.returnState === 'editor') {
-        // 试玩返回：将 hintId/hintAngle 写回关卡数据
-        if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
-          var origPigs = databus.currentLevel.data.pigs;
-          for (var ti = 0; ti < origPigs.length; ti++) {
-            var ep = this.gp.pigs.find(function(p) { return p.id === origPigs[ti].id; });
-            if (ep) {
-              origPigs[ti].hintId = (ep.hintId != null) ? ep.hintId : undefined;
-              origPigs[ti].hintAngle = (ep.hintAngle != null) ? ep.hintAngle : undefined;
+    // 顶栏左侧设置按钮（齿轮，Figma: left15/top16/32×32，圆形命中）
+    // 注：UIManager 触控未接入运行时，原 backBtn 判断恒为 null（死代码）；此处改按齿轮圆形精准命中。
+    //     rec.../hint... 状态文字仅纯绘制、无 hitTest，本就不拦截点击；设置按钮命中精准后不再与文字混淆。
+    var entranceDone = !this._entranceState || this._entranceState.phase === 'done';
+    if (entranceDone && !this._failed && !this._victory) {
+      var setCX = 15 + 16, setCY = 16 + 16;   // 与 TopBar 绘制中心一致
+      if ((x - setCX) * (x - setCX) + (y - setCY) * (y - setCY) <= 16 * 16) {
+        audio.play('button_click');
+        if (databus.returnState === 'editor') {
+          // 试玩返回：将 hintId/hintAngle 写回关卡数据
+          if (databus.currentLevel && databus.currentLevel.data && databus.currentLevel.data.pigs) {
+            var origPigs = databus.currentLevel.data.pigs;
+            for (var ti = 0; ti < origPigs.length; ti++) {
+              var ep = this.gp.pigs.find(function(p) { return p.id === origPigs[ti].id; });
+              if (ep) {
+                origPigs[ti].hintId = (ep.hintId != null) ? ep.hintId : undefined;
+                origPigs[ti].hintAngle = (ep.hintAngle != null) ? ep.hintAngle : undefined;
+              }
             }
           }
+          this._btnPress.press('settings');
+          this._btnPress.breathe('settings');
+          databus.gameState = 'editor';
+        } else {
+          this._btnPress.press('settings');
+          this._btnPress.breathe('settings');
+          settingsPanel.open({
+            title: '设置',
+            buttons: [
+              { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; } },
+              { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
+              { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+            ]
+          });
         }
-        this._btnPress.press('settings');
-        this._btnPress.breathe('settings');
-        databus.gameState = 'editor';
-      } else {
-        this._btnPress.press('settings');
-        this._btnPress.breathe('settings');
-        settingsPanel.open({
-          title: '设置',
-          buttons: [
-            { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; } },
-            { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
-            { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
-          ]
-        });
+        return;
       }
-      return;
     }
 
     if (this.hintBtn && !this._hint.getTarget() && x >= this.hintBtn.x && x <= this.hintBtn.x + this.hintBtn.w &&
@@ -1587,6 +1592,75 @@ class PlayingEngine {
     ctx.restore();
   }
 
+  // 左边「+3 步」按钮（新设计，Ardot frame: left:80 bottom:42，框 78×79）
+  // 圆形底框(68) 复用 drawRoundMenuButton（金圆+橙内圈+addstep 图标 52 居中）；
+  // 叠加：广告角标（红圆+白条）、文字框（+3）
+  _drawAddStepButton(ctx, key) {
+    var fx = 80;                       // frame 左上角 x（Figma left:80）
+    var fy = SCREEN_HEIGHT - 121;      // frame 左上角 y：bottom:42 + 高79 = 距底121
+    var s = this._btnPress.getScale(key);
+    // 以 frame 中心为锚做按下缩放
+    var ax = fx + 39, ay = fy + 39.5;
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.scale(s, s);
+    ctx.translate(-ax, -ay);
+
+    // 内联圆角矩形
+    function _rr(c, x, y, w, h, r) {
+      r = Math.min(r, w / 2, h / 2);
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r);
+      c.arcTo(x, y, x + w, y, r);
+      c.closePath();
+    }
+
+    // 1. 圆形底框 68×68（left:0 top:0）+ 图标 addstep_icon 52×52（left:8 top:8，恰为圆内居中）
+    drawBottomBar.drawRoundMenuButton(ctx, fx, fy, 68, '', true, 'addstep_icon');
+
+    // 2. 广告角标：红圆 28×28（left:50 top:2）+ 白条 18×18（left:55 top:7，正方形旋转90视觉不变）
+    ctx.save();
+    ctx.fillStyle = '#FF6363';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(fx + 64, fy + 16, 13.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = '#FFFFFF';
+    _rr(ctx, fx + 55, fy + 7, 18, 18, 2.5);
+    ctx.fill();
+    ctx.restore();
+
+    // 3. 文字框 50×25（left:9 top:52）+ 边框 #B5712B
+    ctx.save();
+    ctx.fillStyle = '#FEAB56';
+    ctx.strokeStyle = '#B5712B';
+    ctx.lineWidth = 1;
+    _rr(ctx, fx + 9, fy + 52, 50, 25, 12);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // 4. 文字 +3（居中于文字框，白字 + 轻微阴影）
+    ctx.save();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.25)';
+    ctx.shadowBlur = 1;
+    ctx.font = '400 16px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
+    ctx.fillText('+3', fx + 34, fy + 64.5);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
   render() {
     // 引导系统帧更新（所有状态下的引擎均需轮询）
@@ -1729,12 +1803,11 @@ class PlayingEngine {
       drawBottomBar.drawLevelBottomBar(ctx);
       if (!this._failed && !this._victory) {
         var bSize = 68;
-        var bLeftX = 84;
-        var bLeftY = SCREEN_HEIGHT - 53 - bSize;
-        this._drawPressRoundButton(ctx, 'plus5', bLeftX, bLeftY, bSize, '+3', true);
+        // 左按钮：+3 步（新设计，见 _drawAddStepButton）
+        this._drawAddStepButton(ctx, 'plus5');
         if (this._hasHintData) {
           var bRightX = SCREEN_WIDTH - 84 - bSize;
-          var bRightY = SCREEN_HEIGHT - 53 - bSize;
+          var bRightY = SCREEN_HEIGHT - 63 - bSize;
           this._drawPressRoundButton(ctx, 'bottomHint', bRightX, bRightY, bSize, '!', true);
         }
       }
@@ -1768,12 +1841,10 @@ class PlayingEngine {
               drawBottomBar.drawLevelBottomBar(c);
               if (!selfPE._failed && !selfPE._victory) {
                 var bSize = 68;
-                var bLeftX = 84;
-                var bLeftY = SCREEN_HEIGHT - 53 - bSize;
-                selfPE._drawPressRoundButton(c, 'plus5', bLeftX, bLeftY, bSize, '+3', true);
+                selfPE._drawAddStepButton(c, 'plus5');
                 if (selfPE._hasHintData) {
                   var bRightX = SCREEN_WIDTH - 84 - bSize;
-                  var bRightY = SCREEN_HEIGHT - 53 - bSize;
+                  var bRightY = SCREEN_HEIGHT - 63 - bSize;
                   selfPE._drawPressRoundButton(c, 'bottomHint', bRightX, bRightY, bSize, '!', true);
                 }
               }

@@ -400,9 +400,19 @@ class GameEngine {
   // ===== 应用预加载的云端数据（代替原异步 _syncFromCloud） =====
 
   _applyPreloadedPlayerData() {
-    var cloudData = this._preloadedPlayerData;
-    if (!cloudData) {
+    var pkg = this._preloadedPlayerData;
+    if (!pkg) {
       console.log('[GameEngine] 无预加载玩家数据，沿用本地');
+      return;
+    }
+    var cloudData = pkg.data;
+    var serverVersion = pkg.version;
+    if (!cloudData) {
+      // 版本一致（或新玩家无存档）：无需合并，仅同步本地版本号
+      if (typeof serverVersion === 'number') {
+        try { wx.setStorageSync('playerVersion', serverVersion); } catch (e) {}
+      }
+      console.log('[GameEngine] 云端版本一致，跳过合并（localVersion=' + serverVersion + '）');
       return;
     }
     console.log('[GameEngine] 合并预加载玩家数据...');
@@ -447,7 +457,11 @@ class GameEngine {
         });
       }
     }
-    console.log('[GameEngine] 预加载玩家数据合并完成');
+    // 合并完成后同步本地版本号，避免下次启动重复整包拉取
+    if (typeof serverVersion === 'number') {
+      try { wx.setStorageSync('playerVersion', serverVersion); } catch (e) {}
+    }
+    console.log('[GameEngine] 预加载玩家数据合并完成（已同步 localVersion=' + serverVersion + '）');
   }
 
   _applyPreloadedCloudLevels() {
@@ -1201,7 +1215,7 @@ class GameEngine {
       ctx.translate(_dCx, _dCy);
       ctx.scale(_dBt.scale * dressPress, _dBt.scale * dressPress);
       ctx.translate(-_dCx, -_dCy);
-      drawBottomBar.drawRoundMenuButton(ctx, this._dressBtnRect.x, this._dressBtnRect.y, this._dressBtnRect.w, '衣', _sideShadow);
+      drawBottomBar.drawRoundMenuButton(ctx, this._dressBtnRect.x, this._dressBtnRect.y, this._dressBtnRect.w, '衣', _sideShadow, 'main_avatar_icon');
       ctx.restore();
 
       // 挑战赛（左）
@@ -1211,7 +1225,7 @@ class GameEngine {
       ctx.translate(_cCx, _cCy);
       ctx.scale(_cBt.scale * challengePress, _cBt.scale * challengePress);
       ctx.translate(-_cCx, -_cCy);
-      drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '赛', _sideShadow);
+      drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '赛', _sideShadow, 'main_battle_icon');
       ctx.restore();
     }
 

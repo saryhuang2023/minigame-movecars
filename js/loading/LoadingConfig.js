@@ -35,6 +35,9 @@ var PHASE2 = {
     'assets/images/level_bg.jpg',
     'assets/images/level_buttom.png',
     'assets/images/level_worm.png',
+    'assets/images/main_avatar_icon.png',
+    'assets/images/main_battle_icon.png',
+    'assets/images/addstep_icon.png',
   ],
   // 非 idle 动画帧 (run 8 + escape 8 + hint 8 = 24)
   animationTotalFrames: 24,
@@ -63,6 +66,9 @@ var ASSET_PRELOADER_MAP = {
   icon_sound:  'assets/images/icon_sound.png',
   level_bottom: 'assets/images/level_buttom.png',
   level_worm:    'assets/images/level_worm.png',
+  main_avatar_icon: 'assets/images/main_avatar_icon.png',
+  main_battle_icon:  'assets/images/main_battle_icon.png',
+  addstep_icon:      'assets/images/addstep_icon.png',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====

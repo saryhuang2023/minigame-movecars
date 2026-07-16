@@ -217,11 +217,18 @@ LoadingManager.prototype._startPhase3 = function () {
   this._phase = 3;
   console.log('[cloud][LoadingManager] → Phase 3 开始（云端数据）');
 
-  // 1. 拉取玩家数据
-  cloud.getPlayerData().then(function (res) {
-    if (res && res.code === 0 && res.data) {
-      self._playerData = res.data;
-      console.log('[cloud][LoadingManager] 云端玩家数据就绪');
+  // 1. 拉取玩家数据（带上本地版本号；版本一致时云端只回成功、不回内容）
+  var localVersion = 0;
+  try { localVersion = wx.getStorageSync('playerVersion') || 0; } catch (e) {}
+  cloud.getPlayerData(localVersion).then(function (res) {
+    if (res && res.code === 0) {
+      // 保存整包（含 data / version / unchanged），由 GameEngine 决定是否合并
+      self._playerData = res;
+      if (res.data) {
+        console.log('[cloud][LoadingManager] 云端玩家数据有更新（版本不一致），待合并');
+      } else {
+        console.log('[cloud][LoadingManager] 版本一致，无需拉取内容（省流量）');
+      }
     }
     self._p3.endpointsDone++;
   }).catch(function (err) {

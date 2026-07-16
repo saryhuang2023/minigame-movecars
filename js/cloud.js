@@ -96,19 +96,23 @@ async function callFunction(name, data = {}, tag = '') {
 }
 
 /**
- * 获取玩家数据
- * @param {string} openid 玩家 openid（云函数自动获取）
+ * 获取玩家数据（条件拉取：带上本地版本号，一致则云端不回内容）
+ * @param {number} version 客户端持有的玩家数据版本号（默认 0=新玩家）
  */
-async function getPlayerData() {
-  return callFunction('getPlayerData', {}, 'Load');
+async function getPlayerData(version) {
+  return callFunction('getPlayerData', { version: version || 0 }, 'Load');
 }
 
 /**
- * 保存玩家数据
+ * 保存玩家数据（每次保存云函数会自增 version 并返回，此处自动写回本地版本号）
  * @param {object} data 玩家数据 { score, level, items 等 }
  */
 async function savePlayerData(data) {
-  return callFunction('savePlayerData', { data }, 'Game');
+  const result = await callFunction('savePlayerData', { data }, 'Game');
+  if (result && result.code === 0 && typeof result.version === 'number') {
+    try { wx.setStorageSync('playerVersion', result.version); } catch (e) {}
+  }
+  return result;
 }
 
 /**
