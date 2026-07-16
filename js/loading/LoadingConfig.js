@@ -38,6 +38,7 @@ var PHASE2 = {
     'assets/images/main_avatar_icon.png',
     'assets/images/main_battle_icon.png',
     'assets/images/addstep_icon.png',
+    'assets/images/hint_icon.png',
   ],
   // 非 idle 动画帧 (run 8 + escape 8 + hint 8 = 24)
   animationTotalFrames: 24,
@@ -69,12 +70,16 @@ var ASSET_PRELOADER_MAP = {
   main_avatar_icon: 'assets/images/main_avatar_icon.png',
   main_battle_icon:  'assets/images/main_battle_icon.png',
   addstep_icon:      'assets/images/addstep_icon.png',
+  hint_icon:         'assets/images/hint_icon.png',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====
 var PHASE3 = {
   // 云端接口：getPlayerData、listLevels、skinConfig
-  endpointCount: 2,
+  // ⚠️ endpointCount 必须等于实际异步端点数（3）。
+  // listLevels 是核心关卡数据（关卡范围/列表），必须在它回来后游戏才允许进入，
+  // 否则 _cloudMaxLevel 为 0 → 关卡列表只剩本地 3 关 → "进入游戏"永远只能进第 3 关。
+  endpointCount: 3,
 };
 
 // ===== 阶段权重（影响进度条视觉分段） =====

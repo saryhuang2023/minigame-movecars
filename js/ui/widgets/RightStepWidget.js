@@ -53,6 +53,10 @@ var LABEL_CY = 85 + 5;                       // 90
 var NUM_CX = SCREEN_WIDTH - 32 - 30 + 15;    // 328（30 宽框中心）
 var NUM_CY = 99 + 10;                        // 109
 
+// 吊绳（竖条 Rectangle 3469912）顶端悬挂点 = 单摆支点（整块面板绕此点旋转摆动）
+var PIVOT_X = BAR_X + BAR_W / 2;             // 330（4px 宽竖条中心）
+var PIVOT_Y = BAR_Y;                         // 0（屏幕顶边，绳的固定端）
+
 // 呼吸动画围绕主药丸中心
 var BREATHE_CX = OUTER_X + OUTER_W / 2;      // 328
 var BREATHE_CY = OUTER_Y + OUTER_H / 2;      // 102
@@ -84,6 +88,16 @@ class RightStepWidget extends UIComponent {
     this._animStart = 0;
     this._animActive = false;
     this._ANIM_DURATION = 1000;
+
+    // 被击中抖动（道具图标飞到面板、或步数变少时触发）：整块面板绕「吊绳顶端」做单摆式旋转摆动
+    // 多脉冲叠加模型：每次触发 push 一个新脉冲，角度按时间衰减正弦求和（多次触发会叠加而非重启）
+    this._shakes = [];                      // 各脉冲触发时刻(ms)
+    this._SHAKE_DURATION = 850;            // 单个脉冲摆动收住时间
+    this._SHAKE_AMP = 0.15;                // 初始摆角(弧度) ≈ 8.6°
+    this._SHAKE_TAU = 400;                 // 衰减常数(ms)，越大摆得越久、收尾越飘
+    this._SHAKE_OMEGA = 2 * Math.PI * 2;   // 摆动角频率(≈2Hz，慢悠悠晃)
+    this._SHAKE_MAX = 4;                    // 最多叠加脉冲数（防失控）
+    this._lastTarget = undefined;           // 上一次 setData 的剩余步数（检测"变少"）
   }
 
   /** ease-out-cubic 缓动 */
@@ -133,6 +147,11 @@ class RightStepWidget extends UIComponent {
     this._steps = steps || 0;
     var target = this._threshold - this._steps;
     if (target < 0) target = 0;
+    // 步数变少（剩余步数下降）→ 触发面板摆动；与道具飞行到达的抖动可叠加
+    if (this._lastTarget !== undefined && target < this._lastTarget) {
+      this.triggerHitShake();
+    }
+    this._lastTarget = target;
     if (this._displayValue === undefined) {
       this._displayValue = target;   // 首次进入直接显示，不滚动
       return;
@@ -169,6 +188,33 @@ class RightStepWidget extends UIComponent {
     this._breatheActive = true;
   }
 
+  /** 触发被击中抖动（单次脉冲，道具图标飞行到达 / 步数变少时调用；可叠加） */
+  triggerHitShake() {
+    var now = Date.now();
+    this._shakes.push(now);
+    if (this._shakes.length > this._SHAKE_MAX) {
+      this._shakes.splice(0, this._shakes.length - this._SHAKE_MAX);
+    }
+  }
+
+  /** 获取当前摆动角度（多个脉冲叠加：每个绕吊绳顶端、被撞后从 0 甩出、衰减回正，再求和） */
+  _getShakeAngle() {
+    if (this._shakes.length === 0) return 0;
+    var now = Date.now();
+    var total = 0;
+    for (var i = this._shakes.length - 1; i >= 0; i--) {
+      var elapsed = now - this._shakes[i];
+      if (elapsed >= this._SHAKE_DURATION) {
+        this._shakes.splice(i, 1);   // 过期脉冲移除
+        continue;
+      }
+      var decay = Math.exp(-elapsed / this._SHAKE_TAU);   // 指数衰减
+      // 先向右(顺时针/正角)甩出，再来回衰减；叠加时各脉冲相位不同 → 自然累加
+      total += this._SHAKE_AMP * decay * Math.sin(this._SHAKE_OMEGA * elapsed / 1000);
+    }
+    return total;
+  }
+
   /** 获取当前呼吸缩放值 */
   _getBreatheScale() {
     if (!this._breatheActive) return 1;
@@ -196,6 +242,13 @@ class RightStepWidget extends UIComponent {
       ctx.translate(BREATHE_CX, BREATHE_CY);
       ctx.scale(breathScale, breathScale);
       ctx.translate(-BREATHE_CX, -BREATHE_CY);
+    }
+    // 被击中：整块面板绕吊绳顶端(PIVOT)做单摆式旋转摆动（绳顶端固定、下方荡动）
+    var shakeAngle = this._getShakeAngle();
+    if (shakeAngle !== 0) {
+      ctx.translate(PIVOT_X, PIVOT_Y);
+      ctx.rotate(shakeAngle);
+      ctx.translate(-PIVOT_X, -PIVOT_Y);
     }
 
     // === 顶部竖条 Rectangle 3469912 ===

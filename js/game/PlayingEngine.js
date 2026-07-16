@@ -20,6 +20,7 @@ const RightStepWidget = require('../ui/widgets/RightStepWidget.js');
 const LevelCache = require('../preload/LevelCache.js');
 const HintSystem = require('./HintSystem.js');
 const CoinFlyEffect = require('../effects/CoinFlyEffect.js');
+const ItemFlyEffect = require('../effects/ItemFlyEffect.js');
 const BranchProgressWidget = require('../ui/widgets/BranchProgressWidget.js');
 const StarScores = require('../utils/starScores.js');
 const GoldWidget = require('../ui/widgets/GoldWidget.js');
@@ -88,6 +89,7 @@ class PlayingEngine {
     this._levelAccumulatedGold = 0;  // 本关实时累积金币（猪退出+1，异步递增仅用于 UI 实时显示）
     this._totalPigsInLevel = 0;      // 本关原始猪数量（loadLevel 时快照，结算用，不受 setTimeout 时序影响）
     this._coinFlyEffect = new CoinFlyEffect();  // 金币磁吸飞行动画
+    this._itemFlyEffect = new ItemFlyEffect('addstep_icon');  // +3道具图标飞向步数面板
     this._totalScore = 30;            // 测试写死：总积分（进度条分母），后续改关卡配置读取
     this._starScores = [0, 0, 0, 0];   // 星级积分门槛 [s1,s2,s3,s4]
     this._scoreBonusRemaining = 0;    // 通关后剩余步数转化的积分
@@ -158,6 +160,7 @@ class PlayingEngine {
     this._hasHintData = true;      // 关卡是否有 hint 数据（无则隐藏「提」按钮，与旧逻辑一致）
     this._totalPigsInLevel = 0;
     this._coinFlyEffect = new CoinFlyEffect();  // 重置飞行中动画
+    this._itemFlyEffect = new ItemFlyEffect('addstep_icon');  // 重置道具飞行动画
     this._goldSettled = false;
     // 首通判定（与 _markCleared 金币奖励逻辑同源）：本关从未获得过金币奖励才飞金币。
     // 用此标志约束「小猪逃脱飞金币」动画，避免已通关关卡重玩仍飞金币（金币不再发放）。
@@ -742,6 +745,10 @@ class PlayingEngine {
       if (this.gp.pigs[i].hintId != null) { hasAnyHint = true; break; }
     }
     this._hasHintData = hasAnyHint;         // 无 hint 关卡隐藏提示按钮
+
+    // 道具每关限用次数（每次关卡游玩重置，不跨关、不持久化）
+    this._addStepRemaining = 2;   // +3 步：每关 2 次
+    this._hintRemaining = 1;      // 提示：每关 1 次
   }
 
   // ========== 输入 ==========
@@ -861,20 +868,28 @@ class PlayingEngine {
       var entranceActive = this._entranceState && this._entranceState.phase !== 'done';
       if (!entranceActive && !this._failed && !this._victory) {
         var bSize = 68;
-        var hintX = SCREEN_WIDTH - 84 - bSize;  // 右：提示（屏幕底部 right:84 bottom:63）
-        var hintY = SCREEN_HEIGHT - 63 - bSize;
         // 左按钮：+3 步（新设计 frame left:80 bottom:42 → 左上角 (80, SCREEN_HEIGHT-121)，包围盒 78×79）
         var addX = 80;
-        var addY = SCREEN_HEIGHT - 121;
+        var addY = SCREEN_HEIGHT - 101;
         if (_hitRect(t.x, t.y, { x: addX, y: addY, w: 78, h: 79 })) {
+          if (this._addStepRemaining <= 0) return;   // 次数用完，不可再点
           audio.play('button_click');
           this._btnPress.press('plus5');
           this._btnPress.breathe('plus5');
           this._addBonusSteps(3);
+          // +3 道具图标飞向剩余步数面板（与金币飞行一致），到达后面板播被击中抖动
+          if (this._itemFlyEffect && this._uiRightStep) {
+            var sp2 = this._uiRightStep.getStepNumberPos();
+            this._itemFlyEffect.trigger(addX + 34, addY + 34, sp2.x, sp2.y);
+          }
+          this._addStepRemaining--;
           return;
         }
-        // 右按钮：提示（提示的猪未逃脱前不能再点）
-        if (_hitRect(t.x, t.y, { x: hintX, y: hintY, w: bSize, h: bSize })) {
+        // 右按钮：提示（与左对称，frame x=SCREEN_WIDTH-158，包围盒 78×79）
+        var hintX = SCREEN_WIDTH - 158;
+        var hintY = SCREEN_HEIGHT - 101;
+        if (_hitRect(t.x, t.y, { x: hintX, y: hintY, w: 78, h: 79 })) {
+          if (this._hintRemaining <= 0) return;   // 次数用完，不可再点
           if (this._hint.isActive()) {
             showToast('请先解救这一只', 1500);
             return;
@@ -884,9 +899,10 @@ class PlayingEngine {
           var best = this._hint.show();
           if (best) {
             audio.play('hint_reveal');
+            this._hintRemaining--;
           } else {
             showToast('提示已结束', 1500);
-            }
+          }
           return;
         }
       }
@@ -1116,6 +1132,9 @@ class PlayingEngine {
       const self = this;
       // 离屏回调：清理飞行猪/动画 + 从「尾巴当前所在的屏幕边缘」弹金币（中心落在边缘上）
       anim.onExit = function () {
+        // 猪真正离屏（用户眼里的「猪逃脱」瞬间）→ 剩余步数面板吊牌单摆。
+        // 比 setData 的「松手记步」检测晚约 1 秒，正好对齐猪飞出屏幕的观感；与「步数变少」检测、道具飞行到达的抖动可叠加。
+        if (self && self._uiRightStep) self._uiRightStep.triggerHitShake();
         // tailSX/tailSY 与 currentDx/currentDy 均为「板面坐标」，须经与 renderBoard 一致的
         // autoScale 缩放/居中变换转成「屏幕坐标」，金币才会从猪真正飞出的屏幕边缘弹出
         // （之前直接把板面坐标当屏幕坐标 clamp，第三关缩放后出生点严重偏移）。
@@ -1138,6 +1157,8 @@ class PlayingEngine {
       this.gp.pigs.splice(idx, 1);
       this.gp.clearPigOccupancy(pigId);
       this._escapedCount++;
+      // 逃猪的面板摆动改由 RightStepWidget.setData 的「剩余步数下降」检测负责（松手记步时 target 下降即触发），
+      // 与道具飞行到达的 triggerHitShake 可叠加；此处不再显式触发，避免与检测双脉冲叠加导致振幅翻倍。
       // 推猪进度：每跑出一头猪，分支进度积分 +1
       if (this._uiBranchProgress) this._uiBranchProgress.setScore(this._escapedCount, this._totalScore);
       // 如果推出的是提示目标 → 清除提示
@@ -1592,12 +1613,13 @@ class PlayingEngine {
     ctx.restore();
   }
 
-  // 左边「+3 步」按钮（新设计，Ardot frame: left:80 bottom:42，框 78×79）
-  // 圆形底框(68) 复用 drawRoundMenuButton（金圆+橙内圈+addstep 图标 52 居中）；
-  // 叠加：广告角标（红圆+白条）、文字框（+3）
-  _drawAddStepButton(ctx, key) {
-    var fx = 80;                       // frame 左上角 x（Figma left:80）
-    var fy = SCREEN_HEIGHT - 121;      // frame 左上角 y：bottom:42 + 高79 = 距底121
+  // 左/右 道具按钮（新设计，Ardot frame: left:80 bottom:42，框 78×79）
+  // 圆形底框(68) 复用 drawRoundMenuButton（金圆+橙内圈+图标 52 居中）；
+  // 叠加：广告角标（红圆+白三角）、文字框（label）
+  // side:'left' → frame x=80；side:'right' → 对称：frame x=SCREEN_WIDTH-158（=SCREEN_WIDTH-80-78）
+  _drawItemButton(ctx, key, side, iconKey, label) {
+    var fx = (side === 'right') ? (SCREEN_WIDTH - 158) : 80;
+    var fy = SCREEN_HEIGHT - 101;      // frame 左上角 y：bottom:22 + 高79 = 距底101（相对 bottom:42 设计稿再下移20px）
     var s = this._btnPress.getScale(key);
     // 以 frame 中心为锚做按下缩放
     var ax = fx + 39, ay = fy + 39.5;
@@ -1618,10 +1640,10 @@ class PlayingEngine {
       c.closePath();
     }
 
-    // 1. 圆形底框 68×68（left:0 top:0）+ 图标 addstep_icon 52×52（left:8 top:8，恰为圆内居中）
-    drawBottomBar.drawRoundMenuButton(ctx, fx, fy, 68, '', true, 'addstep_icon');
+    // 1. 圆形底框 68×68（left:0 top:0）+ 图标 52×52（left:8 top:8，恰为圆内居中）
+    drawBottomBar.drawRoundMenuButton(ctx, fx, fy, 68, '', true, iconKey);
 
-    // 2. 广告角标：红圆 28×28（left:50 top:2）+ 白条 18×18（left:55 top:7，正方形旋转90视觉不变）
+    // 2. 广告角标：红圆 28×28（left:50 top:2）+ 白色三角（Figma Polygon 3，居中红圆，播放标）
     ctx.save();
     ctx.fillStyle = '#FF6363';
     ctx.strokeStyle = '#FFFFFF';
@@ -1633,7 +1655,12 @@ class PlayingEngine {
     ctx.restore();
     ctx.save();
     ctx.fillStyle = '#FFFFFF';
-    _rr(ctx, fx + 55, fy + 7, 18, 18, 2.5);
+    // 白色三角形（Figma Polygon 3，广告/视频播放标），居中于红圆 (64,16)，朝右
+    ctx.beginPath();
+    ctx.moveTo(fx + 72, fy + 16);   // 顶点（右）
+    ctx.lineTo(fx + 60, fy + 8);    // 左上
+    ctx.lineTo(fx + 60, fy + 24);   // 左下
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
 
@@ -1647,7 +1674,10 @@ class PlayingEngine {
     ctx.stroke();
     ctx.restore();
 
-    // 4. 文字 +3（居中于文字框，白字 + 轻微阴影）
+    // 4. 文字：剩余次数（居中于文字框，白字 + 轻微阴影）
+    var isHint = (key === 'bottomHint');
+    var remaining = isHint ? this._hintRemaining : this._addStepRemaining;
+    if (remaining == null) remaining = isHint ? 1 : 2;   // 兜底：未初始化按上限显示
     ctx.save();
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
@@ -1655,10 +1685,20 @@ class PlayingEngine {
     ctx.shadowColor = 'rgba(0,0,0,0.25)';
     ctx.shadowBlur = 1;
     ctx.font = '400 16px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
-    ctx.fillText('+3', fx + 34, fy + 64.5);
+    ctx.fillText(remaining + '次', fx + 34, fy + 64.5);
     ctx.restore();
 
     ctx.restore();
+  }
+
+  // 左边「+3 步」按钮
+  _drawAddStepButton(ctx, key) {
+    this._drawItemButton(ctx, key, 'left', 'addstep_icon', '+3');
+  }
+
+  // 右边「提示」按钮（与左边对称，元素一致，仅图标 hint_icon + 文字 1次）
+  _drawHintButton(ctx, key) {
+    this._drawItemButton(ctx, key, 'right', 'hint_icon', '1次');
   }
 
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
@@ -1802,13 +1842,11 @@ class PlayingEngine {
       // 底栏图片始终绘制（失败时由失败面板覆盖）；交互按钮在失败/通关后隐藏
       drawBottomBar.drawLevelBottomBar(ctx);
       if (!this._failed && !this._victory) {
-        var bSize = 68;
         // 左按钮：+3 步（新设计，见 _drawAddStepButton）
         this._drawAddStepButton(ctx, 'plus5');
         if (this._hasHintData) {
-          var bRightX = SCREEN_WIDTH - 84 - bSize;
-          var bRightY = SCREEN_HEIGHT - 63 - bSize;
-          this._drawPressRoundButton(ctx, 'bottomHint', bRightX, bRightY, bSize, '!', true);
+          // 右按钮：提示（与左对称，见 _drawHintButton）
+          this._drawHintButton(ctx, 'bottomHint');
         }
       }
     } else if (es.phase === 'ui') {
@@ -1840,12 +1878,9 @@ class PlayingEngine {
             render: function(c) {
               drawBottomBar.drawLevelBottomBar(c);
               if (!selfPE._failed && !selfPE._victory) {
-                var bSize = 68;
                 selfPE._drawAddStepButton(c, 'plus5');
                 if (selfPE._hasHintData) {
-                  var bRightX = SCREEN_WIDTH - 84 - bSize;
-                  var bRightY = SCREEN_HEIGHT - 63 - bSize;
-                  selfPE._drawPressRoundButton(c, 'bottomHint', bRightX, bRightY, bSize, '!', true);
+                  selfPE._drawHintButton(c, 'bottomHint');
                 }
               }
             }
@@ -1926,6 +1961,12 @@ class PlayingEngine {
     // 9. 金币磁吸飞行动画（推猪时触发，飞向金币区）—— 最高层级，不被任何 UI 遮挡
     var coinArrived = this._coinFlyEffect.update();
     this._coinFlyEffect.render(ctx);
+    // 9a. +3道具图标飞向剩余步数面板（与金币飞行同层），到达后触发面板被击中抖动
+    var itemArrived = this._itemFlyEffect.update();
+    this._itemFlyEffect.render(ctx);
+    if (itemArrived > 0 && this._uiRightStep) {
+      this._uiRightStep.triggerHitShake();
+    }
     // 树枝进度条缓动更新（位置爬动 / 溢出旋转）
     if (this._uiBranchProgress) this._uiBranchProgress.update();
     // 步数→飞小花 播放完毕检测：小花飞完后放行结算面板（与积分灌入共同决定弹窗时机）

@@ -49,7 +49,7 @@ function drawMenuBottomBar(ctx) {
 
 /**
  * 绘制关卡内底部拉伸背景（level_buttom.png）。
- * 与主菜单 drawMenuBottomBar 同风格（向上投影），宽度拉伸贴合屏幕左右、高度固定（逻辑像素，不随图片/屏宽变化），
+ * 与主菜单 drawMenuBottomBar 同风格（向上投影），宽度拉伸贴合屏幕左右、高度取图片自然高 115（不随屏宽拉伸、不变形），
  * 铺满屏宽、底部对齐。关卡内直接显示，不参与入场动画。
  * @returns {Object|null} 容器几何 { x, y, width, height }，资源未就绪时返回 null
  */
@@ -57,7 +57,7 @@ function drawLevelBottomBar(ctx) {
   if (!AssetPreloader.isReady('level_bottom')) return null;
   var img = AssetPreloader.get('level_bottom');
   var barW = SCREEN_WIDTH;                                          // 宽度拉伸贴合屏幕左右
-  var barH = 94;                                                    // 高度固定（逻辑像素），不随图片源尺寸/屏宽变化
+  var barH = 115;                                                   // 高度取 level_buttom.png 自然高(393×115)，不随屏宽拉伸；底栏够高才能托住 bottom:42 的 +3 按钮（其 frame 顶在距底121px，115 仅露6px）
   var barX = 0;
   var barY = SCREEN_HEIGHT - barH;
 
