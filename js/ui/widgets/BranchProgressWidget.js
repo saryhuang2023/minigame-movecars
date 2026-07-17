@@ -220,7 +220,7 @@ class BranchProgressWidget extends UIComponent {
         dur: 520 + Math.random() * 180,
         rot: Math.random() * Math.PI * 2,
         rotSpeed: (Math.random() * 2 - 1) * 6,
-        size: 9 + Math.random() * 5,
+        size: (9 + Math.random() * 5) * (2 / 3),   // 飞小花尺寸（原 9~14，×2/3 减 1/3 → 6~9.3；光晕随 p.size 等比缩）
       });
     }
   }

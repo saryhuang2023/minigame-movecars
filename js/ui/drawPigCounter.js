@@ -35,25 +35,25 @@ var GEOM = {
   count: { x: 40, y: 99, w: 18, h: 13 },                                                            // 数量数字框（Figma 33 节点）
 };
 
-// ===== 吊牌单摆（剩余猪数减少时播放；参数与 RightStepWidget 完全一致）=====
+// ===== 吊牌单摆（剩余猪数减少时播放；参数刻意与 RightStepWidget 错开，避免「逃猪」同事件触发时两牌锁相摆动）=====
 // 本组件是纯绘制函数、无实例状态，故用模块级变量保存脉冲队列与上次数字。
 // 数字「变小」= 逃猪 → 触发摆动；「变大」视为换关/重玩 → 仅更新基线、不弹（避免进关误触发）。
 var _pcShakes = [];
 var _pcLastValue = undefined;
-var _PC_SHAKE_DURATION = 850;            // 单个脉冲摆动收住时间
-var _PC_SHAKE_AMP = 0.15;                // 初始摆角(弧度) ≈ 8.6°
-var _PC_SHAKE_TAU = 400;                 // 衰减常数(ms)，越大摆得越久、收尾越飘
-var _PC_SHAKE_OMEGA = 2 * Math.PI * 2;  // 摆动角频率(≈2Hz，慢悠悠晃)
-var _PC_SHAKE_MAX = 4;                   // 最多叠加脉冲数（防失控）
+var _PC_SHAKE_DURATION = 850;             // 单个脉冲摆动收住时间
+var _PC_SHAKE_AMP = 0.17;                 // 初始摆角(弧度) ≈ 9.7°（刻意不同于步数牌 0.15，避免两牌锁相）
+var _PC_SHAKE_TAU = 420;                  // 衰减常数(ms)，越大摆得越久、收尾越飘
+var _PC_SHAKE_OMEGA = 2 * Math.PI * 1.6;  // 摆动角频率(≈1.6Hz，明显慢于步数牌 2.0/2.6Hz，两牌相位立刻错开)
+var _PC_SHAKE_MAX = 4;                    // 最多叠加脉冲数（防失控）
 
 function _pcTriggerShake() {
   var now = Date.now();
   var p = {
     ts: now,
-    amp: _PC_SHAKE_AMP * (0.75 + Math.random() * 0.5),    // 振幅 ±25%
-    tau: _PC_SHAKE_TAU * (0.9 + Math.random() * 0.2),     // 衰减 ±10%
-    omega: _PC_SHAKE_OMEGA * (0.9 + Math.random() * 0.2), // 频率 ±10%
-    dir: Math.random() < 0.5 ? 1 : -1,                    // 起手方向随机（先右/先左）
+    amp: _PC_SHAKE_AMP * (0.7 + Math.random() * 0.6),      // 振幅 ±30%~40%（每次幅度不同）
+    tau: _PC_SHAKE_TAU * (0.85 + Math.random() * 0.3),     // 衰减 ±15%（尾韵长短微差）
+    omega: _PC_SHAKE_OMEGA * (0.85 + Math.random() * 0.3), // 频率 ±15%（与步数牌进一步拉开，不锁相）
+    dir: Math.random() < 0.5 ? 1 : -1,                     // 起手方向随机（先右/先左）
   };
   _pcShakes.push(p);
   if (_pcShakes.length > _PC_SHAKE_MAX) _pcShakes.splice(0, _pcShakes.length - _PC_SHAKE_MAX);

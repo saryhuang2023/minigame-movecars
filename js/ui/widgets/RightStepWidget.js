@@ -96,6 +96,9 @@ class RightStepWidget extends UIComponent {
     this._SHAKE_AMP = 0.15;                // 初始摆角(弧度) ≈ 8.6°
     this._SHAKE_TAU = 400;                 // 衰减常数(ms)，越大摆得越久、收尾越飘
     this._SHAKE_OMEGA = 2 * Math.PI * 2;   // 摆动角频率(≈2Hz，慢悠悠晃)
+    // +3 道具到达用「强档」：振幅更大、摆动更急促，明显区别于普通步数下降（逃猪记步）
+    this._SHAKE_AMP_STRONG = 0.34;             // ≈19.5°（普通 0.15≈8.6° 的约 2.3 倍）
+    this._SHAKE_OMEGA_STRONG = 2 * Math.PI * 2.6;  // ≈2.6Hz（比普通 2Hz 更急促，撞击感更强）
     this._SHAKE_MAX = 4;                    // 最多叠加脉冲数（防失控）
     this._lastTarget = undefined;           // 上一次 setData 的剩余步数（检测"变少"）
   }
@@ -145,8 +148,7 @@ class RightStepWidget extends UIComponent {
   setData(threshold, steps) {
     this._threshold = threshold || 0;
     this._steps = steps || 0;
-    var target = this._threshold - this._steps;
-    if (target < 0) target = 0;
+    var target = this._threshold - this._steps;   // 允许为负：+3 飞行途中按真实(不含加成)剩余，会暂时 <0，道具落地后回正；正常游玩负值已被失败态隐藏
     // 步数变少（剩余步数下降）→ 触发面板摆动；与道具飞行到达的抖动可叠加
     if (this._lastTarget !== undefined && target < this._lastTarget) {
       this.triggerHitShake();
@@ -188,14 +190,17 @@ class RightStepWidget extends UIComponent {
     this._breatheActive = true;
   }
 
-  /** 触发被击中抖动（单次脉冲；每个脉冲在创建时定一组随机系数，使每次摆动幅度/快慢/起手方向略不同，避免多板一致机械感） */
-  triggerHitShake() {
+  /** 触发被击中抖动（单次脉冲；每个脉冲在创建时定一组随机系数，使每次摆动幅度/快慢/起手方向略不同，避免多板一致机械感）
+   *  @param {boolean} [strong] 是否强档。true=+3 道具到达（振幅/频率更大）；false/缺省=普通步数下降（逃猪记步） */
+  triggerHitShake(strong) {
     var now = Date.now();
+    var baseAmp = strong ? this._SHAKE_AMP_STRONG : this._SHAKE_AMP;
+    var baseOmega = strong ? this._SHAKE_OMEGA_STRONG : this._SHAKE_OMEGA;
     var p = {
       ts: now,
-      amp: this._SHAKE_AMP * (0.75 + Math.random() * 0.5),   // 振幅 ±25%（每次撞击力度不同）
+      amp: baseAmp * (strong ? 0.8 + Math.random() * 0.4 : 0.75 + Math.random() * 0.5), // 强档振幅 ±20%，普通 ±25%
       tau: this._SHAKE_TAU * (0.9 + Math.random() * 0.2),    // 衰减 ±10%（尾韵长短微差）
-      omega: this._SHAKE_OMEGA * (0.9 + Math.random() * 0.2),// 频率 ±10%（快慢微差）
+      omega: baseOmega * (0.9 + Math.random() * 0.2),        // 频率 ±10%（快慢微差）
       dir: Math.random() < 0.5 ? 1 : -1,                     // 起手方向随机（先右/先左，更自然）
     };
     this._shakes.push(p);

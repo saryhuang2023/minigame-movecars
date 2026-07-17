@@ -145,6 +145,7 @@ class PlayingEngine {
     this._goldAmount = 0;
     this._levelAccumulatedGold = 0;
     this._bonusSteps = 0;          // 关卡内「+3步」累计加成（每关重置）
+    this._bonusStepsPending = 0;   // 已逻辑加、但尚未"飞到步数牌"的 +3（视觉待释放；每关重置）
     // 积分进度条状态（每关重置）
     this._totalScore = 30;
     this._starScores = [0, 0, 0, 0];
@@ -297,7 +298,9 @@ class PlayingEngine {
       if (this._scoreBonusRemaining > 0) {
         displaySteps = this.steps + this._scoreBonusProgress;
       }
-      this._uiRightStep.setData(this._stepBonusThreshold + this._bonusSteps, displaySteps);
+      // 显示阈值 = 逻辑阈值 − 还在飞行中(未到面板)的 +3：保证数字在道具图标到达步数牌时才滚上去
+      var displayThreshold = this._stepBonusThreshold + this._bonusSteps - this._bonusStepsPending;
+      this._uiRightStep.setData(displayThreshold, displaySteps);
       this._uiRightStep.setHidden(this._failed); // 仅失败时隐藏；结算面板期间不隐藏（由面板遮罩覆盖，符合预期）
     }
 
@@ -1249,7 +1252,8 @@ class PlayingEngine {
   _addBonusSteps(n) {
     if (this._failed || this._victory) return;
     this._bonusSteps += (n || 0);
-    console.log('[LOG_bonus] +' + (n || 0) + '步 bonusSteps=' + this._bonusSteps + ' eff=' + (this._stepBonusThreshold + this._bonusSteps));
+    this._bonusStepsPending += (n || 0);  // 视觉待释放：图标飞到步数牌后才让显示数字滚上去
+    console.log('[LOG_bonus] +' + (n || 0) + '步 bonusSteps=' + this._bonusSteps + ' pending=' + this._bonusStepsPending + ' eff=' + (this._stepBonusThreshold + this._bonusSteps));
   }
 
   _markCleared() {
@@ -1509,14 +1513,21 @@ class PlayingEngine {
       this._finishVictorySequence();
       return;
     }
-    // 离散转化：每 200ms 前进一步，每步触发一朵飞花
+    // 离散转化：每 interval ms 前进一步，每步触发一朵飞花。
+    // 节奏预算：总时长 = 起手延迟 LEAD + n×interval + 末朵飞行最坏 TAIL，硬上限 2s。
+    // n 较小时(≤5) interval 保持 200ms 原节奏；n 较大时自动压缩，确保 2s 内完成。
+    var MAX_TOTAL = 2000;   // 硬上限 2 秒
+    var LEAD = 150;         // 起手延迟（等金币飞完）
+    var TAIL = 600;         // 末朵飞行预留（起点偏移 0~60 + 飞行 520~700 最坏 ~700，取 600 留缓冲）
+    var budget = Math.max(1, MAX_TOTAL - LEAD - TAIL); // 可压缩给 n 步的窗口 ≈ 1250ms
+    var interval = Math.min(200, budget / n);          // n≤6 → 200（保持原节奏）；n 大 → 自动压缩
     this._scoreBonusAnim = {
       active: true,
       lastAdvance: 0,           // 首次 tick 时设为 now（延迟 150ms 等金币飞完后再开始）
-      interval: 200,            // 200ms/步
+      interval: interval,       // 动态节奏
       total: n,                 // 总步数
       progress: 0,              // 已转化步数
-      delayStart: Date.now() + 150,
+      delayStart: Date.now() + LEAD,
     };
   }
 
@@ -1975,7 +1986,9 @@ class PlayingEngine {
     var itemArrived = this._itemFlyEffect.update();
     this._itemFlyEffect.render(ctx);
     if (itemArrived > 0 && this._uiRightStep) {
-      this._uiRightStep.triggerHitShake();
+      // 图标到达：释放对应的视觉 +3（每枚图标代表 +3 步），显示数字开始滚上去（与强档抖动同步）
+      this._bonusStepsPending = Math.max(0, this._bonusStepsPending - itemArrived * 3);
+      this._uiRightStep.triggerHitShake(true);   // +3 道具到达：强档受击（振幅/频率更大）
     }
     // 树枝进度条缓动更新（位置爬动 / 溢出旋转）
     if (this._uiBranchProgress) this._uiBranchProgress.update();
