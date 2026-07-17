@@ -1257,8 +1257,8 @@ class PlayingEngine {
   }
 
   _markCleared() {
-    console.log('[Playing] _markCleared called, level=' + this.levelName + ' steps=' + this.steps);
     var isTrial = databus.returnState === 'editor';
+    console.log('[Playing] _markCleared 调用: level=' + this.levelName + ' idx=' + databus.currentLevelIndex + ' steps=' + this.steps + ' 模式=' + (isTrial ? '试玩→不落库' : '正式→会落库'));
     // 推进 lastLevelIndex（试玩模式不推进）
     if (!isTrial) {
       var currentIdx = databus.currentLevelIndex;
@@ -1308,7 +1308,10 @@ class PlayingEngine {
       var achievedScore = this._escapedCount + this._scoreBonusRemaining;
       this._saveBestScore(achievedScore);
       var star = StarScores.getStarTier(achievedScore, this._starScores);
+      console.log('[Star] 计算星级: level=' + this.levelName + ' achievedScore=' + achievedScore + ' star=' + star + ' → 调用 _saveBestStar');
       this._saveBestStar(star);
+    } else {
+      console.log('[Star] 试玩模式，跳过星级落库');
     }
 
     // 兜底定时器：试玩与正式一致启动，保证胜利序列一定能触发
@@ -1364,6 +1367,7 @@ class PlayingEngine {
         map[levelName] = star;
         wx.setStorageSync('levelStars', map);
         console.log('[Star] 新纪录: ' + star + ' 星 (旧=' + prev + ') level=' + levelName);
+        console.log('[Star] 已落库 levelStars=' + JSON.stringify(map));
       } else {
         console.log('[Star] 未破纪录: 本次=' + star + ' 历史=' + prev + ' level=' + levelName);
       }

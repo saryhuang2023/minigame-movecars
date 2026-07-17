@@ -41,6 +41,8 @@ var PHASE2 = {
     'assets/images/addstep_icon.png',
     'assets/images/hint_icon.png',
     'assets/images/big_flower.png',
+    'assets/images/main_level_btn_passed.png',
+    'assets/images/main_level_btn_unlocked.png',
   ],
   // 非 idle 动画帧 (run 8 + escape 8 + hint 8 = 24)
   animationTotalFrames: 24,
@@ -75,6 +77,8 @@ var ASSET_PRELOADER_MAP = {
   addstep_icon:      'assets/images/addstep_icon.png',
   hint_icon:         'assets/images/hint_icon.png',
   big_flower:        'assets/images/big_flower.png',
+  main_level_btn_passed: 'assets/images/main_level_btn_passed.png',
+  main_level_btn_unlocked: 'assets/images/main_level_btn_unlocked.png',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====

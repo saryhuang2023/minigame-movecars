@@ -13,6 +13,7 @@ const SkinLoader = require('../entity/SkinLoader.js');
 const ShopPanel = require('../ui/ShopPanel.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
+const LevelMap = require('../ui/LevelMap.js');
 const Theme = require('../define/GameDefine.js').THEME;
 const Easing = require('./Easing.js');
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
@@ -92,6 +93,23 @@ class GameEngine {
     // 菜单可见性 + 出场动画状态
     this._menuVisible = false;  // 当前是否处于「可见的主菜单」（决定离场时是否播放反向出场动画）
     this._menuExit = null;      // 出场动画状态 { phase:'exit', startTime, target, totalDuration }
+
+    // 关卡地图（主页）：最小可滑动集合（自动路径+占位按钮）。
+    // _useLevelMap=true 在主界面之上叠加可滚动路径（clay 菜单照常渲染作底）；
+    // 置 false 则不叠加、退回纯 clay 主菜单。
+    this._useLevelMap = true;
+    this._levelMap = new LevelMap();
+    this._levelMapGesture = false;   // 当前触摸手势是否被地图接管（落在空白/路径区）
+
+    // 关卡地图：点击关卡回调（已通关关 → 不耗体力直接进；当前关 → 走原开始流程耗体力）
+    var self = this;
+    this._levelMap.onSelectLevel = function (levelIndex, state) {
+      if (state === 'current') {
+        self._onClickPlayBtn();                 // 当前关：消耗体力（同开始按钮）
+      } else {
+        self.startLevelByIndex(levelIndex, false); // 已通关：不耗体力，直接进
+      }
+    };
 
     // 左下角快速 5 连击解锁编辑器入口 + DebugPanel
     this._cornerTapCount = 0;
@@ -208,6 +226,8 @@ class GameEngine {
       // 注入背景图
       var bgImg = this._loadingMgr.getImage('bg');
       if (bgImg) { this.bgImg = bgImg; this._bgLoaded = true; }
+      // 把草原背景交给关卡地图，使其随路径同速滚动
+      if (this._useLevelMap && this._levelMap) this._levelMap.setBackground(this.bgImg);
 
       // 存储预加载的云端数据
       this._preloadedPlayerData = this._loadingMgr.getPlayerData();
@@ -778,6 +798,24 @@ class GameEngine {
     this._buildProjectLevels(totalLevels);
   }
 
+  /**
+   * 按索引直接进关（地图点击已通关关卡用）。
+   * consumeStamina 预留参数；目前旧关不消耗体力，故调用方传 false。
+   * 流程与 startLastLevel 一致：写 currentLevel → 出场动画（并行加载关卡）→ playing。
+   */
+  startLevelByIndex(levelIndex, consumeStamina) {
+    if (this._stamina.isFlying() || this._staminaEmbed) return;
+    var total = this._getTotalLevelCount();
+    if (levelIndex < 0 || levelIndex >= total) return;
+
+    var lv = this._getLevelEntry(levelIndex);
+    databus.currentLevel = { name: lv.name, data: null };
+    databus.currentLevelIndex = levelIndex;
+    databus.returnState = 'menu';
+    this._leaveMenu('playing');              // 菜单可见则播出场动画，否则直接进关
+    this._buildProjectLevels(total);         // 同步 databus.projectLevels（下一关/重玩依赖）
+  }
+
   /** 读取本地+云端合并后的总关卡数 */
   _getTotalLevelCount() {
     var localMax = 0;
@@ -812,27 +850,42 @@ class GameEngine {
   setupMenuInput() {
     var self = this;
     this.input.on('menu', (e) => {
-      // 面板打开时，所有触控事件（touchstart/move/end）由面板处理
+      // ===== 模态面板优先（BUG 修复）=====
+      // 任一面板打开时，整屏触控交给面板处理，地图手势【不可】拦截——
+      // 否则面板居中显示在「非控件区」时，_menuTouchHitControl 命中失败 → 触摸被误判为地图滚动手势，
+      // 导致设置面板上的按钮全部点不到。故所有面板检查必须位于关卡地图手势闸门之前。
       if (ShopPanel.isOpen()) {
         var t0 = e.touches && e.touches[0];
         ShopPanel.handleEvent({ type: e.type, x: t0 ? t0.x : 0, y: t0 ? t0.y : 0 });
         return;
       }
+      if (StaminaAdPanel.isOpen()) {
+        var t1 = e.touches && e.touches[0];
+        if (t1) StaminaAdPanel.handleTouch(t1.x, t1.y, e.type);
+        return;
+      }
+      if (settingsPanel.isOpen()) {
+        var t2 = e.touches && e.touches[0];
+        if (t2) settingsPanel.handleTouch(t2.x, t2.y, e.type);
+        return;
+      }
+
+      // 关卡地图模式（仅在所有面板均关闭时生效）：控件区域交给 clay 菜单（保留原功能），
+      // 空白/路径区域交给地图滚动（拖拽 + 惯性）。
+      if (this._useLevelMap && this._levelMap) {
+        if (e.type === 'touchstart' && e.touches && e.touches[0]) {
+          var tt = e.touches[0];
+          this._levelMapGesture = !this._menuTouchHitControl(tt.x, tt.y);
+        }
+        if (this._levelMapGesture) {
+          this._levelMap.handleEvent(e);
+          return;
+        }
+        // 落在控件上 → 继续走下方 clay 菜单原有逻辑
+      }
 
       if (e.type === 'touchstart' && e.touches[0]) {
         var t = e.touches[0];
-
-        // 体力不足广告弹窗
-        if (StaminaAdPanel.isOpen()) {
-          StaminaAdPanel.handleTouch(t.x, t.y, e.type);
-          return;
-        }
-
-        // 设置面板打开时，所有触控由面板处理
-        if (settingsPanel.isOpen()) {
-          settingsPanel.handleTouch(t.x, t.y, e.type);
-          return;
-        }
 
         // 左下角 100x100 快速 5 连击 → 解锁后门按钮（编辑 + 调试）
         // 若点击落在底部圆形功能按钮上，则交给按钮逻辑，不触发角落彩蛋
@@ -889,6 +942,24 @@ class GameEngine {
         // 移动中
       }
     });
+  }
+
+  /**
+   * 判断某次触摸是否落在主界面控件上（按钮 / 左下角彩蛋区）。
+   * 关卡地图模式下用于区分「滚动手势」与「点击控件」：落在控件上交给 clay 菜单，
+   * 落在空白/路径上交给地图滚动。控件矩形取自每帧重建的 this.menuButtons。
+   */
+  _menuTouchHitControl(x, y) {
+    var btns = this.menuButtons;
+    if (btns) {
+      for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true;
+      }
+    }
+    // 左下角彩蛋区（保留原功能，不能让地图滚动吃掉）
+    if (x >= 0 && x <= 100 && y >= SCREEN_HEIGHT - 100 && y <= SCREEN_HEIGHT) return true;
+    return false;
   }
 
   /**
@@ -1073,13 +1144,13 @@ class GameEngine {
     // （体力 UI 改到底部居中，绘制见开始按钮之后）
 
     // ===== 主按钮：开始游戏（main_start.png 图片按钮）=====
-    // Figma: 173 x 113，水平居中，bottom 距屏幕底 64px（基于 393 宽设计稿等比缩放）
+    // Figma Group 3467419: 180 x 86，水平居中（left: calc(50% - 180/2 - 0.5)），bottom 距屏幕底 65px（基于 393 宽设计稿等比缩放）
     var startScale = SCREEN_WIDTH / 393;
     this._startScale = startScale;
-    var startW = 173 * startScale;
-    var startH = 113 * startScale;
-    var startX = (SCREEN_WIDTH - startW) / 2;
-    var startY = SCREEN_HEIGHT - 64 * startScale - startH;
+    var startW = 180 * startScale;
+    var startH = 86 * startScale;
+    var startX = (SCREEN_WIDTH - startW) / 2 - 0.5 * startScale;
+    var startY = SCREEN_HEIGHT - 65 * startScale - startH;
     var startCX = startX + startW / 2;
     var startCY = startY + startH / 2;
 
@@ -1266,13 +1337,13 @@ class GameEngine {
       iconRects.push({ x: ix, y: fy, w: icon, h: 20 * scale, cx: ix + icon / 2, cy: fy + 10 * scale });
     }
     // 开始按钮（与 renderMenu 同一套计算）
-    var startW = 173 * scale, startH = 113 * scale;
-    var startX = (SCREEN_WIDTH - startW) / 2;
-    var startY = SCREEN_HEIGHT - 64 * scale - startH;
-    // 无体力标志位：开始按钮内居中，bottom:28（相对按钮）
+    var startW = 180 * scale, startH = 86 * scale;
+    var startX = (SCREEN_WIDTH - startW) / 2 - 0.5 * scale;
+    var startY = SCREEN_HEIGHT - 65 * scale - startH;
+    // 无体力标志位：开始按钮内，相对按钮 left:32（设计稿 393 宽，按 scale 缩放）、上下居中
     var flagW = 20 * scale, flagH = 20 * scale;
-    var flagX = startX + (startW - flagW) / 2;
-    var flagY = startY + startH - 28 * scale - flagH;
+    var flagX = startX + 32 * scale;
+    var flagY = startY + (startH - flagH) / 2;
     var flagRect = { x: flagX, y: flagY, w: flagW, h: flagH, cx: flagX + flagW / 2, cy: flagY + flagH / 2 };
     return { iconRects: iconRects, flagRect: flagRect, scale: scale, icon: icon };
   }
@@ -1677,6 +1748,11 @@ class GameEngine {
     // 主菜单按钮以全透明度渲染一帧（闪一下）。故事件后再查一次，确保同帧初始化入场动画。
     this.checkStateTransition();
 
+    // 关卡地图（主页）滚动 + 惯性更新（置于事件处理之后，与游玩更新并列）
+    if (databus.gameState === 'menu' && this._useLevelMap && this._levelMap) {
+      this._levelMap.update();
+    }
+
     // 游玩状态更新动画
     if (databus.gameState === 'playing') {
       this.playing.gp.update();
@@ -1739,7 +1815,14 @@ class GameEngine {
       this._renderCurrentScene();              // 菜单控件（已滑出，透明）照常绘制
       this.playing.drawSceneBackground(cp);    // 关卡背景叠在最上层渐显
     } else {
-      this.drawBackground();
+      // 关卡地图模式：草原背景随路径一起滚动，再叠加路径 + 关卡按钮，最后画主界面控件
+      if (this._useLevelMap && this._levelMap) {
+        this._levelMap.renderBackground();
+        this._levelMap.renderPath();
+        this._levelMap.renderButtons();
+      } else {
+        this.drawBackground();
+      }
       this._renderCurrentScene();
     }
 
