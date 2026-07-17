@@ -199,12 +199,12 @@ var GAME = {
     TOP_BAR_H: 75,
     BOTTOM_STRIP_H_DEFAULT: 105,
 
-    // 棋盘宽度屏幕比例下限（由不包含错落列的 cols=oddCols 决定）
-    // boardWidth = max(SCREEN_WIDTH * percent, levelBoardWidth)
+    // 棋盘宽度屏幕比例上限（由不包含错落列的 cols=oddCols 决定）
+    // boardWidth = min(SCREEN_WIDTH * percent, levelBoardWidth)  ← 封顶：棋盘宽不超过屏宽×percent，保证边缘留白
     BOARD_WIDTH_PERCENT: {
-      3: 288 / 393,    // cols ≤ 3
-      4: 369 / 393,    // 3 < cols <= 5 → cols=4
-      5: 373 / 393,    // cols > 5
+      3: 323 / 393,    // cols ≤ 3   → 上限 0.82，边缘留白最多
+      4: 346 / 393,    // cols = 4 或 5 → 上限 0.88
+      5: 362 / 393,    // cols > 5    → 上限 0.92，边缘留白最少（仍保底 ≥~15px@375）
     },
   },
 
@@ -306,8 +306,8 @@ var GAME = {
 // ========== 工具函数 ==========
 
 /**
- * 根据棋盘列数（不包含错落列，即 oddCols）获取棋盘宽度占屏幕宽度的最小比例
- * 用于 boardWidth = max(SCREEN_WIDTH * percent, levelBoardWidth)
+ * 根据棋盘列数（不包含错落列，即 oddCols）获取棋盘宽度占屏幕宽度的最大比例（封顶）
+ * 用于 boardWidth = min(SCREEN_WIDTH * percent, levelBoardWidth)
  * @param {number} oddCols 贴边列数
  * @returns {number} 比例值
  */

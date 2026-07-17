@@ -31,13 +31,51 @@ function initCloud() {
  * @param {string} name 云函数名称
  * @param {object} data 传入数据
  */
-async function callFunction(name, data = {}, tag = '') {
+// ===== 云函数并发限流 + 限流重试 =====
+// 微信云开发环境对单个环境有并发/ QPS 上限。LoadingManager 加载阶段多路并发
+// （getPlayerData / listLevels / batchDownloadLevels / loadConfig 几乎同时打出）+
+// 编辑器进关补发，极易触发 -501003 exceed request limit。
+// 统一在 callFunction 入口做两件事：
+//   ① 信号量限制同时最多 N 路云函数，避免瞬时并发打爆配额；
+//   ② 命中限流错误（-501003 / exceed request limit）指数退避重试，跨过云侧冷却窗口。
+var _MAX_CLOUD_CONCURRENCY = 3;   // 同时最多 3 路（保守，远低于多数环境上限）
+var _cloudActive = 0;
+var _cloudWaitQueue = [];
+
+function _acquireCloudSlot() {
+  return new Promise(function (resolve) {
+    if (_cloudActive < _MAX_CLOUD_CONCURRENCY) {
+      _cloudActive++;
+      resolve();
+    } else {
+      _cloudWaitQueue.push(resolve);
+    }
+  });
+}
+
+function _releaseCloudSlot() {
+  _cloudActive--;
+  if (_cloudWaitQueue.length > 0) {
+    var next = _cloudWaitQueue.shift();
+    _cloudActive++;
+    next();
+  }
+}
+
+function _isLimitError(err) {
+  if (!err) return false;
+  if (err.errCode === -501003) return true;
+  if (err.errMsg && /exceed request limit/i.test(err.errMsg)) return true;
+  return false;
+}
+
+async function callFunction(name, data = void 0, tag = '') {
   const t0 = Date.now();
   const prefix = tag ? `[${tag}][cloud]` : '[cloud]';
 
   // 参数摘要
   const argsSummary = {};
-  for (const k of Object.keys(data)) {
+  for (const k of Object.keys(data || {})) {
     const v = data[k];
     if (k === 'data') {
       argsSummary[k] = `[obj, ${JSON.stringify(v).length}c]`;
@@ -49,50 +87,76 @@ async function callFunction(name, data = {}, tag = '') {
       argsSummary[k] = typeof v === 'string' && v.length < 80 ? v : JSON.stringify(v).substring(0, 80);
     }
   }
-  const reqSize = JSON.stringify(data).length;
+  const reqSize = JSON.stringify(data || {}).length;
   const reqSizeStr = reqSize >= 1024 ? (reqSize / 1024).toFixed(1) + 'KB' : reqSize + 'B';
   console.log(`${prefix} → ${name}  ${reqSizeStr}`, argsSummary);
 
-  try {
-    const res = await wx.cloud.callFunction({ name, data });
-    const duration = Date.now() - t0;
-    const result = res.result;
+  const MAX_RETRY = 2;          // 初始 + 2 次重试 = 最多 3 次尝试
+  let lastErr = null;
 
-    const resSize = JSON.stringify(res).length;
-    const sizeStr = resSize >= 1024 ? (resSize / 1024).toFixed(1) + 'KB' : resSize + 'B';
+  for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+    if (attempt > 0) {
+      const wait = 300 * attempt; // 300ms / 600ms 退避
+      console.warn(`${prefix} 限流重试 #${attempt}（${wait}ms 后重发 ${name}）`);
+      await new Promise(function (r) { setTimeout(r, wait); });
+    }
 
-    let resultSummary;
-    if (result && typeof result === 'object') {
-      if (Array.isArray(result)) {
-        resultSummary = `[${result.length} items]`;
-      } else if (result.data && Array.isArray(result.data)) {
-        resultSummary = `data[${result.data.length}], code=${result.code}`;
+    await _acquireCloudSlot();
+    try {
+      const res = await wx.cloud.callFunction({ name, data: data || {} });
+      const duration = Date.now() - t0;
+      const result = res.result;
+
+      const resSize = JSON.stringify(res).length;
+      const sizeStr = resSize >= 1024 ? (resSize / 1024).toFixed(1) + 'KB' : resSize + 'B';
+
+      let resultSummary;
+      if (result && typeof result === 'object') {
+        if (Array.isArray(result)) {
+          resultSummary = `[${result.length} items]`;
+        } else if (result.data && Array.isArray(result.data)) {
+          resultSummary = `data[${result.data.length}], code=${result.code}`;
+        } else {
+          var keys = Object.keys(result).join(',');
+          resultSummary = `keys:{${keys}}, code=${result.code}`;
+        }
       } else {
-        var keys = Object.keys(result).join(',');
-        resultSummary = `keys:{${keys}}, code=${result.code}`;
+        resultSummary = String(result).substring(0, 80);
       }
-    } else {
-      resultSummary = String(result).substring(0, 80);
-    }
-    console.log(`${prefix} ← ${name}  ${duration}ms  ${sizeStr}  ${resultSummary}`);
+      console.log(`${prefix} ← ${name}  ${duration}ms  ${sizeStr}  ${resultSummary}`);
 
-    if (result && typeof result === 'object') {
-      if (result.code === undefined) {
-        console.error(`${prefix} ✗ ${name} 返回结果缺少 code 字段`);
-        console.error(`${prefix} res顶层keys:`, Object.keys(res).join(','), `| errMsg:`, res.errMsg);
-        console.error(`${prefix} res.result:`, JSON.stringify(result).substring(0, 500));
-      } else if (result.code !== 0) {
-        // 云函数逻辑失败（如版本冲突、权限、参数错误等）
-        console.error(`${prefix} ✗ ${name}  code=${result.code}  msg=${result.msg || '?'}  ${JSON.stringify(result).substring(0, 300)}`);
+      if (result && typeof result === 'object') {
+        if (result.code === undefined) {
+          console.error(`${prefix} ✗ ${name} 返回结果缺少 code 字段`);
+          console.error(`${prefix} res顶层keys:`, Object.keys(res).join(','), `| errMsg:`, res.errMsg);
+          console.error(`${prefix} res.result:`, JSON.stringify(result).substring(0, 500));
+        } else if (result.code !== 0) {
+          // 云函数逻辑失败（如版本冲突、权限、参数错误等）
+          console.error(`${prefix} ✗ ${name}  code=${result.code}  msg=${result.msg || '?'}  ${JSON.stringify(result).substring(0, 300)}`);
+        }
       }
-    }
 
-    return result;
-  } catch (err) {
-    const duration = Date.now() - t0;
-    console.error(`${prefix} ✗ ${name}  ${duration}ms  errCode=${(err && err.errCode) || '?'}  ${(err && err.message) || String(err)}`);
-    throw err;
+      return result;
+    } catch (err) {
+      const isLimit = _isLimitError(err) && attempt < MAX_RETRY;
+      if (!isLimit) {
+        const duration = Date.now() - t0;
+        const ec = (err && err.errCode) || '?';
+        let hint = '';
+        if (ec === -501000 || (err && err.errMsg && /env status is isolated/i.test(err.errMsg))) {
+          hint = ' → 云环境被隔离(env isolated)，属服务端环境状态，非代码问题；请到 CloudBase 控制台检查该环境状态/账单并恢复';
+        }
+        console.error(`${prefix} ✗ ${name}  ${duration}ms  errCode=${ec}  ${(err && err.message) || String(err)}${hint}`);
+        throw err;
+      }
+      lastErr = err;
+      continue; // 限流：退避后重试（槽位已在 finally 释放）
+    } finally {
+      _releaseCloudSlot();
+    }
   }
+
+  throw lastErr;
 }
 
 /**

@@ -133,16 +133,17 @@ class GameplayEngine {
   }
 
   /**
-   * 应用棋盘宽度约束：boardWidth = max(SCREEN_WIDTH * percent(oddCols), boardWidth)
+   * 应用棋盘宽度约束（封顶）：boardWidth = min(SCREEN_WIDTH * percent(oddCols), boardWidth)
+   * 保证棋盘宽度不超过屏宽的 percent，从而边缘始终留有 ≥ (1−percent)/2 的空隙。
    * 在所有模式（正式/试玩/编辑器）中加载关卡数据后调用
    * @param {number} [screenWidth] 屏幕宽度，默认 SCREEN_WIDTH
    */
   applyBoardWidthConstraint(screenWidth) {
     var sw = screenWidth || SCREEN_WIDTH;
     var percent = GameDefine.getBoardWidthPercent(this.oddCols);
-    var minW = sw * percent;
-    if (minW > this.boardWidth) {
-      this.boardWidth = minW;
+    var maxW = sw * percent;
+    if (this.boardWidth > maxW) {
+      this.boardWidth = maxW;   // 封顶：棋盘宽不超过 SCREEN×percent
     }
   }
   rebuildOccupancy() {

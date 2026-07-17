@@ -740,7 +740,7 @@ class PlayingEngine {
     this._hasHintData = hasAnyHint;         // 无 hint 关卡隐藏提示按钮
 
     // 道具每关限用次数（每次关卡游玩重置，不跨关）；断点续玩时由 checkpoint 原样恢复「已用过几次」
-    this._addStepRemaining = 2;   // +3 步：每关 2 次
+    this._addStepRemaining = 3;   // +3 步：每关 3 次
     this._hintRemaining = 3;      // 提示：每关 3 次
   }
 
@@ -1680,7 +1680,7 @@ class PlayingEngine {
     // 4. 文字：剩余次数（居中于文字框，白字 + 轻微阴影）
     var isHint = (key === 'bottomHint');
     var remaining = isHint ? this._hintRemaining : this._addStepRemaining;
-    if (remaining == null) remaining = isHint ? 3 : 2;   // 兜底：未初始化按上限显示
+    if (remaining == null) remaining = 3;   // 兜底：未初始化按上限显示（提示/+3 当前上限均为 3）
     ctx.save();
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
