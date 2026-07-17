@@ -78,12 +78,9 @@ class PlayingEngine {
     this._loading = false;          // 是否正在加载（云端拉取中，阻止所有操作）
     this._lastFrameTime = 0;        // 上一帧时间戳（引导系统 dt 计算用）
     this._cloudFetchedData = new Map();  // 本次会话已拉取过的云端关卡数据 { name → data }
-    // 断点续玩
-    this._checkpointTimer = null;   // 5秒存档定时器
+    // 断点续玩（实时镜像存储：状态一变化即写整份镜像，无定时器/无脏检测）
     this._levelVersion = 0;         // 当前关卡版本号
     this._skipRestore = false;       // 重玩标记（置 true 则跳过恢复）
-    this._lastSavedSteps = -1;      // 上次存档时的步数（用于脏检测）
-    this._lastSavedPigCount = -1;   // 上次存档时的猪数量（用于脏检测）
     // 金币奖励
     this._goldAmount = 0;           // 本次通关奖励金币数（不含步数奖励）
     this._levelAccumulatedGold = 0;  // 本关实时累积金币（猪退出+1，异步递增仅用于 UI 实时显示）
@@ -234,7 +231,7 @@ class PlayingEngine {
       // Layer OVERLAY — 树枝进度条（小虫沿树枝爬动表示进度）；层级高于 INFO/CONTROL，
       // 使「步数→积分」飞花能盖过右上角步数牌（飞花是 BranchProgressWidget 内部绘制内容，
       // 无法单独提层，故整体提升到非模态最高层 OVERLAY，仍低于结算面板 MODAL）。
-      this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 61, zIndex: UIManager.LAYER.OVERLAY });
+      this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 78, zIndex: UIManager.LAYER.OVERLAY });
       this.ui.add(this._uiBranchProgress, UIManager.LAYER.OVERLAY);
 
       // Layer 4 — VictoryPopup
@@ -445,14 +442,11 @@ class PlayingEngine {
     this._afterEnterLevel();
   }
 
-  /** 进关后续统一逻辑：脏检测重置 + 断点续玩恢复 + 录制启动 + 预下载。
+  /** 进关后续统一逻辑：断点续玩恢复 + 录制启动 + 预下载。
    *  所有「加载完关卡」的入口（startLevel 的 _loadAndStart / 菜单 prepareLevel）都应调用，
    *  否则菜单进关会漏掉 game_checkpoint 续玩恢复与录制启动（交叉淡变重构期间暴露）。 */
   _afterEnterLevel() {
-    // 重置脏检测基准（确保首轮一定写入）
-    this._lastSavedSteps = -1;
-    this._lastSavedPigCount = -1;
-    // 断点续传（单函数收敛：恢复/清理/启动定时器）
+    // 断点续传（单函数收敛：恢复/清理）
     this._updateCheckpoint();
 
     // 关卡预下载：仅最新关卡触发（非试玩模式）
@@ -674,7 +668,6 @@ class PlayingEngine {
     this._entranceState = null;  // 清空入场动画，防止下一帧闪现旧猪
     this._levelReady = false;    // 重置并行加载标志，避免误判「已加载」跳过 startLevel（如编辑器试玩→进关）
     this._levelLoadFailed = false;
-    this._stopCheckpointTimer();
     // 清理录制/回放状态
     if (this._isRecording) this._trialStopRecord(false);  // 退出关卡不保存录制
     this._isPlayingBack = false;
@@ -746,9 +739,9 @@ class PlayingEngine {
     }
     this._hasHintData = hasAnyHint;         // 无 hint 关卡隐藏提示按钮
 
-    // 道具每关限用次数（每次关卡游玩重置，不跨关、不持久化）
+    // 道具每关限用次数（每次关卡游玩重置，不跨关）；断点续玩时由 checkpoint 原样恢复「已用过几次」
     this._addStepRemaining = 2;   // +3 步：每关 2 次
-    this._hintRemaining = 1;      // 提示：每关 1 次
+    this._hintRemaining = 3;      // 提示：每关 3 次
   }
 
   // ========== 输入 ==========
@@ -883,6 +876,7 @@ class PlayingEngine {
             this._itemFlyEffect.trigger(addX + 34, addY + 34, sp2.x, sp2.y);
           }
           this._addStepRemaining--;
+          this._saveCheckpoint();   // 道具次数已变，即时存盘（与逃猪录制即时存盘同思路；+3 虽改步数但即时更稳）
           return;
         }
         // 右按钮：提示（与左对称，frame x=SCREEN_WIDTH-158，包围盒 78×79）
@@ -900,6 +894,7 @@ class PlayingEngine {
           if (best) {
             audio.play('hint_reveal');
             this._hintRemaining--;
+            this._saveCheckpoint();   // 提示次数已变即时存盘：提示不改步数/猪数，无定时器兜底，必须即时写
           } else {
             showToast('提示已结束', 1500);
           }
@@ -1099,6 +1094,11 @@ class PlayingEngine {
       this._shouldPushAfterSnap = false;
       // 步数用尽判定（必须在 tryPushPig 之后，保证「通关优先于失败」）
       this._checkFail();
+      // 实时存整份镜像（替代原 5 秒定时器脏检测）：snap/步数/逃脱移除已全部完成，单次写入即可。
+      // 原 tryPushPig 内的 _saveCheckpoint() 已移除，避免「移除前(pigs=29)+移除后(pigs=28)」两次写盘。
+      if (pig && snapResult) {
+        this._saveCheckpoint();
+      }
     }
   }
 
@@ -1178,6 +1178,9 @@ class PlayingEngine {
       } else {
         console.log('[RecHint] 猪逃脱: pigId=' + pigId + ' → 跳过提示收集(_hintMerged=true)');
       }
+
+      // 断点续玩：hint 录制状态（含本次刚入 cache 的提示）由 onTouchEnd 在 tryPushPig 返回后统一存盘，
+      // 确保被杀进程后能从存档接上、回来接着录（单次写盘，消灭「崩溃丢最近一条」窗口，无需等定时器）
 
       // 所有可逃脱精灵都逃脱 → 通关（rock 等障碍物不算）
       var canEscapeRemaining = this.gp.pigs.filter(function(p) { return p.type !== 'rock'; }).length;
@@ -1677,7 +1680,7 @@ class PlayingEngine {
     // 4. 文字：剩余次数（居中于文字框，白字 + 轻微阴影）
     var isHint = (key === 'bottomHint');
     var remaining = isHint ? this._hintRemaining : this._addStepRemaining;
-    if (remaining == null) remaining = isHint ? 1 : 2;   // 兜底：未初始化按上限显示
+    if (remaining == null) remaining = isHint ? 3 : 2;   // 兜底：未初始化按上限显示
     ctx.save();
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
@@ -1696,9 +1699,9 @@ class PlayingEngine {
     this._drawItemButton(ctx, key, 'left', 'addstep_icon', '+3');
   }
 
-  // 右边「提示」按钮（与左边对称，元素一致，仅图标 hint_icon + 文字 1次）
+  // 右边「提示」按钮（与左边对称，元素一致，仅图标 hint_icon + 文字 3次）
   _drawHintButton(ctx, key) {
-    this._drawItemButton(ctx, key, 'right', 'hint_icon', '1次');
+    this._drawItemButton(ctx, key, 'right', 'hint_icon', '3次');
   }
 
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
@@ -1792,18 +1795,25 @@ class PlayingEngine {
     });
 
     // 背景物件（image 718）：固定屏幕位置，绘制于棋盘之上（确保不被棋盘/孔位遮挡）
+    // 新图尺寸 279×44、top:78（原 279×85、top:61，已去上下留白并下移），绘制矩形同步更新
     if (AssetPreloader.isReady('bg_deco_718')) {
-      ctx.drawImage(AssetPreloader.get('bg_deco_718'), 10, 61, 279, 85);
+      ctx.drawImage(AssetPreloader.get('bg_deco_718'), 10, 78, 279, 44);
     }
+
+    // 树枝进度条「底层」（绿色已走过揭示 + 调试曲线）：绘制于草丛之下
+    // 绿色进度条是树枝皮肤的一部分，本应被前景草丛(树叶)压住
+    if (this._uiBranchProgress) this._uiBranchProgress.renderBranchLayer(ctx);
 
     // 草丛装饰（Figma 草丛节点）：替换原 Vector 6/7/8 三层纯色装饰
     // 坐标全部为「相对屏幕左上角」的 Figma 原值，按屏幕坐标直接绘制（left:0, top:39, 69.32×121.07）
-    // 绘制于棋盘之上（确保不被棋盘/孔位遮挡）
+    // 绘制于树枝底层之上：草丛(装饰树叶)盖住已走过的绿色树枝，处于最上层装饰
     if (AssetPreloader.isReady('level_brush')) {
       ctx.drawImage(AssetPreloader.get('level_brush'), 0, 39, 69.32, 121.07);
     }
-    // 树枝进度条：绘制于草丛之上（轨迹 + 小虫 + 调试曲线 + 常驻 4 朵小花）
-    if (this._uiBranchProgress) this._uiBranchProgress.render(ctx);
+
+    // 树枝进度条「上层」（小虫 + 花朵 + 粒子 + 施法高光）：绘制于草丛之上
+    // 小虫与星级花是爬在树枝上的主体，必须压在前景草丛之上，避免被树叶遮挡
+    if (this._uiBranchProgress) this._uiBranchProgress.renderUILayer(ctx);
 
     // 剩余未逃脱猪数量组件（可复用 drawPigCounter，父 frame 宽 55）
     // 按 SCREEN_WIDTH 动态水平居中：设备宽 ≠375 时硬编码 160 会偏左，故实时算 frameX
@@ -2102,9 +2112,32 @@ class PlayingEngine {
   // 断点续玩（Checkpoint Resume）
   // ============================================================
 
-  /** 保存当前关卡状态到本地持久化存储 */
+  /** 构造断点续玩的「权威状态镜像」——任何变化都整份写出，无需脏检测 */
+  _buildCheckpoint() {
+    return {
+      levelName: this.levelName,
+      levelIndex: databus.currentLevelIndex,
+      steps: this.steps,
+      bonusSteps: this._bonusSteps,   // +3步道具累计加成（影响剩余步数 HUD，续玩需接回）
+      version: this._levelVersion,
+      // 棋盘：每头猪的 id + 位置/朝向（恢复时据此重建占用并剔除已逃出猪）
+      pigs: this.gp.pigs.map(function(p) {
+        return { id: p.id, tailIndex: p.tailIndex, length: p.length, angle: p.angle };
+      }),
+      // hint 录制状态：已逃猪提示缓存 + 试玩实时编号计数器 + 是否已合并（续玩原样接回）
+      hintCache: this._gameplayHintCache.map(function(h) { return { pigId: h.pigId, angle: h.angle }; }),
+      trialHintNextId: this._trialHintNextId,
+      hintMerged: this._hintMerged,
+      // 道具使用次数：+3步剩余、提示剩余（续玩原样镜像杀进程前状态）
+      addStepRemaining: this._addStepRemaining,
+      hintRemaining: this._hintRemaining,
+      savedAt: Date.now()
+    };
+  }
+
+  /** 保存当前关卡状态到本地持久化存储（实时调用：状态一变化即写整份镜像） */
   _saveCheckpoint() {
-    // 仅最新关卡才写盘（定时器残留兜底）
+    // 仅最新未通关关卡才写盘
     if (!this._isLatestUnexploredLevel()) return;
     if (!this.levelName) {
       console.log('[LOG_cp] 跳过保存: levelName 为空');
@@ -2126,21 +2159,9 @@ class PlayingEngine {
       console.log('[LOG_cp] 跳过保存: 猪已全消');
       return;
     }
-    var data = {
-      levelName: this.levelName,
-      levelIndex: databus.currentLevelIndex,
-      steps: this.steps,
-      version: this._levelVersion,
-      pigs: this.gp.pigs.map(function(p) {
-        return { id: p.id, tailIndex: p.tailIndex, length: p.length, angle: p.angle };
-      }),
-      savedAt: Date.now()
-    };
     try {
-      wx.setStorageSync('game_checkpoint', data);
-      this._lastSavedSteps = this.steps;
-      this._lastSavedPigCount = data.pigs.length;
-      console.log('[LOG] ✓ 存档成功: ' + this.levelName + ' | step=' + this.steps + ' | pigs=' + data.pigs.length + ' | v=' + this._levelVersion);
+      wx.setStorageSync('game_checkpoint', this._buildCheckpoint());
+      console.log('[LOG] ✓ 存档成功: ' + this.levelName + ' | step=' + this.steps + ' | pigs=' + this.gp.pigs.length + ' | v=' + this._levelVersion);
     } catch (e) {
       console.warn('[LOG] 保存失败:', e);
     }
@@ -2161,7 +2182,7 @@ class PlayingEngine {
     return idx === lastIdx + 1;
   }
 
-  /** 断点续传单函数：恢复 / 清理 / 启动定时器 */
+  /** 断点续传单函数：恢复 / 清理（不再依赖定时器） */
   _updateCheckpoint() {
     var skipRestore = this._skipRestore;
     this._skipRestore = false;
@@ -2190,34 +2211,7 @@ class PlayingEngine {
       console.log('[LOG_cp] 无存档，开始记录: level=' + this.levelName + ' v=' + this._levelVersion);
     }
 
-    this._startCheckpointTimer();
-  }
-
-  /** 停止存档定时器 */
-  _stopCheckpointTimer() {
-    if (this._checkpointTimer) {
-      clearInterval(this._checkpointTimer);
-      console.log('[LOG_cp] 清除定时器');
-      this._checkpointTimer = null;
-    }
-  }
-
-  /** 启动 5 秒存档定时器（脏检测：只有步数或猪数量变化才真正写盘） */
-  _startCheckpointTimer() {
-    if (this._checkpointTimer) {
-      console.log('[LOG_cp] 清除旧定时器，重新启动');
-      clearInterval(this._checkpointTimer);
-    }
-    console.log('[LOG_cp] 启动 5 秒存档定时器 (level=' + this.levelName + ', version=' + this._levelVersion + ')');
-    var self = this;
-    this._checkpointTimer = setInterval(function() {
-      // 脏检测：步数和猪数量都没变就不写盘
-      if (self.steps === self._lastSavedSteps && self.gp.pigs.length === self._lastSavedPigCount) {
-        return;
-      }
-      console.log('[LOG_cp] === 定时器触发，检测到变化，准备存档 ===');
-      self._saveCheckpoint();
-    }, PlayDefine.PLAY.CHECKPOINT_INTERVAL);
+    // 存档改为「状态变化时实时整份写出」，不再依赖定时器
   }
 
   /** 从存档恢复关卡状态（在 loadLevel 之后调用） */
@@ -2261,22 +2255,46 @@ class PlayingEngine {
     console.log('[LOG] 恢复猪: 更新=' + this.gp.pigs.length + ' 剔除=' + removedCount);
     this.gp.rebuildOccupancy();
 
+    // 恢复道具使用次数：+3步剩余、提示剩余，原样镜像杀进程前状态（保证「已用过几次」续玩后一致）。
+    // 存档缺失字段时兜底为 loadLevel 初值（2 / 1），与新鲜正式关行为一致。
+    this._addStepRemaining = (cp.addStepRemaining != null) ? cp.addStepRemaining : this._addStepRemaining;
+    this._hintRemaining = (cp.hintRemaining != null) ? cp.hintRemaining : this._hintRemaining;
+    // +3 道具实际加成步数：续玩接回，保证「剩余步数 HUD」与杀进程前一致（否则 +3 后用掉的次数恢复了，但加的步数丢了，HUD 错位）
+    this._bonusSteps = (cp.bonusSteps != null) ? cp.bonusSteps : this._bonusSteps;
+
     // 恢复本关累积金币：断点续玩时，已逃出猪捡到的金币必须计入显示。
     // 该值不需要持久化——由存档「缺失的猪」推得：removedCount 即已逃出猪数，每头 +1 金币，
     // 与 _saveCheckpoint 恢复的棋盘状态严格一致（不会出现金币/棋盘不匹配）。
     this._levelAccumulatedGold = removedCount;
     console.log('[LOG_cp] _doResume 恢复累积金币(由 removedCount 计算)=' + this._levelAccumulatedGold + ' removedCount=' + removedCount);
 
-    // 断点续玩且棋盘不完整：跳过录制和提示收集
+    // 断点续玩且棋盘不完整：接上 hint 录制状态，回来继续录（不再丢弃）
     if (removedCount > 0) {
       this._escapedCount = removedCount;  // 标记棋盘不完整，_allPigsOnBoard() 返回 false
-      this._hintMerged = true;            // 跳过提示收集，避免残缺 hint 覆盖旧数据
-      console.log('[RecHint] 断点续玩: 棋盘不完整(removed=' + removedCount + ') → 跳过录制+提示收集');
+      // 恢复断点前已录的提示缓存 + 试玩实时编号计数器，使续玩后继续收集、通关时一并写入
+      this._gameplayHintCache = (cp.hintCache && cp.hintCache.length)
+        ? cp.hintCache.map(function(h) { return { pigId: h.pigId, angle: h.angle }; })
+        : [];
+      this._trialHintNextId = (cp.trialHintNextId != null)
+        ? cp.trialHintNextId
+        : this._trialHintNextId;   // 旧存档无此字段时兜底（保持 loadLevel 初值）
+      // 从存档原样恢复「是否还在收集 hint」状态（hintMerged: false=收集中 / true=已合并不再收），
+      // 使续玩行为精确镜像杀进程前的录制状态，与新鲜正式关严格一致；
+      // 存档缺失字段时兜底为 false（继续收）。注：通关会先 _hintMerged=true 再 _mergeAndUploadHints，
+      // 而 _saveCheckpoint 在逃猪时(合并前)即写盘，故任何有效存档里 hintMerged 必为 false。
+      this._hintMerged = (cp.hintMerged != null) ? cp.hintMerged : false;
+      console.log('[RecHint] 断点续玩: 棋盘不完整(removed=' + removedCount + ') → 接上提示录制(hintCache=' + this._gameplayHintCache.length + ', nextId=' + this._trialHintNextId + ')');
     } else {
       console.log('[RecHint] 断点续玩: 棋盘完整(removed=0) → 正常启动录制+提示收集');
     }
 
-    // 恢复完成后不清理存档 — 由 30 秒定时器自然覆盖
+    // 恢复小虫进度 + 已获得花朵：直接计算结果静态展示（不跑动画）。
+    // 小虫停在「已逃出猪数 / 总积分」处；对应档位的花朵静态常驻（中途恢复不会到 4 星，故不触发施法特效）。
+    if (this._uiBranchProgress) {
+      this._uiBranchProgress.showResultImmediate(this._escapedCount, this._totalScore);
+    }
+
+    // 恢复完成后不立即清理存档；下次进关若关卡/版本不匹配会由 _updateCheckpoint 清掉
     console.log('[LOG] 存档已恢复 steps=' + this.steps + ' pigs=' + this.gp.pigs.length);
   }
 }

@@ -7,7 +7,7 @@
 //  - 进度：分母 = 4 星积分门槛（starScores[3]），分子 = 已获积分（推猪 +1、结算剩余步数转化 +2）
 //  - 小虫：头朝右；静态图（动画未制作，不加 sin 摆动），位置走 lerp 缓动「爬」过去
 //  - 越界（积分超上限）：小虫已到终点、不再前进，也不旋转；保持终点姿态（无"到顶后打转"）
-//  - 已走过的路：绿色轨迹覆盖树枝
+//  - 已走过的路：用 image_719（与 image_718 同尺寸同轨迹的「已走过」配色图）沿树枝路径做进度揭示（替代旧半透明绿线染色方案）
 //  - 花朵：树枝上按 积分档位(s1..s4)/4星分 的位置放 1~4 朵花；积分跨档即「弹性绽放」获得动画；
 //          4 星（彩色）特效（魔法棒施法，2026-07-15）：4 星花一开始就是大彩花；到顶后 4 星旋转 500ms、
 //          旋转到 200ms 时甩出花瓣粒子簇（魔法感）飞向 3 星，3 星旋转 200ms 同时覆彩色；
@@ -18,12 +18,25 @@ var UIComponent = require('../base/UIComponent.js');
 var AssetPreloader = require('../AssetPreloader.js');
 var StarScores = require('../../utils/starScores.js');
 
+// 离屏画布（复用，避免每帧创建）：用于「沿路径揭示 image_719」的遮罩合成
+var _revealCanvas = null;
+var _revealCtx = null;
+function _getRevealCtx() {
+  if (!_revealCtx) {
+    _revealCanvas = wx.createCanvas();
+    _revealCanvas.width = 279;
+    _revealCanvas.height = 44;
+    _revealCtx = _revealCanvas.getContext('2d');
+  }
+  return _revealCtx;
+}
+
 // 调试开关（测试期画曲线+控制点核对路径；上线前改 false）
 var SHOW_DEBUG = false;
 
 // 控制点（相对框左上角，279×85 坐标系；用户给定）
 var CTRL = [
-  { x: 25,  y: 22 }, // P1（设计稿 Point01：left:25 top:22）
+  { x: 22,  y: 28 }, // P1（设计稿 Point01：left:22 top:28）
   { x: 88,  y: 31 }, // P2
   { x: 167, y: 19 }, // P3
   { x: 206, y: 19 }, // P4
@@ -37,9 +50,10 @@ var CTRL = [
 var WORM_W = 42;
 var WORM_H = 23;
 var WORM_HEAD_AHEAD = 7;      // 头部锚点相对「路径点」的前冲量（px）：头部边缘中心位于路径点前方 7px（虫头微微探出进度点）
-var TRAIL_W = 12;             // 绿色轨迹线宽
+var TRAIL_W = 12;             // 绿色轨迹线宽（仅作 image_719 未就绪时的兜底）
+var REVEAL_W = 46;            // 已走过路径「揭示遮罩」描边宽度（>图高44，确保覆盖整条树枝厚度；719 仅树枝处有像素，过宽不溢出）
 var LERP = 0.15;              // 每帧缓动系数（约 60fps）
-var BRANCH_TOP_PAD = 18;      // 树枝图在背景框 image_718 内的顶部留白（PNG 内容区 y≈20），曲线整体下移对齐
+var BRANCH_TOP_PAD = 0;       // 曲线纵向偏移：控件原点 this.y 已对齐新图顶(78)，控制点按 279×44 框标（y∈[4,31]），故归零=直接贴合图内容。若真机看曲线偏离树枝，按像素差调此值（负=上移，正=下移，1:1）。
 var FLOWER_POP_MS = 750;      // 花朵获得动画时长（蓄力 → 弹性绽放 → 回弹）— 放慢让「绽放」看得清
 var FLOWER_BURST_MS = 650;     // 获得瞬间光环 + 星点爆发持续
 var FLOWER_ANCHOR = 0;         // 花朵锚点比例：0 = 花朵「中心点」直接对齐路径点（虫头撞到的是花中心）
@@ -247,6 +261,33 @@ class BranchProgressWidget extends UIComponent {
     }
   }
 
+  /** 断点续玩恢复：直接呈现「已逃出 N 头猪」对应的小虫位置与已获得花朵，不播任何动画。
+   *  小虫直接停在目标处、花朵静态常驻（与「进入关卡直接展示结果」一致）。
+   *  @param {number} current 已获积分（恢复时 = 已逃出猪数 escapedCount）
+   *  @param {number} total   总积分（= 4 星门槛 totalScore） */
+  showResultImmediate(current, total) {
+    total = total || 1;
+    var t = current / total;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    this._progress = t;
+    this._displayed = t;                 // 直接到位，不缓动
+    if (this._starReady) {
+      var tier = StarScores.getStarTier(current, this._starScores);
+      this._currentTier = tier;
+      for (var i = 0; i < tier && i < this._flowers.length; i++) {
+        if (this._flowers[i] && !this._flowers[i].obtained) {
+          this._flowers[i].obtained = true;
+          this._flowers[i].popStart = 0; // 静态，不播放获得动画
+          this._flowers[i].popKind = 'normal';
+          this._flowers[i].finalSize = 25;
+          this._flowers[i].colored = (i === 3);
+        }
+      }
+      // 中途恢复不会到 4 星（需结算剩余步数转化），故不触发 4 星施法特效
+    }
+  }
+
   /** 4 星（彩色星）特效是否仍在播放（结算面板据此延后弹出，避免被遮罩盖住看不到） */
   isFourStarAnimating() {
     if (!this._fourStarActive) return false;
@@ -403,7 +444,11 @@ class BranchProgressWidget extends UIComponent {
     }
   }
 
-  render(ctx) {
+  /**
+   * 树枝底层（绿色已走过揭示 + 调试曲线）：绘制于装饰树叶「之下」。
+   * 绿色进度条属于树枝皮肤的一部分，本应被前景草丛(树叶)压住。
+   */
+  renderBranchLayer(ctx) {
     // 一次性诊断：确认本组件渲染管线已接入，并报告虫图资源就绪状态
     if (!this._diagDone) {
       this._diagDone = true;
@@ -412,15 +457,33 @@ class BranchProgressWidget extends UIComponent {
         ' | 初始进度=' + this._progress.toFixed(3) +
       ' | 虫图=' + (AssetPreloader.isReady('level_worm') ? 'OK' : '兜底自绘'));
     }
-    // 整体下移 BRANCH_TOP_PAD，使虫路径对齐背景框内实际树枝图（树枝图内容区顶部留白≈18px）
+    // 整体下移 BRANCH_TOP_PAD，使虫路径对齐背景框内实际树枝图；控件原点 this.y 已对齐新图顶(78)，控制点按新图框标 → pad=0 直接贴合
     var ox = this.x, oy = this.y + BRANCH_TOP_PAD;
     // 轨迹与调试曲线不依赖虫图，始终绘制（便于在虫图缺失时仍能确认功能在跑）
     if (SHOW_DEBUG) this._renderDebug(ctx, ox, oy);
-    this._renderTrail(ctx, ox, oy);
+    // 已走过的路：优先用 image_719 沿路径揭示（进度条感）；719 未注入时兜底旧绿线
+    if (AssetPreloader.isReady('bg_deco_719')) {
+      this._renderReveal(ctx, ox, oy);
+    } else {
+      this._renderTrail(ctx, ox, oy);
+    }
+  }
+
+  /**
+   * 树枝上层（小虫 + 花朵 + 粒子 + 施法高光）：绘制于装饰树叶「之上」。
+   * 小虫与星级花是爬在树枝上的「主体」，必须压在前景草丛之上，避免被树叶遮挡。
+   */
+  renderUILayer(ctx) {
+    var ox = this.x, oy = this.y + BRANCH_TOP_PAD;
     this._renderFlowers(ctx, ox, oy);
     this._renderWorm(ctx, ox, oy);
     if (this._petals.length) this._renderPetals(ctx);
     this._renderCastFlash(ctx);
+  }
+
+  render(ctx) {
+    this.renderBranchLayer(ctx);
+    this.renderUILayer(ctx);
   }
 
   /**
@@ -459,9 +522,9 @@ class BranchProgressWidget extends UIComponent {
     var target = this._displayed * this._arc.total;
     var cum = this._arc.cum;
     ctx.save();
-    ctx.strokeStyle = 'rgba(120, 200, 90, 0.9)';
+    ctx.strokeStyle = 'rgba(120, 200, 90, 0.4)';
     ctx.lineWidth = TRAIL_W;
-    ctx.lineCap = 'round';
+    ctx.lineCap = 'butt';   // 与 reveal 遮罩一致：避免 round 端点多探出半线宽
     ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(ox + this._dense[0].x, oy + this._dense[0].y);
@@ -479,6 +542,49 @@ class BranchProgressWidget extends UIComponent {
     }
     ctx.stroke();
     ctx.restore();
+  }
+
+  /**
+   * 已走过的路：用 image_719（与 image_718 同尺寸同轨迹的「已走过」配色图）沿树枝路径做进度揭示。
+   * 实现：离屏画布上用「粗描边路径」作为遮罩，再 source-in 只保留 719 落在遮罩内的像素，最后贴回主画布。
+   * 经过的部分显示 719（已走过配色），未经过的部分透出底层 image_718（原树枝），形成进度条感。
+   */
+  _renderReveal(ctx, ox, oy) {
+    if (this._displayed <= 0.0005) return;   // 进度为 0 时不揭示，避免起点出现静态色块
+    var octx = _getRevealCtx();
+    if (!octx) return;
+    octx.clearRect(0, 0, 279, 44);
+    // 1) 遮罩：从起点到当前进度点，沿中心线的粗描边（round 端点/转弯，保证平滑）
+    octx.save();
+    octx.beginPath();
+    var dense = this._dense, cum = this._arc.cum, total = this._arc.total;
+    var target = this._displayed * total;
+    octx.moveTo(dense[0].x, dense[0].y);
+    for (var i = 1; i < dense.length; i++) {
+      if (cum[i] > target) {
+        var segLen = cum[i] - cum[i - 1];
+        var localT = segLen > 0 ? (target - cum[i - 1]) / segLen : 0;
+        var x = dense[i - 1].x + (dense[i].x - dense[i - 1].x) * localT;
+        var y = dense[i - 1].y + (dense[i].y - dense[i - 1].y) * localT;
+        octx.lineTo(x, y);
+        break;
+      }
+      octx.lineTo(dense[i].x, dense[i].y);
+    }
+    octx.lineWidth = REVEAL_W;
+    // butt 端点：避免 round 端点沿路径多出 lineWidth/2(=23px) 的半圆，导致绿色遮罩探到虫头前方
+    octx.lineCap = 'butt';
+    octx.lineJoin = 'round';
+    octx.strokeStyle = '#ffffff';
+    octx.stroke();
+    octx.restore();
+    // 2) 仅保留 719 与遮罩重叠的像素（= 经过部分的树枝配色）
+    octx.globalCompositeOperation = 'source-in';
+    var img = AssetPreloader.get('bg_deco_719');
+    if (img) octx.drawImage(img, 0, 0, 279, 44);
+    octx.globalCompositeOperation = 'source-over';
+    // 3) 贴回主画布（与 image_718 绘制位置/尺寸一致：10,78,279,44）
+    ctx.drawImage(_revealCanvas, ox, oy);
   }
 
   _renderWorm(ctx, ox, oy) {
