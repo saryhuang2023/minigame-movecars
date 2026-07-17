@@ -1999,15 +1999,16 @@ class PlayingEngine {
     }
     // 金币到达 → 播放音效 + 触发 GoldWidget 呼吸 + "+1" 浮字
     // 仅在未结算（推猪进行中）时累加计数；结算后不再有金币飞行，此处不触发（步数不再转金币）
-    if (coinArrived > 0 && this._uiGoldWidget && !this._goldSettled) {
-      audio.play('coin_get');
-      for (var ca = 0; ca < coinArrived; ca++) {
-        this._levelAccumulatedGold++;
-        // 正常推猪：金币落地即 +1，由落地回调驱动数字上滚
-        this._uiGoldWidget.setData(GoldSystem.getGold() + this._levelAccumulatedGold);
-        this._uiGoldWidget.addFloatText();
+      if (coinArrived > 0 && this._uiGoldWidget && !this._goldSettled) {
+        audio.play('coin_get');
+        for (var ca = 0; ca < coinArrived; ca++) {
+          this._levelAccumulatedGold++;
+          // 正常推猪：金币落地即 +1，由落地回调驱动数字上滚
+          this._uiGoldWidget.setData(GoldSystem.getGold() + this._levelAccumulatedGold);
+          this._uiGoldWidget.addFloatText();
+          this._uiGoldWidget.triggerHit();   // 金币砸中：金币控件受击挤压回弹 + 冲击环
+        }
       }
-    }
     // 磁吸光晕：飞行中金币越靠近目标光晕越强
     if (this._uiGoldWidget) {
       this._uiGoldWidget.setMagnetGlow(this._coinFlyEffect.getNearestProgress());

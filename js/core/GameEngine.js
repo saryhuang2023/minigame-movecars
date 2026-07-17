@@ -25,13 +25,14 @@ const { ToastWidget, showToast } = require('../ui/widgets/ToastWidget.js');
 
 // 主菜单入场时序（单一数据源）：分步入场
 //  1) t=500 底部条上移+渐显；设置按钮 + 体力UI 原地渐显（不滑动）
-//  2) t=800 开始按钮渐显+回弹  3) t=1260 左右按钮同批渐显+回弹
+//  2) t=800 开始按钮渐显+回弹  3) t=1260 左右按钮 + 体力图标同批渐显+回弹（体力图标在播放按钮之后出现）
 // 整段入场结束绝对时刻（ms）= 左/右按钮最晚：1260 + 440
 var MENU_ENTRANCE = {
   bottomBar: { stagger: 500,  dur: 480, from: { dx: 0,   dy: 240, scale: 1,   alpha: 0 }, ease: 'cubic' },
   settings:  { stagger: 500,  dur: 460, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 0 }, ease: 'cubic' },
-  // 体力 UI 与设置按钮同批：原地渐显，不滑动
-  stamina:   { stagger: 500,  dur: 460, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 0 }, ease: 'cubic' },
+  // 体力 UI：逐枚「摆盘子」入场在 _renderStaminaUI 内独立计时（见 STAMINA_ENTRANCE_*），
+  // 此处仅占位（alpha:1，不整块淡入），避免与逐枚 alpha 叠加成双重淡入。
+  stamina:   { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 1 }, ease: 'cubic' },
   play:      { stagger: 800,  dur: 460, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
   dress:     { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
   challenge: { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
@@ -44,8 +45,14 @@ var MENU_EXIT_DURATION = 450;
 // 出场（控件滑出）完成后：先等关卡加载就绪，再做菜单背景↔关卡背景交叉淡变。
 // 交叉淡变时长 = 菜单背景渐隐(1→0) + 关卡背景渐显(0→1) 的重叠区间。
 var MENU_CROSSFADE_DURATION = 450;
-// 出场时真正「下拉」的元素集合（底部条 + 开始按钮 + 左下/右下双圆钮）；其余（设置/体力）仅渐隐。
-var MENU_EXIT_BOTTOM_KEYS = { bottomBar: 1, play: 1, dress: 1, challenge: 1 };
+// 出场时真正「下拉」的元素集合（底部条 + 开始按钮 + 左下/右下双圆钮 + 体力 UI）；其余（设置）仅渐隐。
+var MENU_EXIT_BOTTOM_KEYS = { bottomBar: 1, play: 1, dress: 1, challenge: 1, stamina: 1 };
+
+// 体力图标逐枚入场（"摆盘子"：自上方依次落下、落定微回弹），与整体入场解耦、独立计时，
+// 由 _staminaEntranceStart 驱动；即使 _menuEntrance 已结束，最后几枚仍能播完。
+var STAMINA_ENTRANCE_BASE = 1300;   // 第一枚起始（ms，开始按钮/圆钮显示之后）
+var STAMINA_ENTRANCE_STEP = 85;     // 相邻两枚间隔（ms）
+var STAMINA_ENTRANCE_DUR  = 300;    // 单枚落定时长（ms）
 
 class GameEngine {
   constructor() {
@@ -98,8 +105,16 @@ class GameEngine {
     // 体力系统
     this._stamina = new StaminaSystem();
     this._stamina.load();
-    this._staminaIcons = { filled: null, empty: null };
+    this._staminaIcons = { filled: null, empty: null };  // 体力图标：energy.png / energy_empty.png
     this._preloadStaminaIcons();
+    this._staminaShake = null;     // 体力不足抖动状态
+    this._staminaEmbed = null;     // 体力嵌入特效状态
+    this._staminaPendingStart = false;
+    this._staminaEntranceStart = 0;   // 体力图标逐枚入场计时起点（菜单入场开始时写入）
+    this._impactShake = null;      // 砸中目标的全局冲击抖动
+    this._slamSparks = null;       // 砸中火花粒子
+    this._flyTrail = null;         // 飞行残影
+    this._startScale = 1;
     console.log('[GameEngine] StaminaSystem 初始化完成');
 
     // 预加载数据占位（LoadingManager 填充）
@@ -120,17 +135,6 @@ class GameEngine {
 
     console.log('[GameEngine] constructor 完成，启动加载画面...');
     this._startLoading();
-  }
-
-  /** 预加载体力图标 */
-  _preloadStaminaIcons() {
-    var self = this;
-    var filled = wx.createImage();
-    filled.onload = function () { self._staminaIcons.filled = filled; };
-    filled.src = 'assets/images/energy.png';
-    var empty = wx.createImage();
-    empty.onload = function () { self._staminaIcons.empty = empty; };
-    empty.src = 'assets/images/energy_empty.png';
   }
 
   // ===== 加载画面 =====
@@ -218,6 +222,8 @@ class GameEngine {
         startTime: now,
         totalDuration: MENU_ENTRANCE_END, // 整段入场结束（左/右按钮最晚，t=1700ms）
       };
+      this._staminaEntranceStart = now;   // 体力图标逐枚入场同步启动
+      this._menuEntranceDoneAt = 0;
 
       console.log('[GameEngine] 加载完成，启动游戏');
       this.start();
@@ -822,18 +828,6 @@ class GameEngine {
           return;
         }
 
-        // 体力 "+" 按钮
-        if (this._staminaPlusRect &&
-            t.x >= this._staminaPlusRect.x && t.x <= this._staminaPlusRect.x + this._staminaPlusRect.w &&
-            t.y >= this._staminaPlusRect.y && t.y <= this._staminaPlusRect.y + this._staminaPlusRect.h) {
-          var self3 = this;
-          StaminaAdPanel.open(
-            this._stamina.getAdRemainingToday(),
-            function () { self3._onStaminaAdClaim(); }
-          );
-          return;
-        }
-
         // 设置面板打开时，所有触控由面板处理
         if (settingsPanel.isOpen()) {
           settingsPanel.handleTouch(t.x, t.y, e.type);
@@ -1022,6 +1016,11 @@ class GameEngine {
     var safeTop = databus.safeTop;
     var cx = SCREEN_WIDTH / 2;
 
+    // 砸中目标的全局冲击抖动：整段菜单（含按钮/体力 UI/面板）一起抖，强化"砸"的爽感
+    ctx.save();
+    var _impact = this._getImpactShake();
+    if (_impact) ctx.translate(_impact.x, _impact.y);
+
     // ===== 底部功能区域背景（stretched，最底层，在所有按钮之下）=====
     // 底部条入场：上移 + 渐显（t=500 起）
     var barT = this._getMenuTransform('bottomBar');
@@ -1071,16 +1070,12 @@ class GameEngine {
     var setArea = { x: setBtnX, y: setBtnY, w: setAreaRaw.w, h: setAreaRaw.h };
     ctx.restore();
 
-    // ===== 体力 UI（左上角：5 图标 + 倒计时），与设置按钮同批原地渐显 =====
-    var staT = this._getMenuTransform('stamina');
-    ctx.save();
-    ctx.globalAlpha *= staT.alpha;
-    this._renderStaminaUI(ctx, setBtnY + setIconSize);
-    ctx.restore();
+    // （体力 UI 改到底部居中，绘制见开始按钮之后）
 
     // ===== 主按钮：开始游戏（main_start.png 图片按钮）=====
     // Figma: 173 x 113，水平居中，bottom 距屏幕底 64px（基于 393 宽设计稿等比缩放）
     var startScale = SCREEN_WIDTH / 393;
+    this._startScale = startScale;
     var startW = 173 * startScale;
     var startH = 113 * startScale;
     var startX = (SCREEN_WIDTH - startW) / 2;
@@ -1089,6 +1084,7 @@ class GameEngine {
     var startCY = startY + startH / 2;
 
     var playT = this._getMenuTransform('play');
+    var shakeDx = this._getStaminaShakeDx();
     ctx.save();
     ctx.globalAlpha = playT.alpha;
     // 围绕按钮中心：按压缩放 × 入场缩放（easeOutBack 回弹）
@@ -1098,19 +1094,27 @@ class GameEngine {
     if (playT.dy !== 0) {
       ctx.translate(0, playT.dy);
     }
+    if (shakeDx !== 0) {
+      ctx.translate(shakeDx, 0);   // 体力不足：按钮滋滋抖
+    }
 
     if (AssetPreloader.isReady('main_start')) {
       ctx.drawImage(AssetPreloader.get('main_start'), startX, startY, startW, startH);
     }
+    // 开始按钮上的无体力标志位：跟随开始按钮一起入场/出场（alpha 渐显 + 缩放回弹 + 下移 + 抖）
+    this._drawStaminaFlag(ctx, startScale);
     ctx.restore();
 
     this._playBtnRect = { x: startX, y: startY, w: startW, h: startH };
 
-    // 体力飞行动画目标点：指向开始按钮中心（原按钮左侧体力图标已随旧按钮移除）
-    this._staminaBtnIconRect = {
-      x: startX, y: startY, w: startW, h: startH,
-      cx: startCX, cy: startCY
-    };
+    // ===== 体力 UI（底部居中 5 图标 + 开始按钮上的无体力标志位）=====
+    var staT = this._getMenuTransform('stamina');
+    ctx.save();
+    ctx.globalAlpha *= staT.alpha;
+    if (staT.dy !== 0) ctx.translate(0, staT.dy);   // 离场时随底部整体下滑（与开始按钮同批）
+    // 底部 5 个体力图标（绘制在按钮之上，避免被按钮图遮挡）
+    this._renderStaminaUI(ctx, shakeDx);
+    ctx.restore();
 
     // ===== 后门按钮（右下角，5 连击解锁后显示）=====
     var editArea = null;
@@ -1205,8 +1209,8 @@ class GameEngine {
       var _cCx = this._challengeBtnRect.x + this._challengeBtnRect.w / 2;
       var _cCy = this._challengeBtnRect.y + this._challengeBtnRect.h / 2;
 
-      // 入场动画完成后才加阴影（避免与缩放回弹不同步）
-      var _sideShadow = this._isEntranceDone('dress');
+      // 阴影：左右两个按钮完全显示并稳定后，再延迟出现，避免与缩放回弹不同步 / 提前显示
+      var _sideShadow = this._menuEntranceDoneAt && (Date.now() - this._menuEntranceDoneAt >= 120);
 
       // 装扮（右）
       ctx.save();
@@ -1240,158 +1244,361 @@ class GameEngine {
 
     // 体力不足广告弹窗
     StaminaAdPanel.render(ctx);
+
+    ctx.restore();   // 关闭砸中冲击抖动的外层 save
   }
 
   // ========== 体力系统 UI ==========
 
-  /** 渲染左上角体力 UI（5 图标 + 倒计时） */
-  _renderStaminaUI(ctx, safeTop) {
+  /** 计算体力 UI 布局（底部居中 5 图标 + 开始按钮无体力标志位），返回屏幕坐标 */
+  _computeStaminaLayout() {
+    var ST = require('../define/GameDefine.js').GAME.STAMINA;
+    var scale = SCREEN_WIDTH / 393;
+    var n = ST.MAX;
+    var icon = 20 * scale;
+    var gap = 4 * scale;
+    var fw = n * icon + (n - 1) * gap;                 // 116 * scale
+    var fl = (SCREEN_WIDTH - fw) / 2 + 1.5 * scale;     // left: calc(50% - 116/2 + 1.5)
+    var fy = SCREEN_HEIGHT - 56 * scale - 20 * scale;   // bottom:56, height:20
+    var iconRects = [];
+    for (var i = 0; i < n; i++) {
+      var ix = fl + i * (icon + gap);
+      iconRects.push({ x: ix, y: fy, w: icon, h: 20 * scale, cx: ix + icon / 2, cy: fy + 10 * scale });
+    }
+    // 开始按钮（与 renderMenu 同一套计算）
+    var startW = 173 * scale, startH = 113 * scale;
+    var startX = (SCREEN_WIDTH - startW) / 2;
+    var startY = SCREEN_HEIGHT - 64 * scale - startH;
+    // 无体力标志位：开始按钮内居中，bottom:28（相对按钮）
+    var flagW = 20 * scale, flagH = 20 * scale;
+    var flagX = startX + (startW - flagW) / 2;
+    var flagY = startY + startH - 28 * scale - flagH;
+    var flagRect = { x: flagX, y: flagY, w: flagW, h: flagH, cx: flagX + flagW / 2, cy: flagY + flagH / 2 };
+    return { iconRects: iconRects, flagRect: flagRect, scale: scale, icon: icon };
+  }
+
+  /** 预加载体力图标（energy.png 有体力 / energy_empty.png 无体力） */
+  _preloadStaminaIcons() {
+    var self = this;
+    var filled = wx.createImage();
+    filled.onload = function () { self._staminaIcons.filled = filled; };
+    filled.src = 'assets/images/energy.png';
+    var empty = wx.createImage();
+    empty.onload = function () { self._staminaIcons.empty = empty; };
+    empty.src = 'assets/images/energy_empty.png';
+  }
+
+  /** 绘制单个体力图标（energy.png 有体力 / energy_empty.png 无体力；图片未就绪时回退纯色圆角方块） */
+  _drawStaminaIcon(ctx, rect, filled, glow) {
+    var x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+    var img = filled ? this._staminaIcons.filled : this._staminaIcons.empty;
+    ctx.save();
+    if (glow) {
+      ctx.shadowColor = 'rgba(255,210,120,0.95)';
+      ctx.shadowBlur = 16;
+    }
+    if (img) {
+      ctx.drawImage(img, x, y, w, h);
+    } else {
+      // 兜底：图片尚未加载完成
+      var r = Math.min(w * 0.3, Math.floor(w / 2), Math.floor(h / 2));
+      ctx.fillStyle = filled ? '#FFEE00' : '#C16444';
+      this.roundRect(ctx, x, y, w, h, r);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** 绘制开始按钮上的无体力标志位（始终红褐，作为体力插槽） */
+  _drawStaminaFlag(ctx, scale) {
+    var layout = this._computeStaminaLayout();
+    this._drawStaminaIcon(ctx, layout.flagRect, false, false);
+  }
+
+  /** 体力不足抖动的水平偏移（阻尼正弦，滋滋抖几下） */
+  _getStaminaShakeDx() {
+    if (!this._staminaShake) return 0;
+    var p = (Date.now() - this._staminaShake.startTime) / this._staminaShake.duration;
+    if (p >= 1) return 0;
+    var amp = 5 * (this._startScale || 1) * (1 - p);
+    return Math.sin(p * Math.PI * 7) * amp;
+  }
+
+  /** 渲染底部居中体力 UI（5 图标，纯色圆角方块；体力不足时空格发光抖动） */
+  _renderStaminaUI(ctx, shakeDx) {
     var ST = require('../define/GameDefine.js').GAME.STAMINA;
     var count = this._stamina.getCount();
-    var x = 10, y = safeTop + 12;
-    var iconSize = ST.ICON_SIZE, gap = ST.ICON_GAP;
+    var layout = this._computeStaminaLayout();
+    var iconRects = layout.iconRects;
     var flips = this._stamina.updateFlips();
-
-    // 建立 flip 索引快速查找：{ [index]: progress }
     var flipMap = {};
-    for (var fi = 0; fi < flips.length; fi++) {
-      flipMap[flips[fi].index] = flips[fi].progress;
-    }
+    for (var fi = 0; fi < flips.length; fi++) flipMap[flips[fi].index] = flips[fi].progress;
+    var shaking = !!this._staminaShake;
+    var se = Date.now() - (this._staminaEntranceStart || 0);   // 逐枚入场基准时间
 
     for (var i = 0; i < ST.MAX; i++) {
-      var cx = x + i * (iconSize + gap) + iconSize / 2;
-      var cy = y + iconSize / 2;
+      var rect = iconRects[i];
+      var filled = i < count;
       var p = flipMap[i];
-
+      var ent = this._getStaminaIconEntrance(i, se);   // { visible, dx, dy, scale, alpha }
+      if (!ent.visible) continue;
+      ctx.save();
+      ctx.globalAlpha *= ent.alpha;
+      // 围绕图标中心：落定位移 + 缩放回弹（"摆盘子"）
+      ctx.translate(rect.cx + (shakeDx || 0) + ent.dx, rect.cy + ent.dy);
+      ctx.scale(ent.scale, ent.scale);
+      ctx.translate(-rect.cx, -rect.cy);
       if (p != null) {
-        // 翻转动效
-        ctx.save();
-        ctx.translate(cx, cy);
+        // 翻转动效：前半空图标缩小消失，后半黄图标放大出现
         if (p < 0.5) {
-          // 前半段：空图标缩小消失
-          var scaleX = 1 - p * 2;
-          ctx.scale(scaleX, 1);
-          if (this._staminaIcons.empty) {
-            ctx.drawImage(this._staminaIcons.empty, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
-          }
+          ctx.scale(1 - p * 2, 1);
+          this._drawStaminaIcon(ctx, { x: -rect.w / 2, y: -rect.h / 2, w: rect.w, h: rect.h }, false, false);
         } else {
-          // 后半段：实心图标放大出现
-          var scaleX2 = (p - 0.5) * 2;
-          ctx.scale(scaleX2, 1);
-          if (this._staminaIcons.filled) {
-            ctx.drawImage(this._staminaIcons.filled, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
-          }
+          ctx.scale((p - 0.5) * 2, 1);
+          this._drawStaminaIcon(ctx, { x: -rect.w / 2, y: -rect.h / 2, w: rect.w, h: rect.h }, true, false);
         }
-        ctx.restore();
       } else {
-        var img = i < count ? this._staminaIcons.filled : this._staminaIcons.empty;
-        if (img) {
-          ctx.drawImage(img, x + i * (iconSize + gap), y, iconSize, iconSize);
-        }
+        var glow = shaking && !filled;   // 体力不足：空格子发光抖动
+        this._drawStaminaIcon(ctx, rect, filled, glow);
       }
-    }
-
-    // 存储右下角体力图标位置（飞行动画起点：刚变成空的那个）
-    var lastEmptyIdx = count;  // count 是当前体力值，index=count 是第一个空图标
-    this._staminaFirstIconRect = {
-      x: x + lastEmptyIdx * (iconSize + gap), y: y,
-      w: iconSize, h: iconSize,
-      cx: x + lastEmptyIdx * (iconSize + gap) + iconSize / 2,
-      cy: y + iconSize / 2
-    };
-
-    // "+" 按钮（体力未满时显示）
-    var rightX = x + ST.MAX * (iconSize + gap);
-    if (count < ST.MAX) {
-      var plusSize = 20;
-      var plusX = rightX + 2;
-      var plusY = y + (iconSize - plusSize) / 2;
-      ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.beginPath();
-      ctx.arc(plusX + plusSize / 2, plusY + plusSize / 2, plusSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 14px ' + Theme.font.family + '';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('+', plusX + plusSize / 2, plusY + plusSize / 2);
-      ctx.restore();
-      this._staminaPlusRect = { x: plusX, y: plusY, w: plusSize, h: plusSize };
-    } else {
-      this._staminaPlusRect = null;
-    }
-
-    // 倒计时
-    var cdText = this._stamina.getCountdownText();
-    if (cdText) {
-      ctx.save();
-      ctx.font = 'bold 12px ' + Theme.font.family + '';
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(cdText, x, y + iconSize + 4);
       ctx.restore();
     }
   }
 
-  /** 渲染体力飞行动画 */
+  /**
+   * 体力图标逐枚入场变换（"摆盘子"轨迹）：自上方落下、落定微回弹，按索引错开。
+   * 返回 { visible, dx, dy, scale, alpha }；entrance 完成后返回 identity（visible:true, 全 1）。
+   * 与 _menuEntrance 生命周期解耦——即使整体入场已结束，最后几枚仍能播完。
+   */
+  _getStaminaIconEntrance(i, se) {
+    var local = se - STAMINA_ENTRANCE_BASE - i * STAMINA_ENTRANCE_STEP;
+    if (local <= 0) return { visible: false };
+    var t = Math.min(1, local / STAMINA_ENTRANCE_DUR);
+    var ease = Easing.easeOutBack(t, 1.5);                 // 落定回弹
+    var dy = -42 * (1 - ease);                            // 从上方落下 → 0（带微回弹）
+    var scale = 0.65 + 0.35 * Easing.easeOutBack(t, 1.3); // 由小放大 + 落定过冲
+    var alpha = Math.min(1, t / 0.4);
+    return { visible: true, dx: 0, dy: dy, scale: scale, alpha: alpha };
+  }
+
+  /** 渲染体力飞行动画 + 嵌入特效 */
   _renderStaminaFly(ctx) {
+    var ST = require('../define/GameDefine.js').GAME.STAMINA;
+    var scale = this._startScale || 1;
+
+    // 1) 飞向「无体力开始按钮标志位」的黄图标（带速度拉伸 + 拖尾，平滑吸附）
     var fly = this._stamina.updateFly();
-    if (!fly) return;
-    if (fly.done) {
+    if (fly && !fly.done) {
+      this._drawStaminaFlyIcon(ctx, fly, ST.ICON_SIZE * scale);
+    }
+
+    // 2) 飞行结束（平滑抵达）→ 触发嵌入 + 全局冲击抖动 + 火花（目标「被撞击」反馈）
+    if (fly && fly.done) {
       if (this._staminaPendingStart) {
-        var cb = this._staminaPendingStart;
-        this._staminaPendingStart = null;
-        cb();
+        this._staminaPendingStart = false;
+    this._staminaEmbed = { startTime: Date.now(), duration: 420 };
+    this._impactShake = { startTime: Date.now(), duration: 240 };
+        this._spawnSlamSparks(scale);
       }
-      return;
+      this._flyTrail = null;   // 砸中即清空残影
     }
-    if (this._staminaIcons.filled) {
-      // 飞行阶段渐隐，停留阶段保持清晰
-      var alpha = fly.phase === 'hold' ? 1 : (1 - fly.progress * 0.2);
-      var iconSize = 24;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.drawImage(this._staminaIcons.filled,
-        fly.x - iconSize / 2, fly.y - iconSize / 2, iconSize, iconSize);
-      ctx.restore();
+
+    // 3) 嵌入特效：冲击波 + 火花 + 槽位受击挤压回弹 → 正式进关
+    if (this._staminaEmbed) {
+      var e = (Date.now() - this._staminaEmbed.startTime) / this._staminaEmbed.duration;
+      if (e >= 1) {
+        this._staminaEmbed = null;
+        this._slamSparks = null;
+        this.startLastLevel();
+        return;
+      }
+      this._drawStaminaEmbed(ctx, e, scale);
     }
+  }
+
+  /** 飞行中的黄图标：沿速度方向拉伸 + 径向光晕 + 整段拖尾（与金币/道具飞行同语言） */
+  _drawStaminaFlyIcon(ctx, fly, size) {
+    var img = this._staminaIcons.filled;
+    var speed = Math.sqrt(fly.vx * fly.vx + fly.vy * fly.vy);
+    // 拉量与 coin/item 同语言：squash 比例 0.45（克制但明显），上限与"放缓一档"节奏协调
+    var stretch = Math.min(0.55, speed * 0.04);
+    var angle = Math.atan2(fly.vy, fly.vx);
+    var r = Math.min(size * 0.3, size / 2, size / 2);
+
+    // 拖尾：整段飞行都留残影，5 帧、更高透明度、并沿运动方向拉伸，强化"嗖"的速度感
+    if (fly.phase === 'fly') {
+      if (!this._flyTrail) this._flyTrail = [];
+      this._flyTrail.push({ x: fly.x, y: fly.y, stretch: stretch, angle: angle });
+      if (this._flyTrail.length > 5) this._flyTrail.shift();
+      for (var i = 0; i < this._flyTrail.length - 1; i++) {
+        var g = this._flyTrail[i];
+        var ta = 0.28 * (i + 1) / this._flyTrail.length;
+        ctx.save();
+        ctx.globalAlpha = ta;
+        ctx.translate(g.x, g.y);
+        ctx.rotate(g.angle);
+        ctx.scale(1 + g.stretch, 1 - g.stretch * 0.45);
+        if (img) ctx.drawImage(img, -size / 2, -size / 2, size, size);
+        else { ctx.fillStyle = '#FFEE00'; this.roundRect(ctx, -size / 2, -size / 2, size, size, r); ctx.fill(); }
+        ctx.restore();
+      }
+    } else {
+      this._flyTrail = null;
+    }
+
+    // 飞行中径向光晕（速度越快越亮，呼应金币/道具的"蓄能冲刺"观感；中段最亮）
+    var glowAlpha = Math.min(0.6, 0.18 + speed * 0.022);
+    var glowR = size * (0.9 + 0.5 * Math.min(1, speed / 25));
+    ctx.save();
+    ctx.globalAlpha = glowAlpha;
+    var grad = ctx.createRadialGradient(fly.x, fly.y, size * 0.2, fly.x, fly.y, glowR);
+    grad.addColorStop(0, 'rgba(255, 240, 120, 0.95)');
+    grad.addColorStop(0.5, 'rgba(255, 220, 0, 0.4)');
+    grad.addColorStop(1, 'rgba(255, 200, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(fly.x, fly.y, glowR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 主图标：沿速度方向拉伸 + 光晕投影
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,238,0,0.9)';
+    ctx.shadowBlur = 12;
+    ctx.translate(fly.x, fly.y);
+    ctx.rotate(angle);
+    ctx.scale(1 + stretch, 1 - stretch * 0.45);   // 沿运动方向拉长，垂直方向略压
+    if (img) {
+      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.fillStyle = '#FFEE00';
+      this.roundRect(ctx, -size / 2, -size / 2, size, size, r);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** 砸中瞬间的火花粒子（一次性生成，向外飞散淡出） */
+  _spawnSlamSparks(scale) {
+    var n = 7, arr = [];
+    for (var i = 0; i < n; i++) {
+      var ang = (Math.PI * 2) * (i / n) + Math.random() * 0.5;
+      arr.push({ ang: ang, spd: 0.8 + Math.random() * 0.7 });
+    }
+    this._slamSparks = arr;
+  }
+
+  /** 嵌入特效：冲击波环 + 火花 + 黄图标从 1.4 迅速收敛 + 槽位受击挤压回弹 */
+  _drawStaminaEmbed(ctx, p, scale) {
+    var layout = this._computeStaminaLayout();
+    var f = layout.flagRect;
+    var cx = f.cx, cy = f.cy;
+    var sizeBase = 20 * scale;
+    var img = this._staminaIcons.filled;
+
+    // 1) 冲击波环：快速扩散 + 淡出（stroke 更有"冲击"感）
+    var ringP = Math.min(1, p / 0.7);
+    var ringR = sizeBase * 0.4 + Easing.easeOutCubic(ringP) * sizeBase * 2.1;
+    ctx.save();
+    ctx.globalAlpha = (1 - ringP) * 0.9;
+    ctx.lineWidth = (3 * scale) * (1 - ringP) + 1;
+    ctx.strokeStyle = '#FFF6B0';
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 2) 火花飞散
+    if (this._slamSparks) {
+      var reach = sizeBase * 2.3;
+      for (var i = 0; i < this._slamSparks.length; i++) {
+        var s = this._slamSparks[i];
+        var d = Easing.easeOutCubic(p) * reach * s.spd;
+        var x = cx + Math.cos(s.ang) * d;
+        var y = cy + Math.sin(s.ang) * d;
+        ctx.save();
+        ctx.globalAlpha = (1 - p) * 0.9;
+        ctx.fillStyle = '#FFF3B0';
+        ctx.beginPath();
+        ctx.arc(x, y, 2.4 * scale * (1 - p) + 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 3) 槽位被砸的"挤压回弹"：先轻下陷，再回弹过冲（幅度比之前柔和）
+    var slotS;
+    if (p < 0.25) slotS = 1 - (p / 0.25) * 0.18;             // 受击下陷（更浅）
+    else slotS = 0.82 + Easing.easeOutBack((p - 0.25) / 0.75) * 0.18;  // 回弹到 1.0
+
+    // 4) 嵌入的黄图标：从 1.4 迅速收敛到 1.0
+    var iconP = Math.min(1, p / 0.5);
+    var s = 1.4 - 0.4 * Easing.easeOutCubic(iconP);
+    var r = Math.min(sizeBase * 0.3, sizeBase / 2, sizeBase / 2);
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,238,0,0.95)';
+    ctx.shadowBlur = 16;
+    ctx.translate(cx, cy);
+    ctx.scale(s * slotS, s * slotS);
+    if (img) {
+      ctx.drawImage(img, -sizeBase / 2, -sizeBase / 2, sizeBase, sizeBase);
+    } else {
+      ctx.fillStyle = '#FFEE00';
+      this.roundRect(ctx, -sizeBase / 2, -sizeBase / 2, sizeBase, sizeBase, r);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** 砸中目标的全局冲击抖动偏移（菜单整段一起抖） */
+  _getImpactShake() {
+    if (!this._impactShake) return null;
+    var now = Date.now();
+    var e = (now - this._impactShake.startTime) / this._impactShake.duration;
+    if (e >= 1) { this._impactShake = null; return null; }
+    var scale = this._startScale || 1;
+    var amp = (1 - e) * 3.5 * scale;           // 减弱幅度，缓冲衰减
+    var ox = Math.sin(e * Math.PI * 5.5) * amp;
+    var oy = Math.cos(e * Math.PI * 4.5) * amp * 0.7;
+    return { x: ox, y: oy };
   }
 
   /** 处理开始游戏按钮点击 */
   _onClickPlayBtn() {
-    // 飞行动画进行中 → 忽略
-    if (this._stamina.isFlying()) return;
+    // 飞行动画 / 嵌入特效进行中 → 忽略
+    if (this._stamina.isFlying() || this._staminaEmbed) return;
     var self = this;
     // 先同步体力
     this._stamina.load();
 
-    // 有体力 → 消耗后飞行动画 → 进入关卡
+    // 有体力 → 消耗 1 个 → 黄图标飞向「无体力开始按钮标志位」→ 嵌入 → 进关
     if (this._stamina.canPlay()) {
+      var oldCount = this._stamina.getCount();
       this._stamina.consume();
-      // 启动飞行动画
-      var from = this._staminaFirstIconRect;
-      var to = this._staminaBtnIconRect;
-      if (from && to) {
-        this._stamina.startFly(from.cx, from.cy, to.cx, to.cy, null);
-        this._staminaPendingStart = function () { self.startLastLevel(); };
+      var newCount = this._stamina.getCount();          // = oldCount - 1
+      var layout = this._computeStaminaLayout();
+      var fromIcon = layout.iconRects[newCount];         // 刚变空的那个槽
+      var flag = layout.flagRect;
+      if (fromIcon && flag) {
+        this._stamina.startFly(fromIcon.cx, fromIcon.cy, flag.cx, flag.cy, null);
+        this._staminaPendingStart = true;               // fly 结束后触发嵌入→进关
       } else {
         self.startLastLevel();
       }
       return;
     }
 
-    // 体力不足 → 弹窗
-    if (this._stamina.getAdRemainingToday() > 0) {
-      var self = this;
-      StaminaAdPanel.open(
-        this._stamina.getAdRemainingToday(),
-        function () { self._onStaminaAdClaim(); }
-      );
-    } else {
-      StaminaAdPanel.openNoAds();
-    }
+    // 体力不足 → 按钮滋滋抖 + 空格发光抖，随后弹广告窗补救
+    this._staminaShake = { startTime: Date.now(), duration: 420 };
+    var hasAds = this._stamina.getAdRemainingToday() > 0;
+    setTimeout(function () {
+      if (hasAds) {
+        StaminaAdPanel.open(self._stamina.getAdRemainingToday(),
+          function () { self._onStaminaAdClaim(); });
+      } else {
+        StaminaAdPanel.openNoAds();
+      }
+    }, 300);
   }
 
   _onClickChallengeBtn() {
@@ -1409,12 +1616,19 @@ class GameEngine {
   update() {
     databus.frame++;
 
+    // 体力不足抖动结束 → 清状态
+    if (this._staminaShake &&
+        Date.now() - this._staminaShake.startTime >= this._staminaShake.duration) {
+      this._staminaShake = null;
+    }
+
     // 菜单入场动画进行中 → 屏蔽输入
     if (this._menuEntrance && this._menuEntrance.phase === 'slideIn') {
       var elapsed = Date.now() - this._menuEntrance.startTime;
       if (elapsed >= this._menuEntrance.totalDuration) {
         this._menuEntrance.phase = 'done';
         this._menuEntrance = null;
+        this._menuEntranceDoneAt = Date.now();
       }
       return;
     }
@@ -1501,6 +1715,8 @@ class GameEngine {
             startTime: Date.now(),
             totalDuration: MENU_ENTRANCE_END,
           };
+          this._staminaEntranceStart = Date.now();   // 返回主菜单：体力图标重新逐枚入场
+          this._menuEntranceDoneAt = 0;
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;

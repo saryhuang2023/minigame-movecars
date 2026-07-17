@@ -48,6 +48,13 @@ class GoldWidget extends UIComponent {
   this._CELEBRATE_AMPLITUDE = 0.30; // 图标 +30% 缩放
   this._CELEBRATE_GLOW_PEAK = 0.85; // 光晕更亮
 
+  // 受击（被金币砸中）效果：挤压回弹 + 扩散冲击环
+  this._hitActive = false;
+  this._hitStart = 0;
+  this._HIT_DURATION = 340;        // ms
+  this._HIT_SQUASH = 0.18;         // 最大压扁比例
+  this._HIT_RING_MAX = 1.7;        // 冲击环最大半径（相对 COIN_SIZE 倍数）
+
 }
 }
 
@@ -120,6 +127,35 @@ GoldWidget.prototype.setMagnetGlow = function (intensity) {
   this._magnetGlow = Math.max(0, Math.min(1, intensity));
 };
 
+/** 金币砸中时触发受击反馈：图标先压扁再回弹过冲，并扩散冲击环 */
+GoldWidget.prototype.triggerHit = function () {
+  this._hitStart = Date.now();
+  this._hitActive = true;
+};
+
+/** 受击挤压回弹缩放 + 冲击环参数 */
+GoldWidget.prototype._getHitScale = function () {
+  if (!this._hitActive) return { scale: 1, ring: 0, ringAlpha: 0 };
+  var elapsed = Date.now() - this._hitStart;
+  if (elapsed >= this._HIT_DURATION) {
+    this._hitActive = false;
+    return { scale: 1, ring: 0, ringAlpha: 0 };
+  }
+  var t = elapsed / this._HIT_DURATION; // 0..1
+  var s;
+  if (t < 0.25) {
+    // 先快速压扁到 (1 - SQUASH)
+    s = 1 - this._HIT_SQUASH * Easing.easeOutCubic(t / 0.25);
+  } else {
+    // 再 easeOutBack 过冲回正（中途略大于 1，有"弹回"感）
+    var rt = (t - 0.25) / 0.75;
+    s = (1 - this._HIT_SQUASH) + this._HIT_SQUASH * Easing.easeOutBack(rt, 2.2);
+  }
+  var ring = COIN_SIZE * (0.6 + t * this._HIT_RING_MAX);
+  var ringAlpha = (1 - t) * 0.5;
+  return { scale: s, ring: ring, ringAlpha: ringAlpha };
+};
+
 /** 满额庆祝（全部金币到齐，方案D）— 强呼吸 + 金辉光晕 */
 GoldWidget.prototype.celebrate = function () {
   this._celebrateStart = Date.now();
@@ -151,6 +187,7 @@ GoldWidget.prototype.render = function (ctx) {
   var baseY = this.y;
 
   var celeb = this._getCelebrateScale();
+  var hit = this._getHitScale();
 
   // === 金币图标（drop-shadow + 呼吸缩放 + 磁吸光晕） ===
   if (AssetPreloader.isReady('coin')) {
@@ -159,7 +196,7 @@ GoldWidget.prototype.render = function (ctx) {
     var coinCX = coinX + COIN_SIZE / 2;
     var coinCY = coinY + COIN_SIZE / 2;
 
-    var iconScale = celeb.icon;  // 满额庆祝缩放（已无普通呼吸脉冲）
+    var iconScale = celeb.icon * hit.scale;  // 满额庆祝缩放 × 受击挤压回弹
 
     // --- 庆祝金辉光晕（满额庆祝，从金币中心向外放射） ---
     if (celeb.glow > 0.01) {
@@ -191,6 +228,18 @@ GoldWidget.prototype.render = function (ctx) {
       ctx.beginPath();
       ctx.arc(coinCX, coinCY, glowRadius, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    }
+
+    // --- 受击冲击环（金币砸中瞬间从金币中心向外扩散） ---
+    if (hit.ringAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = hit.ringAlpha;
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(coinCX, coinCY, hit.ring, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
     }
 

@@ -6,12 +6,13 @@ var ST = GameDefine.GAME.STAMINA;
 var STORAGE_KEY = 'player_stamina';
 
 // ========== 飞行动画配置（自行调参） ==========
+// 与金币/道具飞行同语言：单段二次贝塞尔 + easeInOutCubic，
+// 中段最快、两端减速 —— 平滑上抛弧、轻轻吸附进目标（不再「俯冲砸下」）。
 var FLY = {
-  DURATION: 1200,       // 飞行阶段时长 ms（从起点飞到终点）
-  HOLD: 600,           // 到达后停留时长 ms
-  ICON_SIZE: 24,        // 飞行中图标显示尺寸 px（与左上角一致）
-  ARC_HEIGHT: 80,       // 弧线高度 px（抛物线顶点偏移，正值向上拱）
-  EASING: 'easeOutCubic',  // 缓动类型（easeOutCubic / easeOutQuad）
+  DUR: 780,         // 飞行总时长 ms（与金币飞行对齐）
+  HOLD: 60,         // 抵达后短暂停留，随后触发「嵌入」特效
+  ICON_SIZE: 20,    // 飞行中图标显示尺寸 px（与底部一致）
+  ARC_HEIGHT: 80,   // 弧线控制点相对「起→终」直线中点上移量 px（越大越抛）
 };
 
 // ========== 体力新增动效配置（自行调参） ==========
@@ -165,47 +166,48 @@ StaminaSystem.prototype.startFly = function (fromX, fromY, toX, toY, callback) {
     startTime: Date.now(),
     fromX: fromX, fromY: fromY,
     toX: toX, toY: toY,
+    ctrlX: null, ctrlY: null,          // 贝塞尔控制点（二次曲线，上抛弧），首次 update 时计算
+    lastX: fromX, lastY: fromY,        // 上一帧坐标，用于估算速度（做拉伸/残影）
     phase: 'fly'
   };
   this._flyCallback = callback || null;
 };
 
-/** 更新飞行动画，返回 { x, y, progress, phase, done } */
+/** 更新飞行动画，返回 { x, y, vx, vy, progress, phase, done } */
 StaminaSystem.prototype.updateFly = function () {
   if (!this._flyAnim) return null;
-  var elapsed = Date.now() - this._flyAnim.startTime;
+  var now = Date.now();
   var a = this._flyAnim;
+  var elapsed = now - a.startTime;
 
-  if (a.phase === 'fly') {
-    var rawT = Math.min(elapsed / FLY.DURATION, 1);
-    var t;
-    if (FLY.EASING === 'easeOutQuad') {
-      t = rawT * (2 - rawT);
-    } else {
-      t = 1 - Math.pow(1 - rawT, 3);  // easeOutCubic
-    }
-    // 二次贝塞尔弧线：右上抛出 → 远飞再弧线转回
-    var cpx = a.fromX + (a.toX - a.fromX) * 0.4 + 80;
-    var cpy = Math.min(a.fromY, a.toY) - FLY.ARC_HEIGHT * 2.2;
-    var mt = 1 - t;
-    var x = mt * mt * a.fromX + 2 * mt * t * cpx + t * t * a.toX;
-    var y = mt * mt * a.fromY + 2 * mt * t * cpy + t * t * a.toY;
-    if (rawT >= 1) {
-      a.phase = 'hold';
-      a.startTime = Date.now();
-    }
-    return { x: x, y: y, progress: rawT, phase: 'fly', done: false };
+  // 控制点：起→终 直线中点，向上抬高 ARC_HEIGHT，形成平滑上抛弧（与金币飞行同语言）
+  if (a.ctrlX == null) {
+    a.ctrlX = (a.fromX + a.toX) / 2;
+    a.ctrlY = Math.min(a.fromY, a.toY) - FLY.ARC_HEIGHT;
   }
 
-  // hold 阶段：停在终点
+  // ① 飞行段：二次贝塞尔 + easeInOutCubic（中段最快、两端减速 → 平滑吸附，无硬砸）
+  if (a.phase === 'fly') {
+    var rawT = Math.min(elapsed / FLY.DUR, 1);
+    var t = rawT < 0.5 ? 4 * rawT * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 3) / 2;
+    var mt = 1 - t;
+    var x = mt * mt * a.fromX + 2 * mt * t * a.ctrlX + t * t * a.toX;
+    var y = mt * mt * a.fromY + 2 * mt * t * a.ctrlY + t * t * a.toY;
+    var vx = x - a.lastX, vy = y - a.lastY;
+    a.lastX = x; a.lastY = y;
+    if (rawT >= 1) { a.phase = 'hold'; a.startTime = now; }
+    return { x: x, y: y, vx: vx, vy: vy, progress: rawT, phase: 'fly', done: false };
+  }
+
+  // ② 抵达停留：极短，随后触发「嵌入」特效
   if (a.phase === 'hold') {
     var holdT = elapsed / FLY.HOLD;
     if (holdT >= 1) {
       this._flyAnim = null;
       if (this._flyCallback) { var cb = this._flyCallback; this._flyCallback = null; cb(); }
-      return { x: a.toX, y: a.toY, progress: 1, phase: 'hold', done: true };
+      return { x: a.toX, y: a.toY, vx: 0, vy: 0, progress: 1, phase: 'hold', done: true };
     }
-    return { x: a.toX, y: a.toY, progress: holdT, phase: 'hold', done: false };
+    return { x: a.toX, y: a.toY, vx: 0, vy: 0, progress: holdT, phase: 'hold', done: false };
   }
 
   return null;
