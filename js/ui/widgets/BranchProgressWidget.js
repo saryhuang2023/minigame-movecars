@@ -1,16 +1,16 @@
-// 树枝进度条 — 小虫沿不规则弯曲树枝移动表示关卡进度
+// 树枝进度条 — 小蜜蜂沿不规则弯曲树枝移动表示关卡进度
 // BranchProgressWidget：纯展示组件，进度由 PlayingEngine 推猪/结算时驱动
 //
 // 设计（用户确认 2026-07-15）：
 //  - 背景框 image_718 已由 PlayingEngine 绘制于 (10,61,279,85)，本组件只画「轨迹 + 小虫 + 调试曲线 + 花朵」
 //  - 路径：9 个控制点（相对框左上，279×85 坐标系）→ Catmull-Rom 加密 → 弧长参数化保证匀速
 //  - 进度：分母 = 4 星积分门槛（starScores[3]），分子 = 已获积分（推猪 +1、结算剩余步数转化 +2）
-//  - 小虫：头朝右；静态图（动画未制作，不加 sin 摆动），位置走 lerp 缓动「爬」过去
-//  - 越界（积分超上限）：小虫已到终点、不再前进，也不旋转；保持终点姿态（无"到顶后打转"）
+//  - 小蜜蜂：头朝右；静态图（动画未制作，不加 sin 摆动），位置走 lerp 缓动「飞/爬」过去
+//  - 越界（积分超上限）：小蜜蜂已到终点、不再前进，也不旋转；保持终点姿态（无"到顶后打转"）
 //  - 已走过的路：用 image_719（与 image_718 同尺寸同轨迹的「已走过」配色图）沿树枝路径做进度揭示（替代旧半透明绿线染色方案）
 //  - 花朵：树枝上按 积分档位(s1..s4)/4星分 的位置放 1~4 朵花；积分跨档即「弹性绽放」获得动画；
 //          4 星（彩色）特效（魔法棒施法，2026-07-15）：4 星花一开始就是大彩花；到顶后 4 星旋转 500ms、
-//          旋转到 200ms 时甩出花瓣粒子簇（魔法感）飞向 3 星，3 星旋转 200ms 同时覆彩色；
+//          旋转到 200ms 时甩出「彩星」（对齐金币飞行动画：弧线抛出+弹出缩放+速度拉伸+拖尾+光晕）飞向 3 颗普通星，3 星旋转 200ms 同时覆彩色；
 //          逐朵（3→2→1）施法，三朵全彩后结束并弹出结算面板。
 //  - 调试：SHOW_DEBUG=true 时画出 Catmull-Rom 曲线 + 控制点（测试期核对路径）
 
@@ -47,9 +47,11 @@ var CTRL = [
   { x: 236, y: 5  }, // P9
 ];
 
-var WORM_W = 42;
-var WORM_H = 23;
-var WORM_HEAD_AHEAD = 7;      // 头部锚点相对「路径点」的前冲量（px）：头部边缘中心位于路径点前方 7px（虫头微微探出进度点）
+var WORM_W = 18;             // 小蜜蜂绘制尺寸（design px）：图源 level_worm.png 已替换为蜜蜂，18×18
+var WORM_H = 18;
+// 蜜蜂锚点 = 图像中心点，直接对齐路径点（不再前探头部）。
+var BEE_SPIN_SPEED = (Math.PI * 2) / 0.7;  // 原地转圈角速度（rad/s）：约每 0.7s 转一圈
+var BEE_SPIN_WINDOW = 450;    // 抵达尽头后、若「积分仍持续增加」(距上次加分 < 此值 ms) 则原地转圈；超时停止
 var TRAIL_W = 12;             // 绿色轨迹线宽（仅作 image_719 未就绪时的兜底）
 var REVEAL_W = 46;            // 已走过路径「揭示遮罩」描边宽度（>图高44，确保覆盖整条树枝厚度；719 仅树枝处有像素，过宽不溢出）
 var LERP = 0.15;              // 每帧缓动系数（约 60fps）
@@ -59,9 +61,17 @@ var FLOWER_BURST_MS = 650;     // 获得瞬间光环 + 星点爆发持续
 var FLOWER_ANCHOR = 0;         // 花朵锚点比例：0 = 花朵「中心点」直接对齐路径点（虫头撞到的是花中心）
 // ===== 4 星「魔法棒施法」序列（用户 2026-07-15 指定）=====
 var FOUR_ROT_MS = 300;        // 4 星花旋转施法时长
-var FOUR_LAUNCH_AT = 0;     // 旋转进行到该时刻甩出花瓣粒子簇
-var PETAL_FLY_MS = 800;       // 花瓣粒子飞向目标花的时长
-var PETAL_COUNT = 8;          // 每簇花瓣粒子数
+var FOUR_LAUNCH_AT = 0;     // 旋转进行到该时刻甩出彩星
+// 彩星飞向 3 颗普通星：对齐「金币飞行动画」观感（弧线抛出 + 弹出缩放 + 沿运动方向速度拉伸 + 拖尾 + 飞行光晕）
+var STARS_FLY_MS = 720;       // 彩星飞行时长（同金币飞行节奏：有冲劲、利落）
+var STARS_PER_CAST = 1;       // 每朵目标花施法时飞出 1 朵彩星（共 3 朵，分别飞向 3 颗普通星）
+var STARS_ARC_BOW = 26;       // 飞行弧线垂直偏移（design px，沿连线中点垂直甩出；进度条小框空间有限，用垂直弧避免在窄框内飞出界）
+var STARS_POP_PEAK = 1.30;    // 弹出峰值缩放（对齐金币飞行 POP_PEAK_SCALE）
+var STARS_END_SCALE = 0.85;   // 到达缩放（对齐金币飞行 END_SCALE）
+var STARS_STRETCH_GAIN = 0.05;// 速度拉伸系数（对齐金币飞行"有劲"观感）
+var STARS_STRETCH_MAX = 0.5;  // 最长拉伸上限
+var STARS_TRAIL = 4;          // 拖尾残影数（对齐金币飞行拖尾）
+var STARS_TRAIL_MS = 26;      // 拖尾残影间距 ms
 var TARGET_COLOR_MS = 200;    // 目标花「旋转 + 覆彩色」时长
 var FOUR_CAST_TARGETS = [2, 1, 0]; // 施法顺序：先 3 星、再 2 星、再 1 星，逐一覆彩色
 var FOUR_CAST_DELAYS = [400, 600, 800]; // ★每朵花的施法「开始延迟」(ms，相对 4 星特效起点)。与 FOUR_CAST_TARGETS 一一对应：第 0 项=先施法的花、第 1 项=其次……独立计时，不再串行等前一朵播完。改这里即可控制每朵开始时间（[0,0,0]=三朵同时开）。
@@ -110,6 +120,16 @@ function buildArc(dense) {
   return { cum: cum, total: total };
 }
 
+// 缓动（对齐金币飞行动画所用 easeInOutCubic / easeOutBack）
+function easeInOutCubic(t) {
+  if (t < 0.5) return 4 * t * t * t;
+  return 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+function easeOutBack(t) {
+  var c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
 // 花朵获得动画曲线：蓄力(花苞微缩) → 弹性绽放(花瓣散开 + 旋转 overshoot) → 回弹(settle)
 // 返回 { scale, rot, bloom }；bloom 控制花瓣聚拢(0)→散开(1)，让「获得」像真花开放而非橡皮缩放。
 function flowerPop(pd) {
@@ -146,6 +166,9 @@ class BranchProgressWidget extends UIComponent {
     this._displayed = 0;         // 当前显示进度 0..1（lerp 逼近 _progress）
     this._progress = 0;          // 目标进度 0..1
     this._lastUpdate = 0;
+    this._beeSpinAngle = 0;          // 蜜蜂原地转圈累计角（rad）；仅在「抵达尽头且积分仍增加」时累加
+    this._lastScoreGainTime = 0;     // 最近一次「积分增加」时间戳（用于判断是否仍在持续加分 → 转圈）
+    this._lastScoreCurrent = 0;      // 上次 setScore 的 current 值（仅当严格增大时记为一次加分）
 
     // ===== 星级花朵 =====
     this._starScores = [0, 0, 0, 0]; // [s1,s2,s3,s4]
@@ -153,7 +176,7 @@ class BranchProgressWidget extends UIComponent {
     this._currentTier = 0;           // 已达成最高星级（0~4）
     this._flowers = this._makeFlowers();
     this._preplacedVisible = true;   // 4 朵小花从进关即常驻树枝（用户确认：关卡一开始就有，随进度原地长大），非结算专属
-    this._petals = [];               // 4 星施法甩出的花瓣粒子簇
+    this._petals = [];               // 4 星施法甩出的彩星粒子（对齐金币飞行动画）
     this._stepFlowers = [];          // 步数→飞小花 粒子簇（从步数框飞向 4 星花）
     this._fourCasts = null;          // 4 星施法：每朵花独立的施法记录（含各自 startAt），取代串行状态机
     this._fourSpinStart = 0;         // 4 星源花最近一次甩花瓣的旋转起点时间戳（重叠施法时各自触发）
@@ -196,7 +219,7 @@ class BranchProgressWidget extends UIComponent {
     this._preplacedVisible = true;   // 常驻：进关即显示 4 朵小花朵（结算时未达成的也以小花形态在树枝上，原地长大）
   }
 
-  /** 步数→飞小花：从步数框(fromX,fromY)飞出一「小堆」彩虹小花，沿弧线飞向 4 星花朵位置（纯视觉，不新增金币） */
+  /** 步数→飞小星星：从步数框(fromX,fromY)飞出一「小堆」小星星，沿弧线飞向 4 星花朵位置（纯视觉，不新增金币） */
   spawnStepFlowers(count, fromX, fromY) {
     var target = this._flowerCenter(3);
     var now = Date.now();
@@ -240,6 +263,11 @@ class BranchProgressWidget extends UIComponent {
     if (t < 0) t = 0;
     if (t > 1) t = 1;
     this._progress = t;
+    // 记录「积分仍在增加」：current 严格增大 ⇒ 标记最近一次加分时刻（供蜜蜂尽头转圈判定）
+    if (current > this._lastScoreCurrent) {
+      this._lastScoreGainTime = Date.now();
+    }
+    this._lastScoreCurrent = current;
     // 星级跨档检测：实时触发花朵获得动画 / 4 星流星特效
     if (this._starReady) {
       var newTier = StarScores.getStarTier(current, this._starScores);
@@ -326,40 +354,37 @@ class BranchProgressWidget extends UIComponent {
       var d = (FOUR_CAST_DELAYS && FOUR_CAST_DELAYS[i] != null) ? FOUR_CAST_DELAYS[i] : 0;
       return { target: t, startAt: d, launched: false, colored: false, launchStart: 0 };
     });
-    // 总时长 = 所有花里「startAt + 旋转甩出(FOUR_LAUNCH_AT) + 飞行(PETAL_FLY_MS) + 覆彩(TARGET_COLOR_MS)」的最大值，再加尾部缓冲。
+    // 总时长 = 所有花里「startAt + 旋转甩出(FOUR_LAUNCH_AT) + 飞行(STARS_FLY_MS) + 覆彩(TARGET_COLOR_MS)」的最大值，再加尾部缓冲。
     // 不再用「数量 × 单朵周期」，因为各花并行、重叠。
     var maxEnd = 0;
     for (var i = 0; i < this._fourCasts.length; i++) {
-      var end = this._fourCasts[i].startAt + FOUR_LAUNCH_AT + PETAL_FLY_MS + TARGET_COLOR_MS;
+      var end = this._fourCasts[i].startAt + FOUR_LAUNCH_AT + STARS_FLY_MS + TARGET_COLOR_MS;
       if (end > maxEnd) maxEnd = end;
     }
     this._fourStarTotalMs = maxEnd + FOUR_TAIL_MS;
   }
 
-  /** 从 4 星花甩出一簇花瓣粒子（魔法感）飞向目标花 */
+  /** 从 4 星花甩出 1 朵「彩星」飞向目标普通星（对齐金币飞行动画：弧线抛出 + 弹出缩放 + 速度拉伸 + 拖尾 + 光晕） */
   _launchPetalBurst(targetIdx) {
     var origin = this._flowerCenter(3);
     var target = this._flowerCenter(targetIdx);
     var now = Date.now();
     var dx = target.x - origin.x, dy = target.y - origin.y;
     var len = Math.sqrt(dx * dx + dy * dy) || 1;
-    var px = -dy / len, py = dx / len; // 垂直方向（用于甩出弧线）
-    var colors = ['#FF5C8A', '#FFB13D', '#5CCBFF', '#9B6CFF', '#7CF2C0', '#FFE14D'];
-    for (var k = 0; k < PETAL_COUNT; k++) {
-      var f = (k + 1) / (PETAL_COUNT + 1);
-      // 控制点：沿连线在中段、朝垂直方向甩出一小段弧，形成「撒出去」的魔法轨迹
-      var bow = (12 + Math.random() * 22) * (k % 2 === 0 ? 1 : -1);
+    var px = -dy / len, py = dx / len; // 垂直方向（用于弧线甩出）
+    for (var k = 0; k < STARS_PER_CAST; k++) {
+      // 控制点：连线中点朝垂直方向甩出一段弧，形成「抛出去」的轨迹（窄进度条内不飞出界）
+      var bow = STARS_ARC_BOW * (k % 2 === 0 ? 1 : -1);
       this._petals.push({
         fromX: origin.x, fromY: origin.y,
         toX: target.x, toY: target.y,
-        cx: origin.x + dx * f + px * bow,
-        cy: origin.y + dy * f + py * bow,
-        start: now + Math.random() * 40,
-        dur: PETAL_FLY_MS - 40 + Math.random() * 80,
+        cx: (origin.x + target.x) / 2 + px * bow,
+        cy: (origin.y + target.y) / 2 + py * bow,
+        start: now,
+        dur: STARS_FLY_MS,
         rot: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() * 2 - 1) * 8,
-        size: 5 + Math.random() * 4,
-        color: colors[k % colors.length],
+        rotSpeed: (Math.random() * 2 - 1) * 4,
+        size: 20 + Math.random() * 6,
       });
     }
   }
@@ -400,6 +425,17 @@ class BranchProgressWidget extends UIComponent {
     this._displayed += (this._progress - this._displayed) * k;
     if (Math.abs(this._progress - this._displayed) < 0.0005) this._displayed = this._progress;
 
+    // 蜜蜂原地转圈：抵达路径尽头（progress 已满）且积分仍在持续增加 ⇒ 持续旋转；否则复位静止
+    var atEnd = this._displayed >= 0.998;
+    var scoreStillRising = (now - this._lastScoreGainTime) < BEE_SPIN_WINDOW;
+    if (atEnd && scoreStillRising) {
+      this._beeSpinAngle += BEE_SPIN_SPEED * (dt / 1000);
+      if (this._beeSpinAngle > Math.PI * 2) this._beeSpinAngle -= Math.PI * 2;
+    } else {
+      this._beeSpinAngle = 0;
+    }
+
+
     // 花朵获得/放大动画收尾（popStart 置 0 表示静止）
     for (var fi = 0; fi < this._flowers.length; fi++) {
       var f = this._flowers[fi];
@@ -408,8 +444,8 @@ class BranchProgressWidget extends UIComponent {
       }
     }
     // 4 星「魔法棒施法」：每朵花按各自 startAt 独立计时，互不等待（并行/重叠均可）。
-    // 单朵时间轴（相对其 startAt）：[0, FOUR_LAUNCH_AT) 旋转蓄力 → 第 FOUR_LAUNCH_AT 甩花瓣 →
-    // [FOUR_LAUNCH_AT, FOUR_LAUNCH_AT+PETAL_FLY_MS) 花瓣飞行 → 到期目标花旋转覆彩 → +TARGET_COLOR_MS 该朵结束。
+    // 单朵时间轴（相对其 startAt）：[0, FOUR_LAUNCH_AT) 旋转蓄力 → 第 FOUR_LAUNCH_AT 甩彩星 →
+    // [FOUR_LAUNCH_AT, FOUR_LAUNCH_AT+STARS_FLY_MS) 彩星飞行 → 到期目标花旋转覆彩 → +TARGET_COLOR_MS 该朵结束。
     if (this._fourStarActive && this._fourCasts) {
       var base = this._fourStarStart;
       var allDone = true;
@@ -424,13 +460,13 @@ class BranchProgressWidget extends UIComponent {
           this._fourSpinStart = now;      // 4 星源花旋转（重叠施法时各自重置，连续转）
           this._launchPetalBurst(c.target);
         }
-        if (!c.colored && e >= (FOUR_LAUNCH_AT + PETAL_FLY_MS)) {
+        if (!c.colored && e >= (FOUR_LAUNCH_AT + STARS_FLY_MS)) {
           c.colored = true;
           var ctf = this._flowers[c.target];
           if (ctf) { ctf.colored = true; ctf.finalSize = 25; ctf.popStart = now; ctf.popKind = 'fourstar'; }
         }
         // 该朵是否彻底结束：覆彩 + TARGET_COLOR_MS 已走完
-        if (e < (FOUR_LAUNCH_AT + PETAL_FLY_MS + TARGET_COLOR_MS)) allDone = false;
+        if (e < (FOUR_LAUNCH_AT + STARS_FLY_MS + TARGET_COLOR_MS)) allDone = false;
       }
       if (allDone) this._fourStarActive = false; // 所有花全彩且各自动画结束 → 结算面板可弹出
     }
@@ -452,10 +488,10 @@ class BranchProgressWidget extends UIComponent {
     // 一次性诊断：确认本组件渲染管线已接入，并报告虫图资源就绪状态
     if (!this._diagDone) {
       this._diagDone = true;
-      console.log('[BranchProgress] render 已接入 | level_worm就绪=' + AssetPreloader.isReady('level_worm') +
+      console.log('[BranchProgress] render 已接入 | level_worm(蜜蜂)就绪=' + AssetPreloader.isReady('level_worm') +
         ' | big_flower就绪=' + AssetPreloader.isReady('big_flower') +
         ' | 初始进度=' + this._progress.toFixed(3) +
-      ' | 虫图=' + (AssetPreloader.isReady('level_worm') ? 'OK' : '兜底自绘'));
+      ' | 蜜蜂图=' + (AssetPreloader.isReady('level_worm') ? 'OK' : '兜底自绘'));
     }
     // 整体下移 BRANCH_TOP_PAD，使虫路径对齐背景框内实际树枝图；控件原点 this.y 已对齐新图顶(78)，控制点按新图框标 → pad=0 直接贴合
     var ox = this.x, oy = this.y + BRANCH_TOP_PAD;
@@ -592,20 +628,21 @@ class BranchProgressWidget extends UIComponent {
     var wx = ox + pos.x;
     var wy = oy + pos.y;
     var finalAngle = pos.angle;
+    // 抵达尽头且积分仍在持续增加 → 原地转圈（叠加在路径朝向之上）
+    var spin = this._beeSpinAngle || 0;
+    var drawAngle = finalAngle + spin;
     ctx.save();
     ctx.translate(wx, wy);
-    ctx.rotate(finalAngle);
-    // 头朝右；朝左时上下翻转保持正立
-    if (Math.cos(finalAngle) < 0) ctx.scale(1, -1);
-    // 头部锚点：把虫子的「头部边缘中心」定位在路径点前方 WORM_HEAD_AHEAD px（虫头微微探出进度点，而非身体中心），
-    // 这样「头部到达之处即进度、头部撞到小花时小花才长大」，更真实。
-    ctx.translate(-WORM_W / 2 + WORM_HEAD_AHEAD, 0);
+    ctx.rotate(drawAngle);
+    // 头朝右（蜜蜂朝向行进方向）；朝左时上下翻转保持正立（转圈时自然翻转也 OK）
+    if (Math.cos(drawAngle) < 0) ctx.scale(1, -1);
+    // 锚点 = 蜜蜂中心点，直接对齐路径点
     var img = AssetPreloader.get('level_worm');
     if (img) {
       ctx.drawImage(img, -WORM_W / 2, -WORM_H / 2, WORM_W, WORM_H);
     } else {
-      // 虫图未注入（多为微信开发者工具未重新打包新增图片所致）→ 兜底自绘占位虫，确保功能可见
-      this._drawFallbackWorm(ctx);
+      // 蜜蜂图未注入（多为微信开发者工具未重新打包新增图片所致）→ 兜底自绘占位蜜蜂，确保功能可见
+      this._drawFallbackBee(ctx);
     }
     ctx.restore();
   }
@@ -660,7 +697,7 @@ class BranchProgressWidget extends UIComponent {
     }
   }
 
-  // 花瓣粒子（4 星施法甩出，魔法感）：带光晕的彩色花瓣沿弧线飞向目标花
+  // 彩星（4 星施法甩出）：对齐「金币飞行动画」—— 弧线抛出 + 弹出缩放 + 沿运动方向速度拉伸 + 拖尾 + 飞行光晕
   _renderPetals(ctx) {
     var now = Date.now();
     for (var i = 0; i < this._petals.length; i++) {
@@ -668,34 +705,81 @@ class BranchProgressWidget extends UIComponent {
       var e = (now - p.start) / p.dur;
       if (e < 0) continue;
       if (e >= 1) continue;
-      // 二次贝塞尔弧线（魔法甩出轨迹）
-      var mt = 1 - e;
-      var bx = mt * mt * p.fromX + 2 * mt * e * p.cx + e * e * p.toX;
-      var by = mt * mt * p.fromY + 2 * mt * e * p.cy + e * e * p.toY;
-      var ang = p.rot + e * p.rotSpeed;
+
+      // 进度（easeInOutCubic，对齐金币飞行），二次贝塞尔弧线位置
+      var t = easeInOutCubic(e);
+      var mt = 1 - t;
+      var bx = mt * mt * p.fromX + 2 * mt * t * p.cx + t * t * p.toX;
+      var by = mt * mt * p.fromY + 2 * mt * t * p.cy + t * t * p.toY;
+
+      // 缩放：弹出→回缩（对齐金币飞行 POP_PEAK_SCALE→END_SCALE）
+      var scale;
+      var popEnd = 0.18;
+      if (e < popEnd) {
+        scale = easeOutBack(e / popEnd) * STARS_POP_PEAK;
+      } else {
+        var st = (e - popEnd) / (1 - popEnd);
+        scale = STARS_POP_PEAK - (STARS_POP_PEAK - STARS_END_SCALE) * st;
+      }
+      if (scale < 0.3) scale = 0.3;
+      var alpha = e < 0.06 ? e / 0.06 : 1;
+      var sized = p.size * scale;
+
+      // 瞬时速度方向（采样前方位置），用于沿运动方向速度拉伸（金币飞行核心"有劲"观感）
+      var aheadT = Math.min(e + 0.045, 1);
+      var at = easeInOutCubic(aheadT);
+      var amt = 1 - at;
+      var ax = amt * amt * p.fromX + 2 * amt * at * p.cx + at * at * p.toX;
+      var ay = amt * amt * p.fromY + 2 * amt * at * p.cy + at * at * p.toY;
+      var vx = ax - bx, vy = ay - by;
+      var ang = Math.atan2(vy, vx);
+      var disp = Math.sqrt(vx * vx + vy * vy);
+      var stretch = Math.min(disp * STARS_STRETCH_GAIN, STARS_STRETCH_MAX);
+      var sx = 1 + stretch;
+      var sy = 1 - stretch * 0.5;
+
+      // 拖尾（沿 path 回溯，复用同一贝塞尔；彩星 big_flower.png）
       ctx.save();
-      ctx.translate(bx, by);
-      ctx.rotate(ang);
-      // 光晕
-      ctx.globalAlpha = 0.9;
-      var g = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size * 1.7);
+      for (var j = 0; j < STARS_TRAIL; j++) {
+        var trE = e - (j + 1) * STARS_TRAIL_MS / p.dur;
+        if (trE <= 0) continue;
+        var trT = easeInOutCubic(trE);
+        var trmt = 1 - trT;
+        var tx = trmt * trmt * p.fromX + 2 * trmt * trT * p.cx + trT * trT * p.toX;
+        var ty = trmt * trmt * p.fromY + 2 * trmt * trT * p.cy + trT * trT * p.toY;
+        var trSize = sized * (0.6 - j * 0.06);
+        ctx.globalAlpha = 0.28 * (1 - j / STARS_TRAIL) * alpha;
+        this.drawFlower(ctx, tx, ty, trSize, 1, p.rot + e * p.rotSpeed, true, 1, null);
+      }
+      ctx.restore();
+
+      // 飞行光晕（中段更亮，蓄能冲刺感）
+      var glowPulse = Math.sin(e * Math.PI);
+      var glowR = sized * (0.9 + 0.4 * glowPulse);
+      ctx.save();
+      ctx.globalAlpha = 0.4 * alpha * (0.5 + 0.5 * glowPulse);
+      var g = ctx.createRadialGradient(bx, by, sized * 0.2, bx, by, glowR);
       g.addColorStop(0, 'rgba(255,255,255,0.95)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
+      g.addColorStop(0.5, 'rgba(255,225,120,0.40)');
+      g.addColorStop(1, 'rgba(255,200,0,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(0, 0, p.size * 1.7, 0, Math.PI * 2);
+      ctx.arc(bx, by, glowR, 0, Math.PI * 2);
       ctx.fill();
-      // 花瓣（小椭圆）
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, p.size, p.size * 0.55, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.restore();
+
+      // 主彩星（沿运动方向拉伸，colored→big_flower.png 彩星）
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(bx, by);
+      ctx.rotate(ang);
+      ctx.scale(sx, sy);
+      this.drawFlower(ctx, 0, 0, sized, 1, p.rot + e * p.rotSpeed, true, 1, null);
       ctx.restore();
     }
   }
 
-  // 步数→飞小花：彩虹小花沿弧线从步数框飞向 4 星花，末段缩小淡出（复用 drawFlower 画彩色小花）
+  // 步数→飞小星星：小星星沿弧线从步数框飞向 4 星花，末段缩小淡出（复用 drawFlower 画 normal_flower.png 星星）
   _renderStepFlowers(ctx) {
     var now = Date.now();
     for (var i = 0; i < this._stepFlowers.length; i++) {
@@ -726,7 +810,7 @@ class BranchProgressWidget extends UIComponent {
       ctx.arc(bx, by, p.size * 1.7, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      this.drawFlower(ctx, bx, by, p.size, scale, ang, true, 1); // 飞小花（彩花，复用 drawFlower colored→big_flower）
+      this.drawFlower(ctx, bx, by, p.size, scale, ang, false, 1, 'normal_flower'); // 飞小星星（normal_flower.png，复用 drawFlower imgKey 路径）
     }
   }
 
@@ -815,27 +899,30 @@ class BranchProgressWidget extends UIComponent {
     ctx.restore();
   }
 
-  // 占位虫：虫图缺失时的兜底自绘（绿色椭圆身 + 头朝右 + 眼睛），尺寸对齐 WORM_W×WORM_H
-  _drawFallbackWorm(ctx) {
+  // 占位蜜蜂：蜜蜂图缺失时的兜底自绘（黄身+黑纹+翅膀+头+尾刺），尺寸对齐 WORM_W×WORM_H（18×18）
+  _drawFallbackBee(ctx) {
     var bw = WORM_W, bh = WORM_H;
-    // 身体椭圆
-    ctx.fillStyle = '#7ac943';
-    ctx.strokeStyle = 'rgba(40, 90, 20, 0.85)';
-    ctx.lineWidth = 2;
+    // 翅膀（半透明白，偏上）
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath();
+    ctx.ellipse(-bw * 0.08, -bh * 0.34, bw * 0.30, bh * 0.20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // 身体（黄圆）
+    ctx.fillStyle = '#F4C430';
+    ctx.strokeStyle = 'rgba(60,40,0,0.85)';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.ellipse(0, 0, bw / 2, bh / 2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // 头（右侧稍大圆）
-    ctx.fillStyle = '#9be05a';
-    ctx.beginPath();
-    ctx.arc(bw / 2 - 5, 0, bh / 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // 眼睛
+    // 黑纹（2 条，垂直于身体长轴）
     ctx.fillStyle = '#222222';
+    ctx.fillRect(-bw * 0.12, -bh * 0.42, bw * 0.10, bh * 0.84);
+    ctx.fillRect(bw * 0.10, -bh * 0.42, bw * 0.10, bh * 0.84);
+    // 头（右侧深色圆）
+    ctx.fillStyle = '#3a2a00';
     ctx.beginPath();
-    ctx.arc(bw / 2 - 3, -3, 1.8, 0, Math.PI * 2);
+    ctx.arc(bw / 2 - 2, 0, bh * 0.22, 0, Math.PI * 2);
     ctx.fill();
   }
 }
