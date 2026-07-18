@@ -25,14 +25,14 @@ const DebugPanel = require('../debug/DebugPanel.js');
 const { ToastWidget, showToast } = require('../ui/widgets/ToastWidget.js');
 
 // 主菜单入场时序（单一数据源）：分步入场
-//  1) t=500 底部条上移+渐显；设置按钮 + 体力UI 原地渐显（不滑动）
-//  2) t=800 开始按钮渐显+回弹  3) t=1260 左右按钮 + 体力图标同批渐显+回弹（体力图标在播放按钮之后出现）
+//  开始按钮（t=800 渐显+回弹）、左右按钮（t=1260 渐显+回弹）保留入场；
+//  设置按钮、体力栏直接显示（无入场动画，alpha 恒 1）。
 // 整段入场结束绝对时刻（ms）= 左/右按钮最晚：1260 + 440
 var MENU_ENTRANCE = {
   bottomBar: { stagger: 500,  dur: 480, from: { dx: 0,   dy: 240, scale: 1,   alpha: 0 }, ease: 'cubic' },
-  settings:  { stagger: 500,  dur: 460, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 0 }, ease: 'cubic' },
-  // 体力 UI：逐枚「摆盘子」入场在 _renderStaminaUI 内独立计时（见 STAMINA_ENTRANCE_*），
-  // 此处仅占位（alpha:1，不整块淡入），避免与逐枚 alpha 叠加成双重淡入。
+  // 设置按钮：直接显示，无入场动画
+  settings:  { stagger: 500,  dur: 460, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 1 }, ease: 'cubic' },
+  // 体力栏：左上角单组件（energy_bg 背景 + energy 图标 + 当前/最大 文本），直接显示
   stamina:   { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 1 }, ease: 'cubic' },
   play:      { stagger: 800,  dur: 460, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
   dress:     { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
@@ -40,20 +40,11 @@ var MENU_ENTRANCE = {
 };
 var MENU_ENTRANCE_END = 1260 + 440;
 
-// 出场动画：主菜单「底部区域」向下移出屏幕 + 渐隐，其余元素原地渐隐。
-// 时长 = 控件从原位滑出屏幕的自然时长（全屏高度下滑 + 同时渐隐），与入场时序无关。
-var MENU_EXIT_DURATION = 450;
-// 出场（控件滑出）完成后：先等关卡加载就绪，再做菜单背景↔关卡背景交叉淡变。
+// 出场（控件移除）后：先等关卡加载就绪，再做菜单背景↔关卡背景交叉淡变。
 // 交叉淡变时长 = 菜单背景渐隐(1→0) + 关卡背景渐显(0→1) 的重叠区间。
+// 控件本身不再有出场动画（点开始即消失，不做下滑/渐隐），仅背景做融合过渡。
 var MENU_CROSSFADE_DURATION = 450;
-// 出场时真正「下拉」的元素集合（底部条 + 开始按钮 + 左下/右下双圆钮 + 体力 UI）；其余（设置）仅渐隐。
-var MENU_EXIT_BOTTOM_KEYS = { bottomBar: 1, play: 1, dress: 1, challenge: 1, stamina: 1 };
 
-// 体力图标逐枚入场（"摆盘子"：自上方依次落下、落定微回弹），与整体入场解耦、独立计时，
-// 由 _staminaEntranceStart 驱动；即使 _menuEntrance 已结束，最后几枚仍能播完。
-var STAMINA_ENTRANCE_BASE = 1300;   // 第一枚起始（ms，开始按钮/圆钮显示之后）
-var STAMINA_ENTRANCE_STEP = 85;     // 相邻两枚间隔（ms）
-var STAMINA_ENTRANCE_DUR  = 300;    // 单枚落定时长（ms）
 
 class GameEngine {
   constructor() {
@@ -92,7 +83,7 @@ class GameEngine {
 
     // 菜单可见性 + 出场动画状态
     this._menuVisible = false;  // 当前是否处于「可见的主菜单」（决定离场时是否播放反向出场动画）
-    this._menuExit = null;      // 出场动画状态 { phase:'exit', startTime, target, totalDuration }
+    this._menuExit = null;      // 出场状态 { phase:'wait'|'crossfade', startTime, target, crossStart, crossDuration }
 
     // 关卡地图（主页）：最小可滑动集合（自动路径+占位按钮）。
     // _useLevelMap=true 在主界面之上叠加可滚动路径（clay 菜单照常渲染作底）；
@@ -123,13 +114,11 @@ class GameEngine {
     // 体力系统
     this._stamina = new StaminaSystem();
     this._stamina.load();
-    this._staminaIcons = { filled: null, empty: null };  // 体力图标：energy.png / energy_empty.png
+    this._staminaIcons = { filled: null, empty: null, bg: null };  // 体力图标：energy.png / energy_empty.png；背景 energy_bg.png
     this._preloadStaminaIcons();
-    this._staminaShake = null;     // 体力不足抖动状态
     this._staminaEmbed = null;     // 体力嵌入特效状态
     this._staminaPendingStart = false;
     this._staminaEntranceStart = 0;   // 体力图标逐枚入场计时起点（菜单入场开始时写入）
-    this._impactShake = null;      // 砸中目标的全局冲击抖动
     this._slamSparks = null;       // 砸中火花粒子
     this._flyTrail = null;         // 飞行残影
     this._startScale = 1;
@@ -187,39 +176,14 @@ class GameEngine {
     if (!this._loadingMgr.isDone()) {
       var coin = this._loadingMgr.getImage('coin');
       if (coin) this._loadingRdr.setCoinImage(coin);
-      var bg = this._loadingMgr.getImage('bg');
+      var bg = this._loadingMgr.getImage('loadingBg');
       if (bg) this._loadingRdr.setBgImage(bg);
       this._loadingRdr.render();
       requestAnimationFrame(function () { self._loadingLoop(); });
       return;
     }
 
-    // ---- Phase A: 100% 停留 500ms ----
-    if (!this._doneAt) {
-      this._doneAt = now;
-    }
-    if (!this._slideOutStarted && now - this._doneAt < 500) {
-      // 确保进度条满格（进度可能还没到 100% 就 isDone 了）
-      this._loadingRdr.render();
-      requestAnimationFrame(function () { self._loadingLoop(); });
-      return;
-    }
-
-    // ---- Phase B: 滑出动画 300ms ----
-    if (!this._slideOutStarted) {
-      this._slideOutStarted = now;
-      this._loadingRdr.startSlideOut();
-    }
-    var slideElapsed = now - this._slideOutStarted;
-    this._loadingRdr.updateSlideOut(slideElapsed);
-    this._loadingRdr.render();
-
-    if (slideElapsed < 500) {
-      requestAnimationFrame(function () { self._loadingLoop(); });
-      return;
-    }
-
-    // ---- Phase C: 注入数据 + 启动主循环 + 菜单滑入 + 用户信息预加载 ----
+    // ---- 加载完成：直接过渡到主菜单（无停留、无滑出动画） ----
     if (!this._transitioned) {
       this._transitioned = true;
 
@@ -377,6 +341,7 @@ class GameEngine {
       if (range && range.maxLevel > 0) {
         var prevMax = databus._cloudMaxLevel;
         databus._cloudMaxLevel = range.maxLevel;
+        try { wx.setStorageSync('_cloudMaxLevel', range.maxLevel); } catch (e) {}
         console.log('[cloud] _syncCloudLevels 云端关卡范围就绪: ' + range.minLevel + '~' + range.maxLevel
           + ' (之前 _cloudMaxLevel=' + prevMax + ')');
       } else {
@@ -501,6 +466,7 @@ class GameEngine {
     if (range && range.maxLevel > 0) {
       var prevMax = databus._cloudMaxLevel;
       databus._cloudMaxLevel = range.maxLevel;
+      try { wx.setStorageSync('_cloudMaxLevel', range.maxLevel); } catch (e) {}
       console.log('[cloud][GameEngine] 预加载云端关卡范围: ' + range.minLevel + '~' + range.maxLevel
         + ' (之前=' + prevMax + ')');
 
@@ -1015,46 +981,27 @@ class GameEngine {
   }
 
   /**
-   * 菜单元素变换统一入口：出场动画进行中（任一阶段）返回整体下移渐隐变换，否则返回入场变换。
-   * renderMenu 6 处调用均走这里，无需各自判断状态。
+   * 菜单元素变换统一入口：返回入场变换。
+   * 出场时控件整体不再绘制（_renderCurrentScene 在 _menuExit 期间跳过 renderMenu），
+   * 故无需出场变换。
    */
   _getMenuTransform(key) {
-    if (this._menuExit) {
-      return this._getExitTransform(key);
-    }
     return this._getEntranceTransform(key);
   }
 
-  /**
-   * 主菜单出场动画：底部区域（底部条 + 开始按钮 + 左下/右下双圆钮，视觉上连成一片）
-   * 整体向下移出屏幕 + 渐隐；其余元素（设置/体力）原地渐隐、不下移。
-   * 按 key 区分：仅 BOTTOM_KEYS 下滑，其余 dy=0 仅 alpha 渐隐。
-   * 返回 { dx, dy, scale, alpha }。
-   */
-  _getExitTransform(key) {
-    var elapsed = Date.now() - this._menuExit.startTime;
-    var p = Math.min(1, elapsed / MENU_EXIT_DURATION);
-    var dy = MENU_EXIT_BOTTOM_KEYS[key] ? SCREEN_HEIGHT * p : 0;
-    return {
-      dx: 0,
-      dy: dy,
-      scale: 1,
-      alpha: 1 - p,
-    };
-  }
+  // 控件出场变换已移除（见 _startMenuExit / render 出场分支）：点开始按钮即消失，无下滑/渐隐动画。
 
   /**
-   * 触发主菜单出场动画（整体下移+渐隐），结束后由 update() 提交状态切换。
+   * 触发主菜单出场（控件移除 + 背景融合），结束后由 update() 提交状态切换。
    * @param {string} target 目标状态 'playing' | 'editor'
    */
   _startMenuExit(target) {
     this._pressedBtnIdx = -1;   // 清按压态，出场过渡干净
     databus._menuExiting = true;   // 镜像给 LevelMap：引导手开始淡出
     this._menuExit = {
-      phase: 'slide',                 // slide → wait → crossfade → commit
+      phase: 'wait',                  // wait → crossfade → commit（控件已无出场动画，点开始即消失）
       startTime: Date.now(),
       target: target,
-      totalDuration: MENU_EXIT_DURATION,
       crossStart: 0,
       crossDuration: MENU_CROSSFADE_DURATION,
     };
@@ -1092,13 +1039,7 @@ class GameEngine {
 
   renderMenu() {
     var C = this.COLORS;
-    var safeTop = databus.safeTop;
     var cx = SCREEN_WIDTH / 2;
-
-    // 砸中目标的全局冲击抖动：整段菜单（含按钮/体力 UI/面板）一起抖，强化"砸"的爽感
-    ctx.save();
-    var _impact = this._getImpactShake();
-    if (_impact) ctx.translate(_impact.x, _impact.y);
 
     // ===== 底部功能区域背景（stretched，最底层，在所有按钮之下）=====
     // 底部条入场：上移 + 渐显（t=500 起）
@@ -1128,17 +1069,15 @@ class GameEngine {
     var editScale  = this._pressedBtnIdx === 4 ? pressScale : 1;
     var debugScale = this._pressedBtnIdx === 5 ? pressScale : 1;
 
-    // ===== Frame A（对齐参考，不可见）=====
-    var frameA_Y = safeTop - 48;
-
-    // ===== 设置按钮（Frame A 内，left: 16px, top: 6px）=====
-    var setIconSize = 42;
-    var setBtnX = 10;
-    var setBtnY = frameA_Y + 6;
+    // ===== 设置按钮（设计稿 left:16 top:54，32×32，按 393 设计宽等比缩放）=====
+    var scale = SCREEN_WIDTH / 393;
+    var setIconSize = 32 * scale;
+    var setBtnX = 16 * scale;
+    var setBtnY = 54 * scale;
     var setBtnCX = setBtnX + setIconSize / 2;
     var setBtnCY = setBtnY + setIconSize / 2;
 
-    // 入场动画
+    // 设置按钮（无入场动画，直接显示）
     var st = this._getMenuTransform('settings');
     ctx.save();
     ctx.translate(setBtnCX + st.dx, setBtnCY + st.dy);
@@ -1149,7 +1088,7 @@ class GameEngine {
     var setArea = { x: setBtnX, y: setBtnY, w: setAreaRaw.w, h: setAreaRaw.h };
     ctx.restore();
 
-    // （体力 UI 改到底部居中，绘制见开始按钮之后）
+    // （体力 UI 已移至左上角单组件，绘制见开始按钮之后）
 
     // ===== 主按钮：开始游戏（main_start.png 图片按钮）=====
     // Figma Group 3467419: 180 x 86，水平居中（left: calc(50% - 180/2 - 0.5)），bottom 距屏幕底 65px（基于 393 宽设计稿等比缩放）
@@ -1163,7 +1102,6 @@ class GameEngine {
     var startCY = startY + startH / 2;
 
     var playT = this._getMenuTransform('play');
-    var shakeDx = this._getStaminaShakeDx();
     ctx.save();
     ctx.globalAlpha = playT.alpha;
     // 围绕按钮中心：按压缩放 × 入场缩放（easeOutBack 回弹）
@@ -1172,9 +1110,6 @@ class GameEngine {
     ctx.translate(-startCX, -startCY);
     if (playT.dy !== 0) {
       ctx.translate(0, playT.dy);
-    }
-    if (shakeDx !== 0) {
-      ctx.translate(shakeDx, 0);   // 体力不足：按钮滋滋抖
     }
 
     if (AssetPreloader.isReady('main_start')) {
@@ -1186,13 +1121,12 @@ class GameEngine {
 
     this._playBtnRect = { x: startX, y: startY, w: startW, h: startH };
 
-    // ===== 体力 UI（底部居中 5 图标 + 开始按钮上的无体力标志位）=====
+    // ===== 体力 UI（左上角单组件：背景 + 图标 + 文本；开始按钮上的无体力标志位见 _drawStaminaFlag）=====
     var staT = this._getMenuTransform('stamina');
     ctx.save();
     ctx.globalAlpha *= staT.alpha;
-    if (staT.dy !== 0) ctx.translate(0, staT.dy);   // 离场时随底部整体下滑（与开始按钮同批）
-    // 底部 5 个体力图标（绘制在按钮之上，避免被按钮图遮挡）
-    this._renderStaminaUI(ctx, shakeDx);
+    if (staT.dy !== 0) ctx.translate(0, staT.dy);   // 离场时随菜单整体下移 + 渐隐
+    this._renderStaminaUI(ctx);
     ctx.restore();
 
     // ===== 后门按钮（右下角，5 连击解锁后显示）=====
@@ -1323,40 +1257,49 @@ class GameEngine {
 
     // 体力不足广告弹窗
     StaminaAdPanel.render(ctx);
-
-    ctx.restore();   // 关闭砸中冲击抖动的外层 save
   }
 
   // ========== 体力系统 UI ==========
 
-  /** 计算体力 UI 布局（底部居中 5 图标 + 开始按钮无体力标志位），返回屏幕坐标 */
+  /**
+   * 计算体力 UI 布局（左上角单组件：energy_bg 背景 + energy 图标 + 当前/最大 文本），
+   * 全部按设计稿 393 宽等比缩放；并返回开始按钮上的「无体力标志位」(飞行目标)。返回屏幕坐标。
+   */
   _computeStaminaLayout() {
     var ST = require('../define/GameDefine.js').GAME.STAMINA;
     var scale = SCREEN_WIDTH / 393;
-    var n = ST.MAX;
-    var icon = 20 * scale;
-    var gap = 4 * scale;
-    var fw = n * icon + (n - 1) * gap;                 // 116 * scale
-    var fl = (SCREEN_WIDTH - fw) / 2 + 1.5 * scale;     // left: calc(50% - 116/2 + 1.5)
-    var fy = SCREEN_HEIGHT - 56 * scale - 20 * scale;   // bottom:56, height:20
-    var iconRects = [];
-    for (var i = 0; i < n; i++) {
-      var ix = fl + i * (icon + gap);
-      iconRects.push({ x: ix, y: fy, w: icon, h: 20 * scale, cx: ix + icon / 2, cy: fy + 10 * scale });
-    }
+    // 整体 frame：left:16, top:96, 96×30（设计稿 px）
+    var fx = 16 * scale, fy = 96 * scale;
+    var fw = 96 * scale, fh = 30 * scale;
+    // 背景 energy_bg.png：rel (7,2) 89×26
+    var bgX = fx + 7 * scale, bgY = fy + 2 * scale;
+    var bgW = 89 * scale, bgH = 26 * scale;
+    // 体力图标 energy.png：rel (0,0) 23×30
+    var iconW = 23 * scale, iconH = 30 * scale;
+    var iconX = fx, iconY = fy;
+    // 体力值文本「当前/最大」：rel (26, 8) 44×15（top = 50% - 15/2 + 0.5 = 8）
+    var txtX = fx + 26 * scale, txtY = fy + 8 * scale;
+    var txtW = 44 * scale, txtH = 15 * scale;
     // 开始按钮（与 renderMenu 同一套计算）
     var startW = 180 * scale, startH = 86 * scale;
     var startX = (SCREEN_WIDTH - startW) / 2 - 0.5 * scale;
     var startY = SCREEN_HEIGHT - 65 * scale - startH;
-    // 无体力标志位：开始按钮内，相对按钮 left:32（设计稿 393 宽，按 scale 缩放）、上下居中
+    // 无体力标志位（飞行目标）：开始按钮内，相对按钮 left:32、上下居中
     var flagW = 20 * scale, flagH = 20 * scale;
     var flagX = startX + 32 * scale;
     var flagY = startY + (startH - flagH) / 2;
     var flagRect = { x: flagX, y: flagY, w: flagW, h: flagH, cx: flagX + flagW / 2, cy: flagY + flagH / 2 };
-    return { iconRects: iconRects, flagRect: flagRect, scale: scale, icon: icon };
+    return {
+      frame: { x: fx, y: fy, w: fw, h: fh },
+      bg: { x: bgX, y: bgY, w: bgW, h: bgH },
+      iconRect: { x: iconX, y: iconY, w: iconW, h: iconH, cx: iconX + iconW / 2, cy: iconY + iconH / 2 },
+      text: { x: txtX, y: txtY, w: txtW, h: txtH },
+      flagRect: flagRect,
+      scale: scale
+    };
   }
 
-  /** 预加载体力图标（energy.png 有体力 / energy_empty.png 无体力） */
+  /** 预加载体力图标（energy.png 有体力 / energy_empty.png 无体力 / energy_bg.png 背景） */
   _preloadStaminaIcons() {
     var self = this;
     var filled = wx.createImage();
@@ -1365,6 +1308,9 @@ class GameEngine {
     var empty = wx.createImage();
     empty.onload = function () { self._staminaIcons.empty = empty; };
     empty.src = 'assets/images/energy_empty.png';
+    var bg = wx.createImage();
+    bg.onload = function () { self._staminaIcons.bg = bg; };
+    bg.src = 'assets/images/energy_bg.png';
   }
 
   /** 绘制单个体力图标（energy.png 有体力 / energy_empty.png 无体力；图片未就绪时回退纯色圆角方块） */
@@ -1394,71 +1340,37 @@ class GameEngine {
     this._drawStaminaIcon(ctx, layout.flagRect, false, false);
   }
 
-  /** 体力不足抖动的水平偏移（阻尼正弦，滋滋抖几下） */
-  _getStaminaShakeDx() {
-    if (!this._staminaShake) return 0;
-    var p = (Date.now() - this._staminaShake.startTime) / this._staminaShake.duration;
-    if (p >= 1) return 0;
-    var amp = 5 * (this._startScale || 1) * (1 - p);
-    return Math.sin(p * Math.PI * 7) * amp;
-  }
-
-  /** 渲染底部居中体力 UI（5 图标，纯色圆角方块；体力不足时空格发光抖动） */
-  _renderStaminaUI(ctx, shakeDx) {
+  /** 渲染左上角体力组件（energy_bg 背景 + energy 图标 + 「当前/最大」白字；直接显示） */
+  _renderStaminaUI(ctx) {
     var ST = require('../define/GameDefine.js').GAME.STAMINA;
     var count = this._stamina.getCount();
+    var max = ST.MAX;
     var layout = this._computeStaminaLayout();
-    var iconRects = layout.iconRects;
-    var flips = this._stamina.updateFlips();
-    var flipMap = {};
-    for (var fi = 0; fi < flips.length; fi++) flipMap[flips[fi].index] = flips[fi].progress;
-    var shaking = !!this._staminaShake;
-    var se = Date.now() - (this._staminaEntranceStart || 0);   // 逐枚入场基准时间
+    var s = layout.scale;
 
-    for (var i = 0; i < ST.MAX; i++) {
-      var rect = iconRects[i];
-      var filled = i < count;
-      var p = flipMap[i];
-      var ent = this._getStaminaIconEntrance(i, se);   // { visible, dx, dy, scale, alpha }
-      if (!ent.visible) continue;
-      ctx.save();
-      ctx.globalAlpha *= ent.alpha;
-      // 围绕图标中心：落定位移 + 缩放回弹（"摆盘子"）
-      ctx.translate(rect.cx + (shakeDx || 0) + ent.dx, rect.cy + ent.dy);
-      ctx.scale(ent.scale, ent.scale);
-      ctx.translate(-rect.cx, -rect.cy);
-      if (p != null) {
-        // 翻转动效：前半空图标缩小消失，后半黄图标放大出现
-        if (p < 0.5) {
-          ctx.scale(1 - p * 2, 1);
-          this._drawStaminaIcon(ctx, { x: -rect.w / 2, y: -rect.h / 2, w: rect.w, h: rect.h }, false, false);
-        } else {
-          ctx.scale((p - 0.5) * 2, 1);
-          this._drawStaminaIcon(ctx, { x: -rect.w / 2, y: -rect.h / 2, w: rect.w, h: rect.h }, true, false);
-        }
-      } else {
-        var glow = shaking && !filled;   // 体力不足：空格子发光抖动
-        this._drawStaminaIcon(ctx, rect, filled, glow);
-      }
-      ctx.restore();
+    // 背景（资源未就绪时跳过，不画兜底色块）
+    if (this._staminaIcons.bg) {
+      ctx.drawImage(this._staminaIcons.bg, layout.bg.x, layout.bg.y, layout.bg.w, layout.bg.h);
     }
+    // 体力图标（始终有体力态）
+    if (this._staminaIcons.filled) {
+      ctx.drawImage(this._staminaIcons.filled,
+        layout.iconRect.x, layout.iconRect.y, layout.iconRect.w, layout.iconRect.h);
+    }
+    // 体力值文本：当前值/最大值，白色 15px（PingFang SC），左对齐、top 基线
+    ctx.save();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '400 ' + (15 * s) + "px 'PingFang SC'";
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(count + '/' + max, layout.text.x, layout.text.y);
+    ctx.restore();
+
+    // 维持翻转动画队列排空（广告领取体力时的音频反馈仍由 StaminaSystem 触发，此处仅 drain）
+    this._stamina.updateFlips();
   }
 
-  /**
-   * 体力图标逐枚入场变换（"摆盘子"轨迹）：自上方落下、落定微回弹，按索引错开。
-   * 返回 { visible, dx, dy, scale, alpha }；entrance 完成后返回 identity（visible:true, 全 1）。
-   * 与 _menuEntrance 生命周期解耦——即使整体入场已结束，最后几枚仍能播完。
-   */
-  _getStaminaIconEntrance(i, se) {
-    var local = se - STAMINA_ENTRANCE_BASE - i * STAMINA_ENTRANCE_STEP;
-    if (local <= 0) return { visible: false };
-    var t = Math.min(1, local / STAMINA_ENTRANCE_DUR);
-    var ease = Easing.easeOutBack(t, 1.5);                 // 落定回弹
-    var dy = -42 * (1 - ease);                            // 从上方落下 → 0（带微回弹）
-    var scale = 0.65 + 0.35 * Easing.easeOutBack(t, 1.3); // 由小放大 + 落定过冲
-    var alpha = Math.min(1, t / 0.4);
-    return { visible: true, dx: 0, dy: dy, scale: scale, alpha: alpha };
-  }
+  // （_getStaminaIconEntrance 已移除：新体力 UI 为单体组件，不再逐枚入场）
 
   /** 渲染体力飞行动画 + 嵌入特效 */
   _renderStaminaFly(ctx) {
@@ -1471,12 +1383,11 @@ class GameEngine {
       this._drawStaminaFlyIcon(ctx, fly, ST.ICON_SIZE * scale);
     }
 
-    // 2) 飞行结束（平滑抵达）→ 触发嵌入 + 全局冲击抖动 + 火花（目标「被撞击」反馈）
+    // 2) 飞行结束（平滑抵达）→ 触发嵌入 + 火花（目标「被撞击」反馈，仅按钮局部，不抖全屏）
     if (fly && fly.done) {
       if (this._staminaPendingStart) {
         this._staminaPendingStart = false;
-    this._staminaEmbed = { startTime: Date.now(), duration: 420 };
-    this._impactShake = { startTime: Date.now(), duration: 240 };
+        this._staminaEmbed = { startTime: Date.now(), duration: 420 };
         this._spawnSlamSparks(scale);
       }
       this._flyTrail = null;   // 砸中即清空残影
@@ -1629,24 +1540,13 @@ class GameEngine {
     ctx.restore();
   }
 
-  /** 砸中目标的全局冲击抖动偏移（菜单整段一起抖） */
-  _getImpactShake() {
-    if (!this._impactShake) return null;
-    var now = Date.now();
-    var e = (now - this._impactShake.startTime) / this._impactShake.duration;
-    if (e >= 1) { this._impactShake = null; return null; }
-    var scale = this._startScale || 1;
-    var amp = (1 - e) * 3.5 * scale;           // 减弱幅度，缓冲衰减
-    var ox = Math.sin(e * Math.PI * 5.5) * amp;
-    var oy = Math.cos(e * Math.PI * 4.5) * amp * 0.7;
-    return { x: ox, y: oy };
-  }
-
   /** 处理开始游戏按钮点击 */
   _onClickPlayBtn() {
     // 飞行动画 / 嵌入特效进行中 → 忽略
     if (this._stamina.isFlying() || this._staminaEmbed) return;
     var self = this;
+    // 引导手即时隐藏：不等体力动画/出场动画播完（满足「点按钮就消失」）
+    databus._menuExiting = true;
     // 先同步体力
     this._stamina.load();
 
@@ -1656,7 +1556,7 @@ class GameEngine {
       this._stamina.consume();
       var newCount = this._stamina.getCount();          // = oldCount - 1
       var layout = this._computeStaminaLayout();
-      var fromIcon = layout.iconRects[newCount];         // 刚变空的那个槽
+      var fromIcon = layout.iconRect;                   // 飞行起点：左上角 energy.png 图标
       var flag = layout.flagRect;
       if (fromIcon && flag) {
         this._stamina.startFly(fromIcon.cx, fromIcon.cy, flag.cx, flag.cy, null);
@@ -1667,8 +1567,8 @@ class GameEngine {
       return;
     }
 
-    // 体力不足 → 按钮滋滋抖 + 空格发光抖，随后弹广告窗补救
-    this._staminaShake = { startTime: Date.now(), duration: 420 };
+    // 体力不足 → 弹广告窗补救（不再抖动按钮）
+    databus._menuExiting = false;   // 未实际离开菜单，允许引导手重新出现
     var hasAds = this._stamina.getAdRemainingToday() > 0;
     setTimeout(function () {
       if (hasAds) {
@@ -1695,12 +1595,6 @@ class GameEngine {
   update() {
     databus.frame++;
 
-    // 体力不足抖动结束 → 清状态
-    if (this._staminaShake &&
-        Date.now() - this._staminaShake.startTime >= this._staminaShake.duration) {
-      this._staminaShake = null;
-    }
-
     // 菜单入场动画进行中 → 屏蔽输入
     if (this._menuEntrance && this._menuEntrance.phase === 'slideIn') {
       var elapsed = Date.now() - this._menuEntrance.startTime;
@@ -1713,22 +1607,15 @@ class GameEngine {
       return;
     }
 
-    // 菜单出场动画进行中 → 屏蔽输入
+    // 菜单出场进行中：控件已无出场动画（点开始即消失），仅推进「等关卡加载 → 背景融合 → 提交」
     if (this._menuExit) {
       var m = this._menuExit;
       var now = Date.now();
-      if (m.phase === 'slide') {
-        // 控件下滑 + 渐隐（期间并行加载关卡内容）
-        if (now - m.startTime >= m.totalDuration) {
-          if (m.target === 'editor') {
-            this._commitMenuExit('editor');   // 编辑器无交叉淡变，直接切
-          } else {
-            m.phase = 'wait';                 // 等关卡加载就绪
-          }
-        }
-      } else if (m.phase === 'wait') {
-        // 控件已滑出，仅菜单背景可见；等关卡就绪后做交叉淡变
-        if (this.playing._levelLoadFailed) {
+      if (m.phase === 'wait') {
+        // 控件已移除（不再滑动/渐隐），仅菜单背景可见；等关卡就绪后做交叉淡变
+        if (m.target === 'editor') {
+          this._commitMenuExit('editor');   // 编辑器无交叉淡变，直接切
+        } else if (this.playing._levelLoadFailed) {
           // 加载失败 → 退回主菜单（toast 已在 prepareLevel 内弹出）
           this._menuExit = null;
           this._menuVisible = true;
@@ -1793,6 +1680,7 @@ class GameEngine {
       case 'menu':
         audio.playMusic('menu');
         this._menuVisible = true;   // 回到主菜单：可见，未来离场播出场动画
+        databus._menuExiting = false;   // 清除出场标志：引导手允许重新出现
         // 从其他界面返回 → 触发主菜单入场动画（与 loading 进入一致）
         if (prev) {
           this._menuEntrance = {
@@ -1816,13 +1704,12 @@ class GameEngine {
     beginFrame();
 
     if (this._menuExit && this._menuExit.phase === 'crossfade') {
-      // 交叉淡变：菜单背景渐隐(1→0) + 关卡场景背景渐显(0→1)
+      // 交叉淡变：菜单背景渐隐(1→0) + 关卡场景背景渐显(0→1)；菜单控件已不绘制（点开始即消失）
       var cp = Math.min(1, (Date.now() - this._menuExit.crossStart) / this._menuExit.crossDuration);
       ctx.save();
       ctx.globalAlpha = 1 - cp;
       this.drawBackground();
       ctx.restore();
-      this._renderCurrentScene();              // 菜单控件（已滑出，透明）照常绘制
       this.playing.drawSceneBackground(cp);    // 关卡背景叠在最上层渐显
     } else {
       // 关卡地图模式：草原背景随路径一起滚动，再叠加路径 + 关卡按钮，最后画主界面控件
@@ -1849,7 +1736,8 @@ class GameEngine {
   _renderCurrentScene() {
     switch (databus.gameState) {
       case 'menu':
-        this.renderMenu();
+        // 出场进行中（控件已无出场动画、点开始即消失）→ 跳过菜单控件绘制，仅保留背景
+        if (!this._menuExit) this.renderMenu();
         break;
       case 'playing':
         this.playing.render();

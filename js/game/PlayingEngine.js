@@ -709,7 +709,8 @@ class PlayingEngine {
       type: p.type || 'pig', skinId: p.skinId || 0,
       // 统一加载已有 hint（试玩/正式一致），通关后由 _mergeAndUploadHints 全量覆盖
       hintId: p.hintId != null ? p.hintId : null,
-      hintAngle: p.hintAngle != null ? p.hintAngle : p.angle
+      hintAngle: p.hintAngle != null ? p.hintAngle : p.angle,
+      collisionWidth: p.collisionWidth != null ? p.collisionWidth : null
     }));
     var ENT = require('../define/GameDefine.js').ENTITY;
     this._totalPigsInLevel = this.gp.pigs.filter(function(p) {

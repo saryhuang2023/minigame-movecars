@@ -89,7 +89,7 @@ class PigRenderer {
 
   // ---- 坐标计算辅助 ----
   _pigCenter(pig, offDx, offDy) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig), pig.type);
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig), pig.type, pig.collisionWidth);
     if (!r) return null;
     const cx = this.e.boardOffsetX + r.cx + (offDx || 0);
     const cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
@@ -190,7 +190,7 @@ class PigRenderer {
     if (!frameImg) return;
 
     // 屏幕坐标（用于最终贴回目标画布）
-    var r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle || 0, pig.type);
+    var r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle || 0, pig.type, pig.collisionWidth);
     if (!r) return;
 
     var d = this.e.scaledDiameter;
@@ -233,7 +233,7 @@ class PigRenderer {
     if (!frameImg) return null;
 
     // 计算屏幕坐标
-    var r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle || 0, pig.type);
+    var r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle || 0, pig.type, pig.collisionWidth);
     if (!r) return null;
     var cx = this.e.boardOffsetX + r.cx + (offDx || 0);
     var cy = this.e.topBarH + this.e.boardOffsetY + r.cy + (offDy || 0);
@@ -355,7 +355,7 @@ class PigRenderer {
     octx.restore();
 
     // 叠回目标画布
-    const pigR = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig), pig.type);
+    const pigR = this.e.getPigRect(pig.tailIndex, pig.length, this.getDisplayAngle(pig), pig.type, pig.collisionWidth);
     if (!pigR) return;
     const screenCx = this.e.boardOffsetX + pigR.cx + (offDx || 0);
     const screenCy = this.e.topBarH + this.e.boardOffsetY + pigR.cy + (offDy || 0);
@@ -364,7 +364,7 @@ class PigRenderer {
 
   // ---- 头部中心绿点 ----
   drawHeadDot(ctx, pig, offDx, offDy) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type, pig.collisionWidth);
     if (!r) return;
     const hsc = this.e._headSquareCenter(r);
     const cx = this.e.boardOffsetX + hsc.x + (offDx || 0);
@@ -376,7 +376,7 @@ class PigRenderer {
   }
   // ---- 碰撞区空心虚线外轮廓（胶囊体：两端半圆 + 两条平行边） ----
   drawCollisionBox(ctx, pig, offDx, offDy) {
-    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
+    const r = this.e.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type, pig.collisionWidth);
     if (!r) return;
     const bx = this.e.boardOffsetX + (offDx || 0);
     const by = this.e.topBarH + this.e.boardOffsetY + (offDy || 0);

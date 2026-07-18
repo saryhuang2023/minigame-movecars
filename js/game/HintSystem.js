@@ -105,7 +105,7 @@ class HintSystem {
       if (ghosts[k].pigId === pig.id) return;
     }
     var ha = pig.hintAngle != null ? pig.hintAngle : pig.angle;
-    var r = this._gp.getPigRect(pig.tailIndex, pig.length, ha);
+    var r = this._gp.getPigRect(pig.tailIndex, pig.length, ha, pig.type, pig.collisionWidth);
     if (!r) return;
 
     var rad = ha * Math.PI / 180;

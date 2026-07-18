@@ -62,13 +62,8 @@ function setCloudCache(cache) {
   }
 }
 
-/** rock 图片路径：优先云端缓存，不可用时回退本地 */
+/** rock 图片路径：纯本地资源，不再走云端（asset/skins/rock/ 已由 LoadingConfig Phase2 预加载） */
 function getRockImagePath(anim) {
-  var cloudKey = 'skins/rock/' + anim + '/1.png';
-  if (_cloudCache && _cloudCache[cloudKey]) {
-    return _cloudCache[cloudKey];
-  }
-  // 兜底：本地路径
   return SKIN_BASE + 'rock/' + anim + '/1.png';
 }
 

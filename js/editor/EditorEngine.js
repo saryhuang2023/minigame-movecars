@@ -173,6 +173,7 @@ class EditorEngine {
           try {
             var path = wx.env.USER_DATA_PATH + '/levels/' + (entry.fileName || (entry.name + '.json'));
             entry.data = JSON.parse(wx.getFileSystemManager().readFileSync(path, 'utf8'));
+            entry._version = entry.data.version || 0;
             entry.isDirty = true;
             this.dirty = true;
             console.log('[Editor] 试玩修改已同步: ' + modifiedName);
@@ -769,6 +770,7 @@ class EditorEngine {
         obj.hintId = p.hintId;
         obj.hintAngle = (p.hintAngle != null) ? p.hintAngle : p.angle;
       }
+      if (p.collisionWidth != null && p.collisionWidth !== 100) obj.collisionWidth = p.collisionWidth;  // 非默认才写入
       return obj;
     });
     base.stepBonusThreshold = this._stepBonusThreshold || 0;  // 序列化 stepBonusThreshold 字段
@@ -798,7 +800,8 @@ class EditorEngine {
       id: p.id, tailIndex: p.tail, length: p.length, angle: p.angle,
       type: p.type || 'pig', skinId: p.skinId || 0,
       hintId: p.hintId != null ? p.hintId : null,
-      hintAngle: p.hintAngle != null ? p.hintAngle : null
+      hintAngle: p.hintAngle != null ? p.hintAngle : null,
+      collisionWidth: p.collisionWidth != null ? p.collisionWidth : null  // 缺省=100，为节省存储 null 表示默认
     }));
     this.gp.nextPigId = this.gp.pigs.length > 0 ? Math.max(...this.gp.pigs.map(p => p.id)) + 1 : 0;
     this.gp.selectedPigId = null;
@@ -992,7 +995,8 @@ class EditorEngine {
     }
     entry.data = this.getLevelData();
     // 发送当前版本号，云端负责 +1 并返回新版本（乐观并发控制要求 clientVersion === serverVersion）
-    entry.data.version = entry.data.version || 0;
+    // 优先使用 entry._version（上传成功后同步更新），entry.data.version 可能在 getLevelData/Object.assign 中被冲掉
+    entry.data.version = entry._version || entry.data.version || 0;
     entry._version = entry.data.version;
     entry.isDirty = false;
     this.dirty = false;
@@ -1471,6 +1475,21 @@ class EditorEngine {
     this.gp.rebuildOccupancy();
     this.markCurrentDirty();
     this.showToast('长度: ' + Math.round(pig.length) + 'px');
+  }
+
+  /** 微调选中猪的碰撞区宽度 ±1%（范围 50–200） */
+  _adjustSelectedPigCollisionWidth(delta) {
+    if (this.gp.selectedPigId == null) return;
+    var pig = this.gp.pigs.find(function(p) { return p.id === this.gp.selectedPigId; }.bind(this));
+    if (!pig) return;
+    var cur = pig.collisionWidth || 100;
+    var next = cur + delta;
+    if (next < 20) next = 20;
+    if (next > 200) next = 200;
+    if (next === cur) return;
+    pig.collisionWidth = next;
+    this.markCurrentDirty();
+    this.showToast('碰撞区: ' + next + '%');
   }
 
   /** 清空所有猪的提示信息（新增/删除精灵时调用） */
@@ -2247,12 +2266,37 @@ class EditorEngine {
       this.sheetPigLenMinus = { x: minusX, y: lenBtnY, w: btnSize, h: btnSize };
       this.sheetPigLenPlus = { x: plusX, y: lenBtnY, w: btnSize, h: btnSize };
 
+      // 碰撞区宽度 + [-]/[+]（接在长度行下面，infoY+52 对应长度行 text=infoY+26 + 26px）
+      ctx.textAlign = 'left';    // 恢复：按钮绘制时设了 center
+      ctx.textBaseline = 'top';  // 恢复：按钮绘制时设了 middle
+      var cwText = '碰撞区: ' + (pig.collisionWidth || 100) + '%';
+      ctx.fillText(cwText, 28, infoY + 52);
+      var cwTextW = ctx.measureText(cwText).width;
+      var cwMinusX = 28 + cwTextW + 10;
+      var cwPlusX = cwMinusX + btnSize + 6;
+      var cwBtnY = infoY + 48;
+
+      ctx.fillStyle = '#f0f0f0';
+      roundRect(ctx, cwMinusX, cwBtnY, btnSize, btnSize, 4);
+      ctx.fill();
+      ctx.fillStyle = '#666';
+      ctx.fillText('−', cwMinusX + btnSize / 2, cwBtnY + btnSize / 2);
+
+      ctx.fillStyle = '#f0f0f0';
+      roundRect(ctx, cwPlusX, cwBtnY, btnSize, btnSize, 4);
+      ctx.fill();
+      ctx.fillStyle = '#666';
+      ctx.fillText('+', cwPlusX + btnSize / 2, cwBtnY + btnSize / 2);
+
+      this.sheetPigCwMinus = { x: cwMinusX, y: cwBtnY, w: btnSize, h: btnSize };
+      this.sheetPigCwPlus = { x: cwPlusX, y: cwBtnY, w: btnSize, h: btnSize };
+
       ctx.fillStyle = '#555';
       ctx.font = '14px ' + Theme.font.family + '';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText(`角度: ${Math.round(pig.angle)}°`, 28, infoY + 56);
-      ctx.fillText(`尾部孔: #${pig.tailIndex}`, 180, infoY + 56);
+      ctx.fillText(`角度: ${Math.round(pig.angle)}°`, 28, infoY + 82);
+      ctx.fillText(`尾部孔: #${pig.tailIndex}`, 180, infoY + 82);
 
       const delBtnX = SCREEN_WIDTH - 120;
       const delBtnY = sheetY + sheetH - 56;
@@ -2305,6 +2349,16 @@ class EditorEngine {
       if (this.sheetPigLenPlus && this.hitRect(x, y, this.sheetPigLenPlus)) {
         audio.play('button_click');
         this._adjustSelectedPigLength(1);
+        return true;
+      }
+      if (this.sheetPigCwMinus && this.hitRect(x, y, this.sheetPigCwMinus)) {
+        audio.play('button_click');
+        this._adjustSelectedPigCollisionWidth(-1);
+        return true;
+      }
+      if (this.sheetPigCwPlus && this.hitRect(x, y, this.sheetPigCwPlus)) {
+        audio.play('button_click');
+        this._adjustSelectedPigCollisionWidth(1);
         return true;
       }
       if (this.sheetPigRect && (x < this.sheetPigRect.x || x > this.sheetPigRect.x + this.sheetPigRect.w ||

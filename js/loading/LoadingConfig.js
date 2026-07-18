@@ -6,8 +6,9 @@
 var PHASE1 = {
   // 背景 + 进度条金币图标
   images: [
-    { key: 'bg',   path: 'assets/images/main_bg.jpg' },
-    { key: 'coin', path: 'assets/images/coin.png' },
+    { key: 'loadingBg', path: 'assets/images/loading_bg.jpg' },
+    { key: 'bg',        path: 'assets/images/main_bg.jpg' },
+    { key: 'coin',      path: 'assets/images/coin.png' },
   ],
   // idle 序列帧（通过 PigRenderer.preloadIdle 加载，此处声明数量用于进度）
   idleFrameCount: 11,
@@ -45,6 +46,8 @@ var PHASE2 = {
     'assets/images/main_level_btn_unlocked.png',
     'assets/images/main_level_road.png',
     'assets/images/hand_guide.png',
+    'assets/skins/rock/idle/1.png',
+    'assets/skins/rock/hint/1.png',
   ],
   // 非 idle 动画帧 (run 8 + escape 8 + hint 8 = 24)
   animationTotalFrames: 24,

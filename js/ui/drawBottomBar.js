@@ -3,13 +3,13 @@
 //
 // 坐标换算约定（来自 Figma 设计稿）：
 //   - 设计稿宽度 DESIGN_W = 393
-//   - 背景图 393 x 122，底部对齐，固定高度 122（不随屏宽缩放，宽屏轻微横向形变）
+//   - 背景图 393 x 109，底部对齐，固定高度 109（不随屏宽缩放，宽屏轻微横向形变）
 //   - 宽度拉伸铺满屏幕宽度（barW = SCREEN_WIDTH）
-//   - 背景顶部在 Figma 屏幕 y = 721（= 843 - 122）
+//   - 背景顶部参考点 Figma y = 721（控件 fy 以此为基准锚定在 bar 顶，bar 高度变化不改变控件相对位置）
 //   - 容器内控件以「屏幕坐标」给出，需转化为实际屏幕坐标：
 //       x = fx * scale
 //       y = barY + (fy - 721) * scale
-//     其中 scale = SCREEN_WIDTH / 393（控件尺寸/水平定位用），barY = SCREEN_HEIGHT - 122（固定高）
+//     其中 scale = SCREEN_WIDTH / 393（控件尺寸/水平定位用），barY = SCREEN_HEIGHT - 109（固定高）
 
 var AssetPreloader = require('../ui/AssetPreloader.js');
 var Theme = require('../define/GameDefine.js').THEME;
@@ -17,11 +17,11 @@ var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 
 var DESIGN_W = 393;
 var BAR_W = 393;
-var BAR_H = 122;
+var BAR_H = 109;
 var BAR_TOP_FIGMA = 721; // 背景顶部在 Figma 屏幕的 y
 
 /**
- * 绘制底部拉伸背景（main_buttom.png），固定高度 BAR_H(122)、底部对齐、宽度铺满屏宽。
+ * 绘制底部拉伸背景（main_buttom.png），固定高度 BAR_H(109)、底部对齐、宽度铺满屏宽。
  * 宽屏下背景图按比例横向轻微拉伸（与关卡底栏 drawLevelBottomBar 同策略）。
  * 带 drop-shadow(0px -4px 6px rgba(0,0,0,0.2))（固定模糊半径，不随屏宽缩放）。
  * @returns {Object|null} 容器几何 { x, y, w, h, scale }，资源未就绪时返回 null
@@ -32,7 +32,7 @@ function drawMenuBottomBar(ctx) {
   var img = AssetPreloader.get('main_bottom');
   var scale = SCREEN_WIDTH / DESIGN_W;       // 控件水平定位/尺寸用
   var barW = SCREEN_WIDTH;                    // 宽度铺满屏宽
-  var barH = BAR_H;                           // 固定高度 122，不随屏宽缩放
+  var barH = BAR_H;                           // 固定高度 109，不随屏宽缩放
   var barX = 0;
   var barY = SCREEN_HEIGHT - barH;
 

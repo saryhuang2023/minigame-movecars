@@ -188,7 +188,8 @@ class GameplayEngine {
   // ---- OBB 矩形几何 ----
   // 返回 { cx, cy, hw, cosL, sinL, cosP, sinP, rad }
   // hw = 半长（沿方向）
-  getPigRect(tailIndex, length, angle, entityType) {
+  // collisionWidthPercent: 碰撞区宽度百分比，100=默认（scaledDiameter*2/5），>100=更宽 <100=更窄。缺省用 100。
+  getPigRect(tailIndex, length, angle, entityType, collisionWidthPercent) {
     const tail = this.holes[tailIndex];
     if (!tail) return null;
 
@@ -222,7 +223,8 @@ class GameplayEngine {
     // 占用判定半径 = 孔直径 * 2/3（宽于碰撞半径，确保身体覆盖孔心即判定占用）
     const capRadius = this.scaledDiameter * BD.BODY_RATIOS.CAP_RADIUS;
     // 猪间碰撞半宽 = 孔直径 * 2/5（全宽 = d * 4/5）
-    const collisionCapRadius = this.scaledDiameter * BD.BODY_RATIOS.COLLISION_CAP;
+    const cwRatio = (collisionWidthPercent != null ? collisionWidthPercent : 100) / 100;
+    const collisionCapRadius = this.scaledDiameter * BD.BODY_RATIOS.COLLISION_CAP * cwRatio;
     // 胶囊线段端点：尾部收缩孔直径的 1/6（减少尾部碰撞区）
     const tailShrink = this.scaledDiameter * BD.BODY_RATIOS.TAIL_SHRINK;
     const capTailX = tail.x + tailShrink * cosL;
@@ -235,7 +237,7 @@ class GameplayEngine {
     const touchHeadExt = this.scaledHalfDiameter * BD.BODY_RATIOS.TOUCH_HEAD_EXT;
     // 保留 OBB 数据供触控和兼容代码使用
     const collisionHw = hw + collisionCapRadius - tailShrink / 2;
-    const collisionHh = this.scaledDiameter * 2 / 5;  // 猪间碰撞半高
+    const collisionHh = this.scaledDiameter * 2 / 5 * cwRatio;  // 猪间碰撞半高（支持逐猪百分比微调）
     const collisionCx = cx + (tailShrink / 2) * cosL;
     const collisionCy = cy + (tailShrink / 2) * sinL;
     return { cx, cy, hw, collisionHw, collisionHh, collisionCx, collisionCy, touchHw: collisionHw, touchHh, touchHeadExt, cosL, sinL, cosP, sinP, rad,
@@ -333,8 +335,8 @@ class GameplayEngine {
 
     // 当前是否已重叠？用 capRadius（占用半径，宽）而非 collisionCapRadius（碰撞半径，窄）
     // 因为视觉重叠对应的是占用半径级，碰撞半径仅为 1/2 会漏判
-    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
-    const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
+    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type, pig.collisionWidth);
+    const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type, other.collisionWidth);
     if (!cr || !ob) return false;
     const crWide = { ...cr, collisionCapRadius: undefined };
     const obWide = { ...ob, collisionCapRadius: undefined };
@@ -363,8 +365,8 @@ class GameplayEngine {
     const other = this.pigs.find(p => p.id === otherPigId);
     if (!other) return false;
 
-    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
-    const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
+    const cr = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type, pig.collisionWidth);
+    const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type, other.collisionWidth);
     if (!cr || !ob) return false;
 
     // 当前不重叠 → 不豁免（用 capRadius 宽检测，与视觉重叠保持一致）
@@ -425,7 +427,7 @@ class GameplayEngine {
     };
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
-      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type, other.collisionWidth);
       if (!ob) continue;
       if (this._capsuleIntersect(moved, ob)) return other.id;
     }
@@ -450,7 +452,7 @@ class GameplayEngine {
   getPigAtPoint(x, y) {
     const offY = this.topBarH + this.boardOffsetY;
     for (const pig of this.pigs) {
-      const r = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
+      const r = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type, pig.collisionWidth);
       if (!r) continue;
       const px = (x - this.boardOffsetX) - r.cx;
       const py = (y - offY) - r.cy;
@@ -509,7 +511,7 @@ class GameplayEngine {
     // ② 胶囊碰撞（已重叠的后退可以豁免）
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
-      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type, other.collisionWidth);
       if (!ob) continue;
       if (this._capsuleIntersect(r, ob)) {
         if (this._isRetreatingFrom(excludeId, tailIdx, len, angle, other.id)) continue;
@@ -655,7 +657,7 @@ class GameplayEngine {
     if (!pr) return false;
     for (const other of this.pigs) {
       if (other.id === excludeId) continue;
-      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type);
+      const ob = this.getPigRect(other.tailIndex, other.length, other.angle, other.type, other.collisionWidth);
       if (!ob) continue;
       if (this._capsuleIntersect(pr, ob)) return false;
     }
@@ -884,7 +886,7 @@ class GameplayEngine {
     const pig = this.pigs.find(p => p.id === pigId);
     if (!pig) return { canPush: false, reason: '猪不存在' };
 
-    const r0 = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type);
+    const r0 = this.getPigRect(pig.tailIndex, pig.length, pig.angle, pig.type, pig.collisionWidth);
     if (!r0) return { canPush: false, reason: '无有效位置' };
 
     const rad = pig.angle * Math.PI / 180;
@@ -921,7 +923,7 @@ class GameplayEngine {
 
   // 实时判定：猪（含屁股，AABB 含绘制半宽 d*0.7）是否已完全离开屏幕矩形
   _isPigFullyOffScreen(a) {
-    const r = this.getPigRect(a.tailIndex, a.length, a.angle);
+    const r = this.getPigRect(a.tailIndex, a.length, a.angle, a.type, a.collisionWidth);
     if (!r) return false;
     const d = this.scaledDiameter;
     const aabbR = Math.max(r.capRadius, d * 0.7);
@@ -1107,24 +1109,6 @@ class GameplayEngine {
         ctx.restore();
       }
     }
-
-    // 棋盘左右边界线（调试用）
-    const boardLeft = this.boardOffsetX;
-    const boardRight = this.boardOffsetX + this.boardWidth;
-    const boardTop = offY;
-    const boardBottom = offY + (this.rows - 1) * this.vSpacing + this.scaledDiameter;
-    ctx.strokeStyle = 'rgba(255, 255, 100, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath();
-    ctx.moveTo(boardLeft, boardTop);
-    ctx.lineTo(boardLeft, boardBottom);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(boardRight, boardTop);
-    ctx.lineTo(boardRight, boardBottom);
-    ctx.stroke();
-    ctx.setLineDash([]);
 
     // 拖拽中头部占孔 → 红色填充高亮
     if (this.dragState && this.dragState.headHoleIdx >= 0) {

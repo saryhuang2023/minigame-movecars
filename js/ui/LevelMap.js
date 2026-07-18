@@ -49,12 +49,12 @@ class LevelMap {
     this.onSelectLevel = null;  // GameEngine 注入：选中关卡回调(index, state)
 
     this._cloudMaxSeen = databus._cloudMaxLevel || 0;
-    this._total = this._readTotal();   // 真实总关数（构造时本地 index.json 已就绪）
+    this._total = this._readTotal();   // 真实总关数（index.json + localStorage + 文件扫描，三道防线）
     this._buildLevels();
-    this.scrollY = this._maxScroll;   // 初始定位到最底部：关卡1 在屏幕下方，往上滑看更高关
+    this.scrollY = this._computeFrontierScroll();   // 从第一帧就定位在当前关
   }
 
-  // 真实总关数：本地 index.json maxLevel 与云端 _cloudMaxLevel 取大；都为 0 时回退到 11 关占位
+  // 真实总关数：扫描本地关卡缓存 + localStorage 云端记录 + index.json 兜底
   _readTotal() {
     var localMax = 0;
     try {
@@ -64,9 +64,23 @@ class LevelMap {
       if (typeof indexData.maxLevel === 'string') localMax = parseInt(indexData.maxLevel, 10) || 0;
       else if (typeof indexData.maxLevel === 'number') localMax = indexData.maxLevel;
       else if (Array.isArray(indexData)) localMax = indexData.length;
-    } catch (e) { /* 无 index.json：等云端 */ }
+    } catch (e) { /* 无 index.json */ }
+
+    // 云端记录（实时 databus + localStorage 持久化）
     var cloudMax = databus._cloudMaxLevel || 0;
-    return Math.max(localMax, cloudMax) || 11;
+    try { cloudMax = Math.max(cloudMax, parseInt(wx.getStorageSync('_cloudMaxLevel'), 10) || 0); } catch (e) {}
+
+    // 本地缓存：扫描 USER_DATA_PATH/levels/ 下已下载的 .json 文件数量（离线可用）
+    var cachedCount = 0;
+    try {
+      var dir = wx.env.USER_DATA_PATH + '/levels';
+      var files = fs.readdirSync(dir);
+      for (var fi = 0; fi < files.length; fi++) {
+        if (/^\d{4}\.json$/.test(files[fi])) cachedCount++;
+      }
+    } catch (e) { /* 首次游玩，目录可能不存在 */ }
+
+    return Math.max(localMax, cloudMax, cachedCount) || 11;
   }
 
   // 云端关卡范围就绪后自同步（无需 GameEngine 主动推）：cloudMax 变化才重建
@@ -78,7 +92,7 @@ class LevelMap {
     if (n !== this._total) {
       this._total = n;
       this._buildLevels();
-      this.scrollY = this._maxScroll;   // 重新锚定到最底部（关卡1）
+      this.scrollY = this._computeFrontierScroll();   // 云端数据更新后重新定位
     }
   }
 
@@ -107,6 +121,21 @@ class LevelMap {
     var starCount = 0;
     for (var k in result.starsMap) { if (result.starsMap.hasOwnProperty(k)) starCount++; }
     console.log('[LevelMap] 读取进度: lastIdx=' + result.lastIdx + ' frontier=' + result.frontier + ' 已记录星级关数=' + starCount + ' starsMap=' + JSON.stringify(result.starsMap));
+  }
+
+  // 计算定位到最新关的 scrollY 值（全通关则最后一关，使目标关在屏幕上部约 35% 处）
+  _computeFrontierScroll() {
+    if (!this._levels || this._levels.length === 0) return 0;
+    var prog = this._getProgress();
+    var targetIdx = Math.min(prog.frontier, this._levels.length - 1);
+    if (targetIdx < 0) targetIdx = 0;
+    var lv = this._levels[targetIdx];
+    var targetScroll = lv.worldY - SCREEN_HEIGHT * 0.35;
+    return Math.max(0, Math.min(targetScroll, this._maxScroll));
+  }
+
+  _scrollToFrontier() {
+    this.scrollY = this._computeFrontierScroll();
   }
 
   // 构建固定槽位布局（第一章）：11 槽位/段平铺，段 0 含第 1 关位于最底。
@@ -322,8 +351,10 @@ class LevelMap {
   //   由 GameEngine 在 renderMenu（开始按钮）之后调用，保证手绘制在按钮之上，不被按钮遮挡。
   //   仅主菜单显示；进入关卡/其它状态隐藏。
   //   延迟显示：主界面入场动画完成后，再等 HAND_DELAY_MS 才出现（databus._menuEntranceDoneAt 由 GameEngine 镜像）。
+  //   点击开始按钮（菜单出场）瞬间隐藏：_menuExiting 由 GameEngine._startMenuExit 设 true，本帧即停画。
   renderHand() {
     if (databus.gameState !== 'menu') return;
+    if (databus._menuExiting) return;                     // 正在出场：立即隐藏，不等动画播完
     var doneAt = databus._menuEntranceDoneAt || 0;
     if (!doneAt) return;                                  // 入场未完成，不显示
     if (Date.now() - doneAt < LevelMap.HAND_DELAY_MS) return;  // 入场后延迟未到，不显示
@@ -333,17 +364,14 @@ class LevelMap {
   renderBackground() {
     if (this._bgReady && this._bgImg) {
       // 背景图严格缩放至一屏尺寸（dw=SCREEN_WIDTH, dh=SCREEN_HEIGHT），随地图滚动平铺。
-      // gridOffset 把接缝对齐到「初始视图(scrollY=maxScroll)的屏幕上下边缘」，
-      //   使进入游戏时看到完整一屏、无穿屏接缝；滚动中的接缝为平铺固有（用户已接受先不管）。
       var dw = SCREEN_WIDTH, dh = SCREEN_HEIGHT;
-      var dx = 0;
       ctx.save();
-      ctx.translate(0, -this.scrollY);   // 世界空间：背景随路径一起滚动
+      ctx.translate(0, -this.scrollY);
       var gridOffset = ((this._contentHeight % dh) + dh) % dh;
       var t0 = Math.floor((this.scrollY - gridOffset) / dh);
       var t1 = Math.floor((this.scrollY + SCREEN_HEIGHT - gridOffset) / dh);
       for (var ti = t0; ti <= t1; ti++) {
-        ctx.drawImage(this._bgImg, dx, ti * dh + gridOffset, dw, dh);
+        ctx.drawImage(this._bgImg, 0, ti * dh + gridOffset, dw, dh);
       }
       ctx.restore();
     } else {
@@ -366,15 +394,15 @@ class LevelMap {
     var s = this._scale;
     var roadW = cfg.road.w * s;
     var roadH = cfg.road.h * s;
-    var roadLeft = (cfg.designWidth / 2 - cfg.road.w / 2) * s;   // 水平居中（画布中心 196.5）
+    var roadLeft = (cfg.designWidth / 2 - cfg.road.w / 2) * s;
     var numPages = Math.max(1, Math.ceil(this._levels.length / cfg.slots.length));
 
     var yTop = this.scrollY - roadH;
     var yBottom = this.scrollY + SCREEN_HEIGHT + roadH;
     ctx.save();
     for (var p = 0; p < numPages; p++) {
-      var segTop = (numPages - 1 - p) * roadH;     // 段 p 顶部世界 Y
-      if (segTop + roadH < yTop || segTop > yBottom) continue;  // 可见性裁剪
+      var segTop = (numPages - 1 - p) * roadH;
+      if (segTop + roadH < yTop || segTop > yBottom) continue;
       ctx.drawImage(this._roadImg, roadLeft, segTop, roadW, roadH);
     }
     ctx.restore();
@@ -395,33 +423,22 @@ class LevelMap {
       var stars = prog.starsMap[name] || 0;
 
       if (PREVIEW_CLEARED) {
-        // 开发预览：强制全部渲染为已通关，星级循环 1~4，便于核对最终效果
         this._drawLevelButton(lv, {
-          state: 'cleared',
-          stars: 1 + (lv.index % 4),
-          levelId: id,
+          state: 'cleared', stars: 1 + (lv.index % 4), levelId: id,
         });
         continue;
       }
-
       if (lv.index <= prog.lastIdx) {
-        // 已通关：最终正式版按钮（按真实星级画 1~3 朵大花 / 4 星 3 朵彩花）
         this._drawLevelButton(lv, {
-          state: 'cleared',
-          stars: stars,
-          levelId: id,
+          state: 'cleared', stars: stars, levelId: id,
         });
       } else if (lv.index === prog.frontier) {
-        // 当前关：与未解锁同图 + 外圈呼吸光环区分
         this._drawLevelButton(lv, {
-          state: 'current',
-          levelId: id,
+          state: 'current', levelId: id,
         });
       } else {
-        // 未解锁：正式图片按钮（main_level_btn_unlocked.png）
         this._drawLevelButton(lv, {
-          state: 'locked',
-          levelId: id,
+          state: 'locked', levelId: id,
         });
       }
     }
