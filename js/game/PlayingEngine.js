@@ -429,15 +429,16 @@ class PlayingEngine {
       databus.gameState = 'menu';
       return;
     }
-    // 入场动画状态必须在 loadLevel 之前设置，确保首帧渲染时 es 已存在
+    // 入场动画已去除：关卡内所有 UI（顶栏/底栏/金币/步数/星级条/猪）默认直接显示，不再飞入/渐显。
+    // 仍保留 _entranceState 占位（phase 直接置 'done'），确保首帧渲染时 es 已存在且输入即刻可用。
     this._entranceState = {
-      startTime: Date.now() + 50,    // 进入关卡后延后 50ms 再启动入场（与菜单出场后的停留呼应）
-      phase: 'board',        // board → pigs → ui → done
-      pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,     // 300ms 后开始猪渐显
-      pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,       // 猪渐显 500ms (ease-out)
-      uiStart: PlayDefine.PLAY.ENTRANCE.UI_START,           // 800ms 后开始 UI 飞入
-      uiDur: PlayDefine.PLAY.ENTRANCE.UI_DUR,             // UI 飞入 500ms (ease-out cubic)
-      totalDuration: PlayDefine.PLAY.ENTRANCE.TOTAL,     // 总时长 1300ms（注意定义键名是 TOTAL 非 TOTAL_DURATION）
+      startTime: Date.now() + 50,
+      phase: 'done',        // 直接终态：所有 UI / 猪 默认显示，无入场动画
+      pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,
+      pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,
+      uiStart: PlayDefine.PLAY.ENTRANCE.UI_START,
+      uiDur: PlayDefine.PLAY.ENTRANCE.UI_DUR,
+      totalDuration: PlayDefine.PLAY.ENTRANCE.TOTAL,
     };
     this.loadLevel(data);
     this._loading = false;
@@ -652,11 +653,11 @@ class PlayingEngine {
     }
   }
 
-  /** 关卡入场动画计时起点（交叉淡变结束、切场景那一刻调用）。不再 +500ms —— 交叉淡变已提供呼吸间隙。 */
+  /** 关卡入场动画已去除：交叉淡变结束、切场景那一刻直接置终态，所有 UI 默认显示（无飞入/渐显）。 */
   beginEntrance() {
     this._entranceState = {
       startTime: Date.now(),
-      phase: 'board',        // board → pigs → ui → done
+      phase: 'done',        // 直接终态：无飞入/渐显
       pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,
       pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,
       uiStart: PlayDefine.PLAY.ENTRANCE.UI_START,
@@ -1591,6 +1592,13 @@ class PlayingEngine {
       var remain = this._uiBranchProgress.getFourStarRemainMs();
       console.log('[LOG_victory] 4星特效播放中，延迟 ' + remain + 'ms 再弹面板');
       setTimeout(function () { self._finishVictorySequence(); }, remain + 80);
+      return;
+    }
+    // 蜜蜂已跨 4★ 门槛、但尚未「爬到 4★ 花位置」→ 也需延后：否则面板会盖住蜜蜂奔向 4★ 花 + 甩魔法的过程。
+    if (this._uiBranchProgress && this._uiBranchProgress.isFourStarPending()) {
+      var self2 = this;
+      console.log('[LOG_victory] 蜜蜂尚未抵达4★位置，延迟 120ms 再检查');
+      setTimeout(function () { self2._finishVictorySequence(); }, 120);
       return;
     }
     console.log('[LOG_victory] ★ 结算面板弹出！_showVictoryPanel=true, goldAmount=' + this._goldAmount + ' balance=' + GoldSystem.getGold());

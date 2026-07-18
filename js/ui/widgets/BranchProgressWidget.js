@@ -9,9 +9,10 @@
 //  - 越界（积分超上限）：小蜜蜂已到终点、不再前进，也不旋转；保持终点姿态（无"到顶后打转"）
 //  - 已走过的路：用 image_719（与 image_718 同尺寸同轨迹的「已走过」配色图）沿树枝路径做进度揭示（替代旧半透明绿线染色方案）
 //  - 花朵：树枝上按 积分档位(s1..s4)/4星分 的位置放 1~4 朵花；积分跨档即「弹性绽放」获得动画；
-//          4 星（彩色）特效（魔法棒施法，2026-07-15）：4 星花一开始就是大彩花；到顶后 4 星旋转 500ms、
-//          旋转到 200ms 时甩出「彩星」（对齐金币飞行动画：弧线抛出+弹出缩放+速度拉伸+拖尾+光晕）飞向 3 颗普通星，3 星旋转 200ms 同时覆彩色；
-//          逐朵（3→2→1）施法，三朵全彩后结束并弹出结算面板。
+//          4 星（彩色）特效（魔法棒施法，2026-07-15）：4★ 花默认「隐藏」；小蜜蜂真正「抵达 4★ 花位置（枝尾）」后，
+//          4★ 花才出场（旋转过程与「出场动画」一致：快速旋转 2s + 放光芒），转到第 1 秒末才开始甩星星（施法）；
+//          彩星（对齐金币飞行动画：弧线抛出+弹出缩放+速度拉伸+拖尾+光晕）飞向 3 颗普通星，逐朵（3→2→1）施法、
+//          3 颗普通星旋转 200ms 同时覆彩色；三朵全彩后结束并弹出结算面板。
 //  - 调试：SHOW_DEBUG=true 时画出 Catmull-Rom 曲线 + 控制点（测试期核对路径）
 
 var UIComponent = require('../base/UIComponent.js');
@@ -52,6 +53,7 @@ var WORM_H = 18;
 // 蜜蜂锚点 = 图像中心点，直接对齐路径点（不再前探头部）。
 var BEE_SPIN_SPEED = (Math.PI * 2) / 0.7;  // 原地转圈角速度（rad/s）：约每 0.7s 转一圈
 var BEE_SPIN_WINDOW = 450;    // 抵达尽头后、若「积分仍持续增加」(距上次加分 < 此值 ms) 则原地转圈；超时停止
+var BEE_MAX_SPEED = 0.012;    // 蜜蜂单帧最大前进速度（frac/帧，按 60fps 计）；结算「步数转积分」一次大量加分时限制蜜蜂冲刺速度，避免快到离谱（满枝 ~1.0 至少约 1.4s 跑完）
 var TRAIL_W = 12;             // 绿色轨迹线宽（仅作 image_719 未就绪时的兜底）
 var REVEAL_W = 46;            // 已走过路径「揭示遮罩」描边宽度（>图高44，确保覆盖整条树枝厚度；719 仅树枝处有像素，过宽不溢出）
 var LERP = 0.15;              // 每帧缓动系数（约 60fps）
@@ -76,6 +78,15 @@ var TARGET_COLOR_MS = 200;    // 目标花「旋转 + 覆彩色」时长
 var FOUR_CAST_TARGETS = [2, 1, 0]; // 施法顺序：先 3 星、再 2 星、再 1 星，逐一覆彩色
 var FOUR_CAST_DELAYS = [400, 600, 800]; // ★每朵花的施法「开始延迟」(ms，相对 4 星特效起点)。与 FOUR_CAST_TARGETS 一一对应：第 0 项=先施法的花、第 1 项=其次……独立计时，不再串行等前一朵播完。改这里即可控制每朵开始时间（[0,0,0]=三朵同时开）。
 var FOUR_TAIL_MS = 120;       // 序列结束后到结算面板弹出的缓冲（防被遮罩盖住）
+
+// ===== 2★ 触发「位置压缩 + 4★ 出场」（用户 2026-07-18 指定）=====
+var SHIFT_FACTOR = 2 / 3;     // 1~3★ 及蜜蜂位置统一 ×2/3（往左移），给 4★ 出场腾出枝尾空间
+var SHIFT_DUR = 1040;         // 滑行到 ×2/3 新位置的动画时长（ms）；用户 2026-07-18：慢一倍（原 520），看清滑动过程
+var FOUR_REVEAL_MS = 2000;    // 4★ 出场：快速旋转 2 秒
+var FOUR_REVEAL_SPINS = 2;    // 出场旋转圈数（2 秒 2 圈）
+var FOUR_IDLE_SPIN_SPEED = (Math.PI * 2) / 6;  // 出场后缓慢常驻自转（1 圈/6s）
+var FOUR_STAR_SIZE = Math.round(25 * 4 / 3);   // 大彩星尺寸（原 25 ×4/3 ≈ 33）：4★ 源花 + 3 颗被施法星，甩完后 4 颗全是大彩星
+var FOUR_CAST_DELAY_MS = 1000; // 4★ 花「出场旋转」开始 ⇒ 「甩星星(施法)」开始的间隔：蜜蜂到位后花先转 1 秒，第 1 秒末才挥魔法棒甩彩星
 
 function catmullRomPoint(p0, p1, p2, p3, t) {
   var t2 = t * t, t3 = t2 * t;
@@ -184,20 +195,32 @@ class BranchProgressWidget extends UIComponent {
     this._fourStarStart = 0;         // 4 星特效起始时间（用于判断结算面板是否延后弹出）
     this._fourStarTotalMs = 0;       // 4 星特效总时长（按每朵 startAt 取最大推算），_triggerFourStar 时计算
     this._castFlash = 0;             // 4 星施法瞬间的高光环（魔法感）
+
+    // ===== 2★ 位置压缩 + 4★ 出场 状态 =====
+    this._shiftStart = 0;          // 2★ 触发滑行起点时间戳
+    this._shifted = false;         // 是否已触发「位置压缩 + 4★ 出场」
+    this._phase2A = 0;             // Phase2 中 3★ 新位置 = (S3/S4) × SHIFT_FACTOR
+    this._fourRevealed = false;    // 4★ 是否已出场（默认隐藏，滑行结束后才亮）
+    this._fourRevealStart = 0;     // 4★ 出场动画起点时间戳
+    this._shiftScoreCap = 0;       // 2★ 触发瞬间的积分（滑行/出场锁死期间蜜蜂固定于此分对应的压缩位）
+    this._pendingFourStar = false; // 积分已跨 4★ 门槛、但尚未「蜜蜂抵达 4★ 位置」→ 暂存，待蜜蜂到位才甩魔法
+    this._castPending = false;     // 4★ 出场旋转已开始、但「甩星星」尚未触发（等旋转满 FOUR_CAST_DELAY_MS 才挥魔法）
+    this._castDelayStart = 0;      // 「甩星星」倒计时起点（= 4★ 出场旋转起点时间戳）
   }
 
   _makeFlowers() {
     var arr = [];
     for (var i = 0; i < 4; i++) {
-      // i===3（4 星花）为「施法源花」：进关即覆彩 + 大尺寸（25），作为魔法棒施法起点，
-      // 不是虫子到达后才变彩。其余 3 朵为普通花，跨档时原地长大（黄→经施法覆彩）。
-      var isFour = (i === 3);
+      // 4 星花（i===3）默认「隐藏」：待 2★ 滑行结束后才「出场」亮起（用户需求：默认不出现）。
+      // 其余 3 朵为普通花，跨档时原地长大（黄→经 4★ 施法覆彩）。
       arr.push({
-        obtained: isFour,    // 4 星花从进关即视为已长出（直接大彩花呈现，不再等跨档）
+        // 普通花(0~2)：未达成→由 _preplacedVisible 画 14px 占位；达成→原地长大。
+        // 4★(3)：默认 obtained=false（完全隐藏），出场后由 update 置为 true 并覆彩。
+        obtained: false,
         popStart: 0,         // 获得/放大动画起始时间（0=已完成/静止）
         popKind: 'normal',   // 'normal' | 'fourstar'（4 星接棒放大）
-        colored: isFour,     // 是否覆彩色（4 星：进关即彩）
-        finalSize: 25, // 大花尺寸统一 25（普通花与 4 星花一致）
+        colored: false,      // 是否覆彩色（4★ 出场后才 true）
+        finalSize: 25,       // 普通花尺寸；4★ 大彩星与施法覆彩星统一用 FOUR_STAR_SIZE
       });
     }
     return arr;
@@ -217,6 +240,17 @@ class BranchProgressWidget extends UIComponent {
     this._fourStarStart = 0;
     this._castFlash = 0;
     this._preplacedVisible = true;   // 常驻：进关即显示 4 朵小花朵（结算时未达成的也以小花形态在树枝上，原地长大）
+    // 2★ 位置压缩 + 4★ 出场 状态复位
+    this._shiftStart = 0;
+    this._shifted = false;
+    this._fourRevealed = false;
+    this._fourRevealStart = 0;
+    this._shiftScoreCap = 0;
+    this._pendingFourStar = false;   // 复位：本关未达「待甩魔法」状态
+    this._castPending = false;       // 复位：不处于「已转未甩」状态
+    this._castDelayStart = 0;
+    var S3b = this._starScores[2], S4b = this._starScores[3] || 1;
+    this._phase2A = S4b > 0 ? (S3b / S4b) * SHIFT_FACTOR : (2 / 3);
   }
 
   /** 步数→飞小星星：从步数框(fromX,fromY)飞出一「小堆」小星星，沿弧线飞向 4 星花朵位置（纯视觉，不新增金币） */
@@ -282,8 +316,15 @@ class BranchProgressWidget extends UIComponent {
           }
         }
         this._currentTier = newTier;
-        if (newTier >= 4 && !this._fourStarActive) {
-          this._triggerFourStar();
+        // 2★ 触发「位置压缩 + 4★ 出场」：星星与蜜蜂沿树枝滑行到 ×2/3 新位置
+        if (newTier >= 2 && !this._shifted) {
+          this._shiftStart = Date.now();
+          this._shifted = true;
+          this._shiftScoreCap = current;   // 锁死起点分：滑行/出场期间蜜蜂固定在此分对应的压缩位，待动画播完才继续前进
+        }
+        if (newTier >= 4) {
+          // 不直接甩魔法：先记录「已跨 4★ 门槛」，待 update() 中蜜蜂真正抵达 4★ 位置（枝尾）才触发施法动作
+          this._pendingFourStar = true;
         }
       }
     }
@@ -295,6 +336,7 @@ class BranchProgressWidget extends UIComponent {
    *  @param {number} total   总积分（= 4 星门槛 totalScore） */
   showResultImmediate(current, total) {
     total = total || 1;
+    var now = Date.now();
     var t = current / total;
     if (t < 0) t = 0;
     if (t > 1) t = 1;
@@ -314,12 +356,34 @@ class BranchProgressWidget extends UIComponent {
       }
       // 中途恢复不会到 4 星（需结算剩余步数转化），故不触发 4 星施法特效
     }
+    // 中途恢复且已 >=2★：直接处于 Phase2（位置压缩），4★ 已出场常驻（不再播滑动/出场动画）
+    if (tier >= 2) {
+      this._shifted = true;
+      this._shiftStart = now - SHIFT_DUR - 1;            // 视为滑行早已结束
+      this._fourRevealed = true;
+      this._fourRevealStart = now - FOUR_REVEAL_MS - 1;  // 出场动画早已结束
+      this._shiftScoreCap = current;                     // 恢复即终态，无锁死/动画
+      this._displayed = this._fracAt(current);           // Phase2 压缩位（非 Phase1 线性位），避免恢复后蜜蜂落在错误坐标
+      this._pendingFourStar = false;                     // 中途恢复为静态终态，不播 4★ 施法特效（与既有设计一致）
+      this._castPending = false;
+      this._castDelayStart = 0;
+      this._flowers[3].obtained = true;
+      this._flowers[3].colored = true;
+      this._flowers[3].finalSize = FOUR_STAR_SIZE;
+      this._flowers[3].popStart = 0;
+    }
   }
 
   /** 4 星（彩色星）特效是否仍在播放（结算面板据此延后弹出，避免被遮罩盖住看不到） */
   isFourStarAnimating() {
     if (!this._fourStarActive) return false;
     return (Date.now() - this._fourStarStart) < this._fourStarTotalMs;
+  }
+
+  /** 是否已跨 4★ 门槛、但蜜蜂尚未抵达 4★ 位置（枝尾）→ 施法动作待发。
+   *  结算面板必须在蜜蜂「到位」后才弹，否则会盖住蜜蜂爬向 4★ 花 + 甩魔法的过程。 */
+  isFourStarPending() {
+    return !!this._pendingFourStar;
   }
 
   /** 4 星特效剩余播放时长（ms），用于结算面板精确延后 */
@@ -333,17 +397,56 @@ class BranchProgressWidget extends UIComponent {
   _flowerCenter(i) {
     var frac = this._starFrac(i);
     var pos = this._pointAt(frac);
-    var size = (this._flowers[i] && this._flowers[i].finalSize) ? this._flowers[i].finalSize : 25;
+    var size = (this._flowers[i] && this._flowers[i].finalSize) ? this._flowers[i].finalSize : FOUR_STAR_SIZE;
     var anchorUp = FLOWER_ANCHOR * size;
     return { x: this.x + pos.x, y: this.y + BRANCH_TOP_PAD + pos.y - anchorUp };
   }
 
-  // 花朵 i 在树枝上的进度比例：s_i / 4星分（4 星固定终点）
+  // 分数 → 树枝进度比例（统一映射，蜜蜂与星星共用 → 天然等比例对齐）。
+  // Phase1（2★ 前）：线性铺满整条枝（s/S4）。
+  // Phase2（2★ 后）：压缩到 ×2/3 左侧，给 4★ 出场留位：
+  //   s≤S3 → (s/S3)·A，其中 A=(S3/S4)·SHIFT_FACTOR；s∈[S3,S4] → A+((s−S3)/(S4−S3))·(1−A)。
+  // 蜜蜂总积分不变；越过 3★ 后该段 d(frac)/d(score)>1/S4 ⇒ 速度自然上升（映射副产物，无额外加速）。
+  _fracAt(score) {
+    var S = this._starScores;
+    var S3 = S[2], S4 = (S[3] || 1);
+    if (score <= 0) return 0;
+    if (score >= S4) return 1;
+    if (score <= S3) {
+      if (S3 <= 0) return Math.min(1, score / S4);
+      return (score / S3) * this._phase2A;
+    }
+    return this._phase2A + ((score - S3) / (S4 - S3)) * (1 - this._phase2A);
+  }
+
+  // 花朵 i 在树枝上的进度比例（含 2★ 滑行插值）
   _starFrac(i) {
-    if (i >= 3) return 1;
-    var denom = this._starScores[3] || 1;
-    if (denom <= 0) return (i + 1) / 4;
-    return Math.min(1, this._starScores[i] / denom);
+    var now = Date.now();
+    var S = this._starScores;
+    var p1 = (i >= 3) ? 1 : Math.min(1, S[i] / (S[3] || 1));   // Phase1：线性铺满
+    if (!this._shifted) return p1;
+    var p2 = this._fracAt(S[i]);                                // Phase2：压缩后目标位
+    return p1 + (p2 - p1) * this._getShiftP(now);
+  }
+
+  // 2★ 滑行进度：0=未滑/滑行前，1=滑完，期间 [0,1] 缓动（只插值位置，不阻塞其它逻辑）
+  _getShiftP(now) {
+    if (!this._shifted) return 0;
+    var e = (now - this._shiftStart) / SHIFT_DUR;
+    if (e >= 1) return 1;
+    if (e <= 0) return 0;
+    return easeInOutCubic(e);
+  }
+
+  // 蜜蜂当前树枝进度比例（= 已渲染位置；滑行动画已在 update 中直接写入 _displayed，故此处直接返回）
+  _beeFrac() {
+    return this._displayed;
+  }
+
+  // 蜜蜂缓动目标位置：Phase1 = _progress（线性铺满）；Phase2 = 同分映射到压缩坐标（_fracAt）
+  _targetFrac() {
+    if (!this._shifted) return this._progress;
+    return this._fracAt(this._progress * (this._starScores[3] || 1));
   }
 
   _triggerFourStar() {
@@ -384,7 +487,7 @@ class BranchProgressWidget extends UIComponent {
         dur: STARS_FLY_MS,
         rot: Math.random() * Math.PI * 2,
         rotSpeed: (Math.random() * 2 - 1) * 4,
-        size: 20 + Math.random() * 6,
+        size: (20 + Math.random() * 6) * (4 / 3),  // 彩星大小 ×4/3（原 20~26 → 26.7~34.7）
       });
     }
   }
@@ -422,8 +525,52 @@ class BranchProgressWidget extends UIComponent {
     var k = 1 - Math.pow(1 - LERP, dt / 16.67);
     if (k > 1) k = 1;
     if (k < 0) k = 0;
-    this._displayed += (this._progress - this._displayed) * k;
-    if (Math.abs(this._progress - this._displayed) < 0.0005) this._displayed = this._progress;
+
+    // 蜜蜂位置推进：仅「2★ 滑行阶段」锁死蜜蜂（在压缩前/后位置间插值滑行，不随加分前进）。
+    // 4★ 出场旋转 + 甩魔法均发生在「蜜蜂抵达 4★ 位置」之后，故不再锁出场阶段（此时蜜蜂已在枝尾）。
+    var beeLocked = false;
+    if (this._shifted) {
+      if ((now - this._shiftStart) < SHIFT_DUR) {
+        // 滑行阶段：蜜蜂在「压缩前(cap 的 Phase1 位) → 压缩后(cap 的 Phase2 位)」间插值滑行，不随加分前进
+        var sp = this._getShiftP(now);              // easeInOutCubic 0..1
+        var capS4 = (this._starScores[3] || 1);
+        var f1 = this._shiftScoreCap / capS4;        // 压缩前位置（Phase1 线性）
+        var f2 = this._fracAt(this._shiftScoreCap);  // 压缩后位置（Phase2）
+        this._displayed = f1 + (f2 - f1) * sp;
+        beeLocked = true;
+      }
+    }
+    if (!beeLocked) {
+      // 正常推进：缓动逼近目标位置（Phase2 下目标需经 _fracAt 压缩映射）
+      var target = this._targetFrac();
+      var step = (target - this._displayed) * k;
+      // 最大速度钳制：结算「步数转积分」一次灌入大量积分时，蜜蜂单帧前进不得快到离谱
+      var maxStep = BEE_MAX_SPEED * (dt / 16.67);
+      if (step > maxStep) step = maxStep;
+      else if (step < -maxStep) step = -maxStep;
+      this._displayed += step;
+      if (Math.abs(target - this._displayed) < 0.0005) this._displayed = target;
+    }
+
+    // 4★ 出场（旋转 + 光芒）：等小蜜蜂真正「抵达 4★ 花位置（枝尾 frac≈1）」才触发；
+    // 旋转过程与「出场动画」一致（快速旋转 + 放光芒），转到第 1 秒才开始甩星星。
+    if (this._pendingFourStar && !this._fourRevealed && this._displayed >= 0.998) {
+      this._fourRevealed = true;
+      this._fourRevealStart = now;
+      this._flowers[3].obtained = true;
+      this._flowers[3].colored = true;
+      this._flowers[3].finalSize = FOUR_STAR_SIZE;
+      this._flowers[3].popStart = 0;
+      this._castPending = true;          // 旋转 FOUR_CAST_DELAY_MS 后才甩星星
+      this._castDelayStart = now;
+    }
+
+    // 4★ 花「出场旋转满 1 秒」后 → 甩星星（施法）：此时蜜蜂已到位，魔法棒开始挥舞
+    if (this._castPending && !this._fourStarActive && (now - this._castDelayStart) >= FOUR_CAST_DELAY_MS) {
+      this._castPending = false;
+      this._pendingFourStar = false;     // 施法阶段由 _fourStarActive 接管；_pendingFourStar 复位（结算面板改由 isFourStarAnimating 延后）
+      this._triggerFourStar();
+    }
 
     // 蜜蜂原地转圈：抵达路径尽头（progress 已满）且积分仍在持续增加 ⇒ 持续旋转；否则复位静止
     var atEnd = this._displayed >= 0.998;
@@ -434,7 +581,6 @@ class BranchProgressWidget extends UIComponent {
     } else {
       this._beeSpinAngle = 0;
     }
-
 
     // 花朵获得/放大动画收尾（popStart 置 0 表示静止）
     for (var fi = 0; fi < this._flowers.length; fi++) {
@@ -463,7 +609,7 @@ class BranchProgressWidget extends UIComponent {
         if (!c.colored && e >= (FOUR_LAUNCH_AT + STARS_FLY_MS)) {
           c.colored = true;
           var ctf = this._flowers[c.target];
-          if (ctf) { ctf.colored = true; ctf.finalSize = 25; ctf.popStart = now; ctf.popKind = 'fourstar'; }
+          if (ctf) { ctf.colored = true; ctf.finalSize = FOUR_STAR_SIZE; ctf.popStart = now; ctf.popKind = 'fourstar'; }
         }
         // 该朵是否彻底结束：覆彩 + TARGET_COLOR_MS 已走完
         if (e < (FOUR_LAUNCH_AT + STARS_FLY_MS + TARGET_COLOR_MS)) allDone = false;
@@ -554,8 +700,8 @@ class BranchProgressWidget extends UIComponent {
   }
 
   _renderTrail(ctx, ox, oy) {
-    // 已走过的路：绿色轨迹（从起点到当前 worm 位置）
-    var target = this._displayed * this._arc.total;
+    // 已走过的路：绿色轨迹（从起点到当前 worm 位置；用 _beeFrac 跟随压缩后的真实位置，避免 2★ 后绿线越过蜜蜂）
+    var target = this._beeFrac() * this._arc.total;
     var cum = this._arc.cum;
     ctx.save();
     ctx.strokeStyle = 'rgba(120, 200, 90, 0.4)';
@@ -594,7 +740,7 @@ class BranchProgressWidget extends UIComponent {
     octx.save();
     octx.beginPath();
     var dense = this._dense, cum = this._arc.cum, total = this._arc.total;
-    var target = this._displayed * total;
+    var target = this._beeFrac() * total;
     octx.moveTo(dense[0].x, dense[0].y);
     for (var i = 1; i < dense.length; i++) {
       if (cum[i] > target) {
@@ -624,7 +770,7 @@ class BranchProgressWidget extends UIComponent {
   }
 
   _renderWorm(ctx, ox, oy) {
-    var pos = this._pointAt(this._displayed);
+    var pos = this._pointAt(this._beeFrac());
     var wx = ox + pos.x;
     var wy = oy + pos.y;
     var finalAngle = pos.angle;
@@ -647,10 +793,10 @@ class BranchProgressWidget extends UIComponent {
     ctx.restore();
   }
 
-  // 4 朵星级花（含 4 星施法特效）
+  // 4 朵星级花（含 4★ 出场旋转 + 施法特效）
   _renderFlowers(ctx, ox, oy) {
     var now = Date.now();
-    // 4 星源花在「甩花瓣」瞬间旋转一圈（魔法棒挥舞感）；重叠施法时每次甩出都会重新触发，连续旋转
+    // 4★ 源花在「甩花瓣」瞬间旋转一圈（魔法棒挥舞感）；重叠施法时每次甩出都会重新触发，连续旋转
     var fourRot = 0;
     if (this._fourSpinStart) {
       var fe = (now - this._fourSpinStart) / FOUR_ROT_MS;
@@ -670,7 +816,20 @@ class BranchProgressWidget extends UIComponent {
         var pos = this._pointAt(frac);
         // 获得/放大动画：蓄力 → 弹性绽放(花瓣散开) → 回弹
         var scale = 1, rot = 0, bloom = 1;
-        if (i === 3) rot += fourRot;
+        if (i === 3) {
+          rot += fourRot;
+          // 4★ 出场：快速旋转 2s + 放出光芒；之后缓慢常驻自转
+          if (this._fourRevealed) {
+            var re = (now - this._fourRevealStart) / FOUR_REVEAL_MS;
+            if (re < 1) {
+              var ref = re < 0.5 ? 2 * re * re : 1 - Math.pow(-2 * re + 2, 2) / 2; // easeInOut
+              rot += ref * Math.PI * 2 * FOUR_REVEAL_SPINS;
+              this._renderFourRevealGlow(ctx, ox + pos.x, oy + pos.y - FLOWER_ANCHOR * (f.finalSize || FOUR_STAR_SIZE), f.finalSize || FOUR_STAR_SIZE, re);
+            } else {
+              rot += ((now - this._fourRevealStart - FOUR_REVEAL_MS) / 1000) * FOUR_IDLE_SPIN_SPEED;
+            }
+          }
+        }
         if (f.popStart) {
           var pd = (now - f.popStart) / FLOWER_POP_MS;
           if (pd > 1) pd = 1;
@@ -678,17 +837,17 @@ class BranchProgressWidget extends UIComponent {
           scale = ap.scale; rot = ap.rot; bloom = ap.bloom;
         }
         // 底部中心锚点：花的底部中心对齐路径点 → 整朵偏高一点，虫头撞到的是花底
-        var anchorUp = FLOWER_ANCHOR * (f.finalSize || 25) * scale;
+        var anchorUp = FLOWER_ANCHOR * (f.finalSize || FOUR_STAR_SIZE) * scale;
         var fx = ox + pos.x, fy = oy + pos.y - anchorUp;
         // 获得瞬间：光环 + 星点爆发点缀（与花朵同中心，避免错位）
         if (f.popStart) {
           var bd = (now - f.popStart) / FLOWER_BURST_MS;
-          if (bd <= 1) this._renderFlowerBurst(ctx, fx, fy, f.finalSize || 25, bd, f.colored);
+          if (bd <= 1) this._renderFlowerBurst(ctx, fx, fy, f.finalSize || FOUR_STAR_SIZE, bd, f.colored);
         }
         // 每朵花始终只渲染一份（finalSize × 当前 scale），绝不在别处画同位置小版本 → 杜绝「一大一小叠在一起」
-        this.drawFlower(ctx, fx, fy, f.finalSize || 25, scale, rot, f.colored, bloom, f.colored ? null : 'normal_flower');
-      } else if (this._preplacedVisible) {
-        // 预置小花朵：未达成时以静态小尺寸显示在树枝槽位，待小虫爬到即原地旋转放大（同一条花，不分离）
+        this.drawFlower(ctx, fx, fy, f.finalSize || FOUR_STAR_SIZE, scale, rot, f.colored, bloom, f.colored ? null : 'normal_flower');
+      } else if (this._preplacedVisible && i !== 3) {
+        // 预置小花朵：未达成时以静态小尺寸显示在树枝槽位（4★ 除外：默认完全隐藏，不画占位）
         var pfrac = this._starFrac(i);
         var ppos = this._pointAt(pfrac);
         var panchor = FLOWER_ANCHOR * 14;
@@ -828,6 +987,36 @@ class BranchProgressWidget extends UIComponent {
     ctx.beginPath();
     ctx.arc(c.x, c.y, 8 + e * 26, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // 4★ 出场光芒：同心扩散光环 + 放射光芒（re=0..1 出场进度）
+  _renderFourRevealGlow(ctx, x, y, size, re) {
+    ctx.save();
+    // 同心扩散环（2~3 圈，随时间外扩淡出）
+    for (var r = 0; r < 3; r++) {
+      var phase = (re + r * 0.18) % 1;
+      ctx.globalAlpha = (1 - phase) * 0.5 * (1 - re * 0.4);
+      ctx.strokeStyle = 'rgba(255, 240, 150, 0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, size * (0.6 + phase * 1.8), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // 放射光芒（12 道，缓慢旋转）
+    ctx.globalAlpha = (1 - re) * 0.7;
+    ctx.strokeStyle = 'rgba(255, 220, 90, 0.9)';
+    ctx.lineWidth = 2;
+    var rays = 12;
+    var baseAng = re * Math.PI;
+    for (var a = 0; a < rays; a++) {
+      var ang = baseAng + a * (Math.PI * 2 / rays);
+      var r0 = size * 0.7, r1 = size * (1.1 + re * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(ang) * r0, y + Math.sin(ang) * r0);
+      ctx.lineTo(x + Math.cos(ang) * r1, y + Math.sin(ang) * r1);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
