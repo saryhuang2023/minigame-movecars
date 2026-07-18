@@ -2,12 +2,11 @@
 // 按三个 Phase 组织，LoadingManager 依序加载
 
 // ===== Phase 1 (0-40%): 加载画面自身所需的资源 =====
-// 这阶段完成后，加载画面可完整渲染：bg + idle猪 + 金币进度条 + 字体文字
+// 这阶段完成后，加载画面可完整渲染：idle猪 + 金币进度条 + 字体文字
 var PHASE1 = {
   // 背景 + 进度条金币图标
   images: [
     { key: 'loadingBg', path: 'assets/images/loading_bg.jpg' },
-    { key: 'bg',        path: 'assets/images/main_bg.jpg' },
     { key: 'coin',      path: 'assets/images/coin.png' },
   ],
   // idle 序列帧（通过 PigRenderer.preloadIdle 加载，此处声明数量用于进度）
@@ -47,8 +46,13 @@ var PHASE2 = {
     'assets/images/main_level_btn_passed.png',
     'assets/images/main_level_btn_unlocked.png',
     'assets/images/main_level_btn_current.png',
-    'assets/images/main_level_road.png',
+    'assets/images/main_level_road_0.png',
+    'assets/images/main_level_road_1.png',
+    'assets/images/main_level_road_2.png',
     'assets/images/hand_guide.png',
+    'assets/images/main_bg_0.jpg',
+    'assets/images/main_bg_1.jpg',
+    'assets/images/main_bg_2.jpg',
     'assets/skins/rock/idle/1.png',
     'assets/skins/rock/hint/1.png',
   ],
@@ -90,8 +94,13 @@ var ASSET_PRELOADER_MAP = {
   main_level_btn_passed: 'assets/images/main_level_btn_passed.png',
   main_level_btn_unlocked: 'assets/images/main_level_btn_unlocked.png',
   main_level_btn_current: 'assets/images/main_level_btn_current.png',
-  main_level_road: 'assets/images/main_level_road.png',
+  main_level_road_0: 'assets/images/main_level_road_0.png',
+  main_level_road_1: 'assets/images/main_level_road_1.png',
+  main_level_road_2: 'assets/images/main_level_road_2.png',
   hand_guide: 'assets/images/hand_guide.png',
+  main_bg_0: 'assets/images/main_bg_0.jpg',
+  main_bg_1: 'assets/images/main_bg_1.jpg',
+  main_bg_2: 'assets/images/main_bg_2.jpg',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====

@@ -68,7 +68,15 @@ LoadingManager.prototype.onDone = function (fn) {
 
 /** 获取已加载的图片 */
 LoadingManager.prototype.getImage = function (path) {
-  return this._images[path] || null;
+  if (this._images[path]) return this._images[path];
+  // 短 key 兜底：PHASE2 图片按 path 存储（key=null），
+  // 经 ASSET_PRELOADER_MAP 反查真实路径，使 main_bg_0 / main_level_road_0 等短 key 也能解析。
+  var map = config.ASSET_PRELOADER_MAP;
+  if (map && map[path]) {
+    var real = this._images[map[path]];
+    if (real) return real;
+  }
+  return null;
 };
 
 /** 获取云端数据 */

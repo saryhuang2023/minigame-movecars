@@ -174,14 +174,22 @@ class GameEngine {
     if (!this._transitioned) {
       this._transitioned = true;
 
-      // 注入背景图
-      var bgImg = this._loadingMgr.getImage('bg');
-      if (bgImg) { this.bgImg = bgImg; this._bgLoaded = true; }
-      // 把草原背景交给关卡地图，使其随路径同速滚动
+      // 注入背景图（多张，按段分配：bg_0 / bg_1 / bg_2）
       if (this._useLevelMap && this._levelMap) {
-        this._levelMap.setBackground(this.bgImg);
-        // 路径图 + 引导手：按资源路径取图（Phase2 纯路径数组，LoadingManager 按 path 存）
-        this._levelMap.setRoad(this._loadingMgr.getImage('assets/images/main_level_road.png'));
+        var bgImgs = {};
+        ['main_bg_0', 'main_bg_1', 'main_bg_2'].forEach(function(k) {
+          var img = this._loadingMgr.getImage(k);
+          if (img) bgImgs[k] = img;
+        }.bind(this));
+        this._levelMap.setBackground(bgImgs);
+
+        // 路径图（多张：road_0 / road_1 / road_2）
+        var roadImgs = {};
+        ['main_level_road_0', 'main_level_road_1', 'main_level_road_2'].forEach(function(k) {
+          var img = this._loadingMgr.getImage(k);
+          if (img) roadImgs[k] = img;
+        }.bind(this));
+        this._levelMap.setRoad(roadImgs);
         this._levelMap.setHand(this._loadingMgr.getImage('assets/images/hand_guide.png'));
       }
 
