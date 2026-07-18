@@ -1,42 +1,74 @@
 // 关卡地图（主页）配置
-// 第一章：路径【程序化自动生成】蜿蜒曲线 + 沿路径布置关卡。
-// 硬约束：路中心线待在屏幕中央 50% 带内（左右各空 1/4 屏宽给风景）。
-// 设计画布高 681（竖直范围参考），缩放按游戏基准宽 393（与开始按钮一致），画布底边距屏底 bottom:171。
+// 第一章：路径 + 关卡位置【全由 Figma 设计稿坐标固定】，不再程序化自动生成。
+// 一条路径图（main_level_road.png）按「段」平铺：一段 = 一张路图，段内 11 个固定槽位，
+//   后续段直接连到上方（numPages = ceil(总关数/11)）。
+// 锚点（用户定稿）：
+//   ① 第一关按钮底部 ↔ 开始按钮顶部 保证间距（设计 30px 屏幕间距）。
+//   ② 第一张背景图整屏覆盖（renderBackground 已按整屏平铺，此处不改）。
+// 设计基准画布宽 = 393（与开始按钮一致），渲染缩放 = SCREEN_WIDTH / 393，x/y 同比例不变形。
 
 module.exports = {
   // ===== 背景 =====
-  // key: 草原背景图资源 key（由 LoadingManager 注册后生效）。未就绪时走下方渐变兜底。
+  // key: 草原背景图资源 key（由 GameEngine 注册后通过 setBackground 注入）。
   background: {
-    key: 'map_bg',
+    key: 'bg',
     fallbackTop: '#BFE8A0',     // 兜底渐变：上（远草）
     fallbackBottom: '#8FD46F',  // 兜底渐变：下（近草）
   },
 
   // ===== 设计画布 =====
-  // Figma 画布尺寸；渲染时按 SCREEN_WIDTH / w 缩放。
-  // bottomReserve：画布底边距屏幕底的留白（屏幕 px），底部 UI（开始按钮等）预留区。
-  pathFrame: { w: 334.86, h: 681, bottomReserve: 171 },
+  // Figma 画布宽 393。渲染时所有 design px 按 = SCREEN_WIDTH / designWidth 缩放。
+  designWidth: 393,
 
-  // ===== 路径：蜿蜒道路（白路 + 绿虚线车道线）=====
-  // 路径由 LevelMap._buildLevels 程序化生成（正弦摆动的 S 形蛇道，左右各空 1/4 屏宽给风景），
-  //   关卡点位直接落在曲线经过的点上；_buildRoadPath 用 Catmull-Rom 样条保证曲线精确穿过每个点位。
-  path: {
-    roadWidth: 51,                       // 白路宽度（设计 px）
-    roadColor: 'rgba(255,255,255,0.3)',
-    lineWidth: 8,                        // 绿虚线宽度（设计 px）
-    lineColor: '#7DCC18',
-    lineDash: [18, 14],                  // 虚线间隔（设计 px，渲染时乘缩放）
-    smooth: true,                        // 锚点间用 Catmull-Rom 样条平滑（曲线精确穿过每个锚点中心）；false 则折线
+  // ===== 路径图（平铺单元）=====
+  // 第一条路径：width 220.54 / height 626.5，水平居中于画布（center = 画布中心 196.5）。
+  // 后续段直接连到上方，复用同一张图。
+  road: {
+    w: 220.54,
+    h: 626.5,
   },
 
-  // ===== 关卡摆放（第一章：程序化自动生成路径，关卡直接落在路径曲线点上）=====
-  levels: {
-    buttonR: 30,              // 占位按钮半径（px，当前未用于正式按钮）
-    count: 11,                // 第一章 11 关
-    topMargin: 40,           // 最顶关距画布顶的设计留白（px）
-    levelGap: 130,           // ★ 相邻关卡垂直间距（设计px）：满尺寸钮高 115，2 个/摆臂（左-右），需 > 钮高(115) 防上下重叠
-    bottomMargin: 60,         // 保留位（底留白现用 pathFrame.bottomReserve）
-    seed: 20260717,           // 可复现随机种子（保留位）
+  // ===== 开始按钮（屏幕 px，用于锚定第一关↔开始钮间距）=====
+  startButton: {
+    bottom: 65,    // 距屏幕底（design px）
+    height: 86,    // 按钮高（design px）
+    width: 180,    // 按钮宽（design px，备用）
+  },
+
+  // 第一关按钮底部 ↔ 开始按钮顶部 的屏幕间距（design px）。
+  gapBottom: 30,
+
+  // ===== 11 个固定槽位（design 393 画布坐标）=====
+  // left/top = 钮左上角（design px）；w/h = 钮尺寸（design px）。
+  // 槽位中心 = (left + w/2, top + h/2)，作为该关按钮的世界锚点。
+  // 槽 0/1 为 117×115 大钮（设计上常处于已通关态），槽 2~10 为 69×69 小钮。
+  // 钮的实际绘制尺寸由「状态」决定（cleared→大图117×115 / current·locked→小图69×69），
+  //   这里的 w/h 仅用于计算槽位中心。
+  slots: [
+    { left: 23,  top: 566, w: 117, h: 115 },
+    { left: 118, top: 496, w: 117, h: 115 },
+    { left: 257, top: 472, w: 69,  h: 69  },
+    { left: 241, top: 372, w: 69,  h: 69  },
+    { left: 142, top: 356, w: 69,  h: 69  },
+    { left: 52,  top: 289, w: 69,  h: 69  },
+    { left: 111, top: 207, w: 69,  h: 69  },
+    { left: 229, top: 184, w: 69,  h: 69  },
+    { left: 267, top: 94,  w: 69,  h: 69  },
+    { left: 166, top: 52,  w: 69,  h: 69  },
+    { left: 72,  top: 31,  w: 69,  h: 69  },
+  ],
+
+  // ===== 引导手（hand_guide.png）=====
+  // 手图 anatomy：指尖（食指）在图像左上角，红色袖口在右下，朝上指手势。
+  // 定位锚点 = 图像**左上角**（指尖），offsetX/offsetY = 左上角相对「开始按钮中心」的设计 px 偏移。
+  //   偏移 (0,0) → 指尖直接落在开始按钮中心（指向中心）；tap 动画 +9px 向下点按（指尖压入按钮）。
+  //   不透明度恒为 1（不做半透明脉冲处理）。
+  //   开始按钮为屏幕固定 HUD：180×86、水平居中、bottom 距屏底 65px（与 GameEngine.renderMenu 同算）。
+  hand: {
+    w: 63.86,
+    h: 64.14,
+    offsetX: 0,     // 指尖 X：水平对齐开始按钮中心
+    offsetY: 0,     // 指尖 Y：落在开始按钮中心（design px），tap +9px 向下点按
   },
 
   // ===== 滚动（拖拽 + 惯性）=====

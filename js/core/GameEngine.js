@@ -227,7 +227,12 @@ class GameEngine {
       var bgImg = this._loadingMgr.getImage('bg');
       if (bgImg) { this.bgImg = bgImg; this._bgLoaded = true; }
       // 把草原背景交给关卡地图，使其随路径同速滚动
-      if (this._useLevelMap && this._levelMap) this._levelMap.setBackground(this.bgImg);
+      if (this._useLevelMap && this._levelMap) {
+        this._levelMap.setBackground(this.bgImg);
+        // 路径图 + 引导手：按资源路径取图（Phase2 纯路径数组，LoadingManager 按 path 存）
+        this._levelMap.setRoad(this._loadingMgr.getImage('assets/images/main_level_road.png'));
+        this._levelMap.setHand(this._loadingMgr.getImage('assets/images/hand_guide.png'));
+      }
 
       // 存储预加载的云端数据
       this._preloadedPlayerData = this._loadingMgr.getPlayerData();
@@ -244,6 +249,7 @@ class GameEngine {
       };
       this._staminaEntranceStart = now;   // 体力图标逐枚入场同步启动
       this._menuEntranceDoneAt = 0;
+      databus._menuEntranceDoneAt = 0;    // 镜像给 LevelMap：入场未完成前引导手不显示
 
       console.log('[GameEngine] 加载完成，启动游戏');
       this.start();
@@ -1043,6 +1049,7 @@ class GameEngine {
    */
   _startMenuExit(target) {
     this._pressedBtnIdx = -1;   // 清按压态，出场过渡干净
+    databus._menuExiting = true;   // 镜像给 LevelMap：引导手开始淡出
     this._menuExit = {
       phase: 'slide',                 // slide → wait → crossfade → commit
       startTime: Date.now(),
@@ -1062,6 +1069,7 @@ class GameEngine {
     this._menuExit = null;
     this._menuVisible = false;
     this._hasLeftMenu = true;
+    databus._menuExiting = false;   // 结束出场：引导手状态复位（gameState 已非 menu，renderHand 不再绘制）
     databus.gameState = targetState;
     if (targetState === 'playing') {
       this.playing.beginEntrance();   // 关卡背景已在交叉淡变中显示，现在启动棋盘/猪/UI 入场
@@ -1700,6 +1708,7 @@ class GameEngine {
         this._menuEntrance.phase = 'done';
         this._menuEntrance = null;
         this._menuEntranceDoneAt = Date.now();
+        databus._menuEntranceDoneAt = this._menuEntranceDoneAt;  // 镜像给 LevelMap：引导手延迟基准
       }
       return;
     }
@@ -1793,6 +1802,7 @@ class GameEngine {
           };
           this._staminaEntranceStart = Date.now();   // 返回主菜单：体力图标重新逐枚入场
           this._menuEntranceDoneAt = 0;
+          databus._menuEntranceDoneAt = 0;   // 镜像给 LevelMap：重新入场，引导手延迟基准归零
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;
@@ -1824,6 +1834,8 @@ class GameEngine {
         this.drawBackground();
       }
       this._renderCurrentScene();
+      // 引导手独立层：在开始按钮(屏幕固定HUD)之后绘制，保证手在按钮之上不被遮挡。
+      if (this._useLevelMap && this._levelMap) this._levelMap.renderHand();
     }
 
     // 全局 Toast 替代组件 — 叠在所有游戏场景之上
