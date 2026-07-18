@@ -10,7 +10,7 @@
 //   - 路径图 main_level_road.png（220.54×626.5，水平居中）按「段」平铺，一段含 11 个固定槽位，
 //     段 0（含第 1 关）在最底部，段 1 起向上叠。
 //   - 11 个槽位中心（design 393 画布）作为各关世界锚点；钮按状态定尺寸
-//     （cleared→117×115 大图 / current·locked→69×69 小图）。
+//     （cleared→70×68 / current·locked→69×68 小图）。
 //   - 锚点：第一关按钮底 ↔ 开始钮顶 保证间隙（设计 30px）；背景整屏平铺随地图滚动。
 
 const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
@@ -249,7 +249,7 @@ class LevelMap {
       var lv = this._levels[i];
       var st = this._levelState(i);
       var hw, hh;
-      if (st === 'cleared') { hw = 117 / 2 * s; hh = 115 / 2 * s; }
+      if (st === 'cleared') { hw = 70 / 2 * s; hh = 68 / 2 * s; }
       else { hw = 69 / 2 * s; hh = 68 / 2 * s; }
       if (Math.abs(sx - lv.x) <= hw && Math.abs(wY - lv.worldY) <= hh) return i;
     }
@@ -350,7 +350,7 @@ class LevelMap {
   // 引导手独立层：指向开始按钮（屏幕固定 HUD）。
   //   由 GameEngine 在 renderMenu（开始按钮）之后调用，保证手绘制在按钮之上，不被按钮遮挡。
   //   仅主菜单显示；进入关卡/其它状态隐藏。
-  //   延迟显示：主界面入场动画完成后，再等 HAND_DELAY_MS 才出现（databus._menuEntranceDoneAt 由 GameEngine 镜像）。
+  //   延迟显示：主菜单显示后（databus._menuEntranceDoneAt 由 GameEngine 在菜单显示时刻写入），再等 HAND_DELAY_MS 才出现。
   //   点击开始按钮（菜单出场）瞬间隐藏：_menuExiting 由 GameEngine._startMenuExit 设 true，本帧即停画。
   renderHand() {
     if (databus.gameState !== 'menu') return;
@@ -389,12 +389,16 @@ class LevelMap {
 
   // 路径图平铺：每段一张 main_level_road.png（设计 220.54×626.5，水平居中），
   //   段 0 在最底、段 1 起向上叠。仅绘制可见段（世界 Y 落在屏幕范围内的）。
+  //   ⚠️ 路图 PNG 实际像素可能含透明 padding（如 815×1956），与 config 的 w/h 宽高比不同。
+  //     若直接用 config w/h 做 dstRect 会导致非均匀拉伸 → 路径偏移、按钮不对齐。
+  //     故采用「固定段高 + 按 PNG 实际宽高比算宽」策略：保持路图不变形。
   _renderRoad() {
     if (!this._roadImg || !this._roadImg.width) return;
     var s = this._scale;
-    var roadW = cfg.road.w * s;
-    var roadH = cfg.road.h * s;
-    var roadLeft = (cfg.designWidth / 2 - cfg.road.w / 2) * s;
+    var roadH = cfg.road.h * s;                                    // 段高（世界 px），锚定值
+    var imgAspect = this._roadImg.width / this._roadImg.height;    // PNG 原始宽高比
+    var roadW = roadH * imgAspect;                                 // 按比例算出的实际显示宽度
+    var roadLeft = (SCREEN_WIDTH - roadW) / 2;                     // 水平居中
     var numPages = Math.max(1, Math.ceil(this._levels.length / cfg.slots.length));
 
     var yTop = this.scrollY - roadH;
@@ -446,7 +450,7 @@ class LevelMap {
   }
 
   // 地图钮缩放绘制：以 (lv.x, lv.worldY) 为中心绘制 frame，再按状态缩放。
-  //   cleared → 117×115 大钮（frame 中心即按钮中心）。
+  //   cleared → 70×68 钮（居中贴在 frame 中心）。
   //   current/locked → 69×69 小钮（图在 frame 局部 (24,27)，视觉中心比 frame 中心低 3.5px）
   //     → 这里把 frame 中心上移 3.5*scale，使小钮视觉中心正好落在槽位中心 (lv.x, lv.worldY)。
   // 叠加项目通用的按压回弹反馈（ButtonPress）：按下时整钮缩到 0.95、松手 easeOutBack 回弹 1.0，
@@ -474,12 +478,12 @@ class LevelMap {
     if (!this._handImg || !this._handImg.width) return;
 
     var s = this._scale;
-    // 开始按钮屏幕中心（与 GameEngine.renderMenu 同一套计算：180×86 / bottom 65 / 水平居中）
+    // 开始按钮屏幕中心（与 GameEngine.renderMenu 同一套计算：180×86 / bottom 34 / 水平居中）
     var startScale = SCREEN_WIDTH / 393;
     var startW = 180 * startScale;
     var startH = 86 * startScale;
     var startCX = SCREEN_WIDTH / 2 - 0.5 * startScale;          // 按钮中心 X（屏幕）
-    var startCY = SCREEN_HEIGHT - 65 * startScale - startH / 2; // 按钮中心 Y（屏幕）
+    var startCY = SCREEN_HEIGHT - 34 * startScale - startH / 2; // 按钮中心 Y（屏幕）
 
     // 点击引导：1.1s 一个循环，先抬起再按下（tap 向下指）。
     var period = 1100;

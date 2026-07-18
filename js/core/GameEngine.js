@@ -24,21 +24,9 @@ const BugReporter = require('../debug/BugReporter.js');
 const DebugPanel = require('../debug/DebugPanel.js');
 const { ToastWidget, showToast } = require('../ui/widgets/ToastWidget.js');
 
-// 主菜单入场时序（单一数据源）：分步入场
-//  开始按钮（t=800 渐显+回弹）、左右按钮（t=1260 渐显+回弹）保留入场；
-//  设置按钮、体力栏直接显示（无入场动画，alpha 恒 1）。
-// 整段入场结束绝对时刻（ms）= 左/右按钮最晚：1260 + 440
-var MENU_ENTRANCE = {
-  bottomBar: { stagger: 500,  dur: 480, from: { dx: 0,   dy: 240, scale: 1,   alpha: 0 }, ease: 'cubic' },
-  // 设置按钮：直接显示，无入场动画
-  settings:  { stagger: 500,  dur: 460, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 1 }, ease: 'cubic' },
-  // 体力栏：左上角单组件（energy_bg 背景 + energy 图标 + 当前/最大 文本），直接显示
-  stamina:   { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 1,   alpha: 1 }, ease: 'cubic' },
-  play:      { stagger: 800,  dur: 460, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
-  dress:     { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
-  challenge: { stagger: 1260, dur: 440, from: { dx: 0,   dy: 0,   scale: 0.8, alpha: 0 }, ease: 'back'  },
-};
-var MENU_ENTRANCE_END = 1260 + 440;
+// 主菜单控件入场动画已移除：开始按钮 / 设置 / 体力栏 / 底部按钮 / 装扮 / 挑战
+// 均直接以最终态（alpha=1, scale=1）显示、立即可点击。仅保留菜单背景↔关卡背景的
+// 出场交叉淡变（见下方 MENU_CROSSFADE_DURATION 与 _startMenuExit）。
 
 // 出场（控件移除）后：先等关卡加载就绪，再做菜单背景↔关卡背景交叉淡变。
 // 交叉淡变时长 = 菜单背景渐隐(1→0) + 关卡背景渐显(0→1) 的重叠区间。
@@ -118,7 +106,6 @@ class GameEngine {
     this._preloadStaminaIcons();
     this._staminaEmbed = null;     // 体力嵌入特效状态
     this._staminaPendingStart = false;
-    this._staminaEntranceStart = 0;   // 体力图标逐枚入场计时起点（菜单入场开始时写入）
     this._slamSparks = null;       // 砸中火花粒子
     this._flyTrail = null;         // 飞行残影
     this._startScale = 1;
@@ -205,15 +192,10 @@ class GameEngine {
       // 用户信息预加载（fire-and-forget，不阻塞启动）
       this._prefetchUserInfo();
 
-      // 初始化菜单入场动画
-      this._menuEntrance = {
-        phase: 'slideIn',
-        startTime: now,
-        totalDuration: MENU_ENTRANCE_END, // 整段入场结束（左/右按钮最晚，t=1700ms）
-      };
-      this._staminaEntranceStart = now;   // 体力图标逐枚入场同步启动
-      this._menuEntranceDoneAt = 0;
-      databus._menuEntranceDoneAt = 0;    // 镜像给 LevelMap：入场未完成前引导手不显示
+      // 主菜单入场动画已移除：控件直接显示、立即可点击。
+      // 引导手/侧影仍以 _menuEntranceDoneAt 为延迟基准（=菜单显示时刻）。
+      this._menuEntranceDoneAt = now;
+      databus._menuEntranceDoneAt = now;   // 镜像给 LevelMap：引导手延迟基准（菜单显示时刻）
 
       console.log('[GameEngine] 加载完成，启动游戏');
       this.start();
@@ -893,10 +875,6 @@ class GameEngine {
             var btn = this.menuButtons[i];
             if (t.x >= btn.x && t.x <= btn.x + btn.w &&
                 t.y >= btn.y && t.y <= btn.y + btn.h) {
-              // 元素入场动画未完成前，忽略点击（不发声、不按压、不触发）
-              if (btn.key && !this._isEntranceDone(btn.key)) {
-                return;
-              }
               audio.play('button_click');
               // 按钮按压动画
               this._pressedBtnIdx = i;
@@ -935,58 +913,11 @@ class GameEngine {
   }
 
   /**
-   * 指定菜单元素入场动画是否已完成
-   * 未完成前该按钮不可点击；数据源 MENU_ENTRANCE[key].stagger + dur
-   */
-  _isEntranceDone(key) {
-    if (!this._menuEntrance || this._menuEntrance.phase !== 'slideIn') return true;
-    var cfg = MENU_ENTRANCE[key];
-    if (!cfg) return true;
-    var elapsed = Date.now() - this._menuEntrance.startTime;
-    return elapsed >= cfg.stagger + cfg.dur;
-  }
-
-  /**
-   * 主菜单入场动画：根据元素 key 返回 {dx, dy, scale, alpha}
-   * stagger 错开入场，ease-out cubic（play 用 easeOutBack）
-   */
-  _getEntranceTransform(key) {
-    if (!this._menuEntrance || this._menuEntrance.phase !== 'slideIn') {
-      return { dx: 0, dy: 0, scale: 1, alpha: 1 };
-    }
-
-    var cfg = MENU_ENTRANCE[key];
-    if (!cfg) {
-      return { dx: 0, dy: 0, scale: 1, alpha: 1 };
-    }
-    var from = cfg.from;
-    var stagger = cfg.stagger;
-    var dur = cfg.dur;
-    var elapsed = Date.now() - this._menuEntrance.startTime;
-
-    if (elapsed < stagger) {
-      return { dx: from.dx, dy: from.dy, scale: from.scale, alpha: from.alpha };
-    }
-
-    var t = (elapsed - stagger) / dur;
-    t = Math.max(0, Math.min(1, t));
-    var ease = cfg.ease === 'back' ? Easing.easeOutBack(t, 1.7) : Easing.easeOutCubic(t);
-
-    return {
-      dx: from.dx * (1 - ease),
-      dy: from.dy * (1 - ease),
-      scale: from.scale + (1 - from.scale) * ease,
-      alpha: from.alpha + (1 - from.alpha) * ease,
-    };
-  }
-
-  /**
-   * 菜单元素变换统一入口：返回入场变换。
-   * 出场时控件整体不再绘制（_renderCurrentScene 在 _menuExit 期间跳过 renderMenu），
-   * 故无需出场变换。
+   * 菜单元素变换统一入口。
+   * 入场动画已移除：所有控件直接以最终态（dx:0, dy:0, scale:1, alpha:1）显示。
    */
   _getMenuTransform(key) {
-    return this._getEntranceTransform(key);
+    return { dx: 0, dy: 0, scale: 1, alpha: 1 };
   }
 
   // 控件出场变换已移除（见 _startMenuExit / render 出场分支）：点开始按钮即消失，无下滑/渐隐动画。
@@ -1091,13 +1022,13 @@ class GameEngine {
     // （体力 UI 已移至左上角单组件，绘制见开始按钮之后）
 
     // ===== 主按钮：开始游戏（main_start.png 图片按钮）=====
-    // Figma Group 3467419: 180 x 86，水平居中（left: calc(50% - 180/2 - 0.5)），bottom 距屏幕底 65px（基于 393 宽设计稿等比缩放）
+    // Figma Group 3467419: 180 x 86，水平居中（left: calc(50% - 180/2 - 0.5)），bottom 距屏幕底 34px（基于 393 宽设计稿等比缩放）
     var startScale = SCREEN_WIDTH / 393;
     this._startScale = startScale;
     var startW = 180 * startScale;
     var startH = 86 * startScale;
     var startX = (SCREEN_WIDTH - startW) / 2 - 0.5 * startScale;
-    var startY = SCREEN_HEIGHT - 65 * startScale - startH;
+    var startY = SCREEN_HEIGHT - 34 * startScale - startH;
     var startCX = startX + startW / 2;
     var startCY = startY + startH / 2;
 
@@ -1283,11 +1214,11 @@ class GameEngine {
     // 开始按钮（与 renderMenu 同一套计算）
     var startW = 180 * scale, startH = 86 * scale;
     var startX = (SCREEN_WIDTH - startW) / 2 - 0.5 * scale;
-    var startY = SCREEN_HEIGHT - 65 * scale - startH;
-    // 无体力标志位（飞行目标）：开始按钮内，相对按钮 left:32、上下居中
-    var flagW = 20 * scale, flagH = 20 * scale;
+    var startY = SCREEN_HEIGHT - 34 * scale - startH;
+    // 无体力标志位（飞行目标）：开始按钮内，相对按钮 left:32、top:23（energy_empty.png 23×30）
+    var flagW = 23 * scale, flagH = 30 * scale;
     var flagX = startX + 32 * scale;
-    var flagY = startY + (startH - flagH) / 2;
+    var flagY = startY + 23 * scale;
     var flagRect = { x: flagX, y: flagY, w: flagW, h: flagH, cx: flagX + flagW / 2, cy: flagY + flagH / 2 };
     return {
       frame: { x: fx, y: fy, w: fw, h: fh },
@@ -1380,7 +1311,9 @@ class GameEngine {
     // 1) 飞向「无体力开始按钮标志位」的黄图标（带速度拉伸 + 拖尾，平滑吸附）
     var fly = this._stamina.updateFly();
     if (fly && !fly.done) {
-      this._drawStaminaFlyIcon(ctx, fly, ST.ICON_SIZE * scale);
+      // 飞行图标尺寸 = 槽位尺寸（有/无体力图标同为 23×30，正好嵌进空槽，不改形）
+      var flyLayout = this._computeStaminaLayout();
+      this._drawStaminaFlyIcon(ctx, fly, flyLayout.flagRect.w, flyLayout.flagRect.h);
     }
 
     // 2) 飞行结束（平滑抵达）→ 触发嵌入 + 火花（目标「被撞击」反馈，仅按钮局部，不抖全屏）
@@ -1406,14 +1339,15 @@ class GameEngine {
     }
   }
 
-  /** 飞行中的黄图标：沿速度方向拉伸 + 径向光晕 + 整段拖尾（与金币/道具飞行同语言） */
-  _drawStaminaFlyIcon(ctx, fly, size) {
+  /** 飞行中的黄图标：沿速度方向拉伸 + 径向光晕 + 整段拖尾（与金币/道具飞行同语言）；尺寸 = 槽位 23×30 不改形 */
+  _drawStaminaFlyIcon(ctx, fly, w, h) {
     var img = this._staminaIcons.filled;
     var speed = Math.sqrt(fly.vx * fly.vx + fly.vy * fly.vy);
     // 拉量与 coin/item 同语言：squash 比例 0.45（克制但明显），上限与"放缓一档"节奏协调
     var stretch = Math.min(0.55, speed * 0.04);
     var angle = Math.atan2(fly.vy, fly.vx);
-    var r = Math.min(size * 0.3, size / 2, size / 2);
+    // 圆角兜底用短边，避免非正方形图标被压成圆
+    var r = Math.min(Math.min(w, h) * 0.3, w / 2, h / 2);
 
     // 拖尾：整段飞行都留残影，5 帧、更高透明度、并沿运动方向拉伸，强化"嗖"的速度感
     if (fly.phase === 'fly') {
@@ -1428,8 +1362,8 @@ class GameEngine {
         ctx.translate(g.x, g.y);
         ctx.rotate(g.angle);
         ctx.scale(1 + g.stretch, 1 - g.stretch * 0.45);
-        if (img) ctx.drawImage(img, -size / 2, -size / 2, size, size);
-        else { ctx.fillStyle = '#FFEE00'; this.roundRect(ctx, -size / 2, -size / 2, size, size, r); ctx.fill(); }
+        if (img) ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        else { ctx.fillStyle = '#FFEE00'; this.roundRect(ctx, -w / 2, -h / 2, w, h, r); ctx.fill(); }
         ctx.restore();
       }
     } else {
@@ -1438,10 +1372,10 @@ class GameEngine {
 
     // 飞行中径向光晕（速度越快越亮，呼应金币/道具的"蓄能冲刺"观感；中段最亮）
     var glowAlpha = Math.min(0.6, 0.18 + speed * 0.022);
-    var glowR = size * (0.9 + 0.5 * Math.min(1, speed / 25));
+    var glowR = Math.max(w, h) * (0.9 + 0.5 * Math.min(1, speed / 25));
     ctx.save();
     ctx.globalAlpha = glowAlpha;
-    var grad = ctx.createRadialGradient(fly.x, fly.y, size * 0.2, fly.x, fly.y, glowR);
+    var grad = ctx.createRadialGradient(fly.x, fly.y, Math.min(w, h) * 0.2, fly.x, fly.y, glowR);
     grad.addColorStop(0, 'rgba(255, 240, 120, 0.95)');
     grad.addColorStop(0.5, 'rgba(255, 220, 0, 0.4)');
     grad.addColorStop(1, 'rgba(255, 200, 0, 0)');
@@ -1459,10 +1393,10 @@ class GameEngine {
     ctx.rotate(angle);
     ctx.scale(1 + stretch, 1 - stretch * 0.45);   // 沿运动方向拉长，垂直方向略压
     if (img) {
-      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
     } else {
       ctx.fillStyle = '#FFEE00';
-      this.roundRect(ctx, -size / 2, -size / 2, size, size, r);
+      this.roundRect(ctx, -w / 2, -h / 2, w, h, r);
       ctx.fill();
     }
     ctx.restore();
@@ -1478,17 +1412,18 @@ class GameEngine {
     this._slamSparks = arr;
   }
 
-  /** 嵌入特效：冲击波环 + 火花 + 黄图标从 1.4 迅速收敛 + 槽位受击挤压回弹 */
+  /** 嵌入特效：冲击波环 + 火花 + 黄图标从 1.4 迅速收敛到 1.0（最终正好等于 23×30 槽位尺寸）→ 槽位受击挤压回弹 */
   _drawStaminaEmbed(ctx, p, scale) {
     var layout = this._computeStaminaLayout();
     var f = layout.flagRect;
     var cx = f.cx, cy = f.cy;
-    var sizeBase = 20 * scale;
+    var w = f.w, h = f.h;                 // 槽位 = 无体力图标尺寸（23×30），嵌入时正好吻合、不改形
+    var sizeRef = Math.min(w, h);
     var img = this._staminaIcons.filled;
 
     // 1) 冲击波环：快速扩散 + 淡出（stroke 更有"冲击"感）
     var ringP = Math.min(1, p / 0.7);
-    var ringR = sizeBase * 0.4 + Easing.easeOutCubic(ringP) * sizeBase * 2.1;
+    var ringR = sizeRef * 0.4 + Easing.easeOutCubic(ringP) * sizeRef * 2.1;
     ctx.save();
     ctx.globalAlpha = (1 - ringP) * 0.9;
     ctx.lineWidth = (3 * scale) * (1 - ringP) + 1;
@@ -1500,7 +1435,7 @@ class GameEngine {
 
     // 2) 火花飞散
     if (this._slamSparks) {
-      var reach = sizeBase * 2.3;
+      var reach = sizeRef * 2.3;
       for (var i = 0; i < this._slamSparks.length; i++) {
         var s = this._slamSparks[i];
         var d = Easing.easeOutCubic(p) * reach * s.spd;
@@ -1521,20 +1456,20 @@ class GameEngine {
     if (p < 0.25) slotS = 1 - (p / 0.25) * 0.18;             // 受击下陷（更浅）
     else slotS = 0.82 + Easing.easeOutBack((p - 0.25) / 0.75) * 0.18;  // 回弹到 1.0
 
-    // 4) 嵌入的黄图标：从 1.4 迅速收敛到 1.0
+    // 4) 嵌入的黄图标：从 1.4 迅速收敛到 1.0（最终正好等于槽位尺寸 23×30，不改形）
     var iconP = Math.min(1, p / 0.5);
     var s = 1.4 - 0.4 * Easing.easeOutCubic(iconP);
-    var r = Math.min(sizeBase * 0.3, sizeBase / 2, sizeBase / 2);
+    var r = Math.min(w, h) * 0.3;
     ctx.save();
     ctx.shadowColor = 'rgba(255,238,0,0.95)';
     ctx.shadowBlur = 16;
     ctx.translate(cx, cy);
     ctx.scale(s * slotS, s * slotS);
     if (img) {
-      ctx.drawImage(img, -sizeBase / 2, -sizeBase / 2, sizeBase, sizeBase);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
     } else {
       ctx.fillStyle = '#FFEE00';
-      this.roundRect(ctx, -sizeBase / 2, -sizeBase / 2, sizeBase, sizeBase, r);
+      this.roundRect(ctx, -w / 2, -h / 2, w, h, r);
       ctx.fill();
     }
     ctx.restore();
@@ -1595,18 +1530,6 @@ class GameEngine {
   update() {
     databus.frame++;
 
-    // 菜单入场动画进行中 → 屏蔽输入
-    if (this._menuEntrance && this._menuEntrance.phase === 'slideIn') {
-      var elapsed = Date.now() - this._menuEntrance.startTime;
-      if (elapsed >= this._menuEntrance.totalDuration) {
-        this._menuEntrance.phase = 'done';
-        this._menuEntrance = null;
-        this._menuEntranceDoneAt = Date.now();
-        databus._menuEntranceDoneAt = this._menuEntranceDoneAt;  // 镜像给 LevelMap：引导手延迟基准
-      }
-      return;
-    }
-
     // 菜单出场进行中：控件已无出场动画（点开始即消失），仅推进「等关卡加载 → 背景融合 → 提交」
     if (this._menuExit) {
       var m = this._menuExit;
@@ -1640,8 +1563,7 @@ class GameEngine {
     this.input.handlePendingEvents();
 
     // 事件处理可能在本帧内改变 gameState（如关卡内"返回主菜单"），
-    // 若等到下一帧才 checkStateTransition 会导致一帧内 _menuEntrance 仍为 null、
-    // 主菜单按钮以全透明度渲染一帧（闪一下）。故事件后再查一次，确保同帧初始化入场动画。
+    // 故事件后再查一次 checkStateTransition，确保同帧激活主菜单状态与可见性。
     this.checkStateTransition();
 
     // 关卡地图（主页）滚动 + 惯性更新（置于事件处理之后，与游玩更新并列）
@@ -1681,16 +1603,11 @@ class GameEngine {
         audio.playMusic('menu');
         this._menuVisible = true;   // 回到主菜单：可见，未来离场播出场动画
         databus._menuExiting = false;   // 清除出场标志：引导手允许重新出现
-        // 从其他界面返回 → 触发主菜单入场动画（与 loading 进入一致）
+        // 从其他界面返回主菜单：入场动画已移除，控件直接显示。
+        // 引导手/侧影延迟基准重置为菜单显示时刻。
         if (prev) {
-          this._menuEntrance = {
-            phase: 'slideIn',
-            startTime: Date.now(),
-            totalDuration: MENU_ENTRANCE_END,
-          };
-          this._staminaEntranceStart = Date.now();   // 返回主菜单：体力图标重新逐枚入场
-          this._menuEntranceDoneAt = 0;
-          databus._menuEntranceDoneAt = 0;   // 镜像给 LevelMap：重新入场，引导手延迟基准归零
+          this._menuEntranceDoneAt = Date.now();
+          databus._menuEntranceDoneAt = Date.now();   // 镜像给 LevelMap：引导手延迟基准
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;

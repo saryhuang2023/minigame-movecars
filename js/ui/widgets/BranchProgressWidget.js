@@ -649,13 +649,13 @@ class BranchProgressWidget extends UIComponent {
           if (bd <= 1) this._renderFlowerBurst(ctx, fx, fy, f.finalSize || 25, bd, f.colored);
         }
         // 每朵花始终只渲染一份（finalSize × 当前 scale），绝不在别处画同位置小版本 → 杜绝「一大一小叠在一起」
-        this.drawFlower(ctx, fx, fy, f.finalSize || 25, scale, rot, f.colored, bloom);
+        this.drawFlower(ctx, fx, fy, f.finalSize || 25, scale, rot, f.colored, bloom, f.colored ? null : 'normal_flower');
       } else if (this._preplacedVisible) {
         // 预置小花朵：未达成时以静态小尺寸显示在树枝槽位，待小虫爬到即原地旋转放大（同一条花，不分离）
         var pfrac = this._starFrac(i);
         var ppos = this._pointAt(pfrac);
         var panchor = FLOWER_ANCHOR * 14;
-        this.drawFlower(ctx, ox + ppos.x, oy + ppos.y - panchor, 14, 1, 0, false, 1);
+        this.drawFlower(ctx, ox + ppos.x, oy + ppos.y - panchor, 14, 1, 0, 'normal_flower');
       }
     }
   }
@@ -726,7 +726,7 @@ class BranchProgressWidget extends UIComponent {
       ctx.arc(bx, by, p.size * 1.7, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      this.drawFlower(ctx, bx, by, p.size, scale, ang, true, 1); // colored=true → 彩虹小花
+      this.drawFlower(ctx, bx, by, p.size, scale, ang, true, 1); // 飞小花（彩花，复用 drawFlower colored→big_flower）
     }
   }
 
@@ -771,26 +771,38 @@ class BranchProgressWidget extends UIComponent {
   }
 
   /**
-   * 绘制一朵花（Figma：黄底 + 橙心 + 阴影；新增 bloom 控制花瓣聚拢→散开）
+   * 绘制一朵花。
+   * - imgKey 指定图片（如 normal_flower.png）：画图片 + drop-shadow 阴影（尺寸 25×25 等比）。
+   * - 否则 colored=true → 彩花 big_flower.png（保留彩花体系，原状无额外阴影）。
+   * 微信小游戏 Canvas2D 不支持 ctx.filter，阴影用 ctx.shadow* 模拟。
    * @param {number} x,y 中心屏幕坐标
    * @param {number} size 目标尺寸
    * @param {number} scale 缩放（获得动画用，1=原尺寸）
    * @param {number} rotate 旋转弧度
-   * @param {boolean} colored 是否覆彩色（4 星：彩色 3 星 == 4 星）
-   * @param {number} bloom 绽放度 0=花苞聚拢, 1=全开（获得动画用）
+   * @param {boolean} colored 是否彩花（4 星）→ big_flower.png
+   * @param {number} bloom 预留参数位（保留以兼容调用点，不再使用）
+   * @param {string} [imgKey] 指定图片资源 key（进度条普通花传 'normal_flower'）
    */
-  drawFlower(ctx, x, y, size, scale, rotate, colored, bloom) {
+  drawFlower(ctx, x, y, size, scale, rotate, colored, bloom, imgKey) {
     ctx.save();
     ctx.translate(x, y);
     if (rotate) ctx.rotate(rotate);
     var s = size * (scale != null ? scale : 1);
-    var b = (bloom != null) ? bloom : 1;
-    // 阴影
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-    ctx.beginPath();
-    ctx.ellipse(0, s * 0.55, s * 0.5, s * 0.18, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // 彩花：改用 big_flower.png 图片绘制（图片未就绪时兜底走下方代码绘制，避免空图）
+    // 指定图片（如 normal_flower.png）：画图片 + drop-shadow 阴影
+    if (imgKey) {
+      var img = AssetPreloader.get(imgKey);
+      if (img) {
+        var k = s / 25;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+        ctx.shadowBlur = 2 * k;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 1 * k;
+        ctx.drawImage(img, -s / 2, -s / 2, s, s);
+        ctx.restore();
+        return;
+      }
+    }
+    // 彩花：big_flower.png（保留彩花体系；原状无额外阴影，由调用方外层 shadow 提供）
     if (colored) {
       var flowerImg = AssetPreloader.get('big_flower');
       if (flowerImg) {
@@ -799,25 +811,7 @@ class BranchProgressWidget extends UIComponent {
         return;
       }
     }
-    // 以下：代码绘制（普通花 / 彩花图片未就绪兜底）
-    // 花瓣（bloom 控制聚拢→散开；彩色时换色）
-    var petalOff = s * (0.05 + 0.23 * b);
-    var petalR = s * (0.30 + 0.20 * b);
-    var petalColors = colored
-      ? ['#FF5C8A', '#FFB13D', '#5CCBFF', '#9B6CFF']
-      : ['#FFEE00', '#FFEE00', '#FFEE00', '#FFEE00'];
-    for (var p = 0; p < 4; p++) {
-      var ang = p * Math.PI / 2 + Math.PI / 4;
-      ctx.fillStyle = petalColors[p];
-      ctx.beginPath();
-      ctx.arc(Math.cos(ang) * petalOff, Math.sin(ang) * petalOff, petalR * 0.62, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // 中心橙圆（花苞时略小）
-    ctx.fillStyle = '#FFA600';
-    ctx.beginPath();
-    ctx.arc(0, 0, s * 0.22 * (0.5 + 0.5 * b), 0, Math.PI * 2);
-    ctx.fill();
+    // 图片均未就绪：不绘制（旧代码绘制的花瓣/花心兜底已删除）
     ctx.restore();
   }
 

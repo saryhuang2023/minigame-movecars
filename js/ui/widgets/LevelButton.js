@@ -7,7 +7,7 @@ const FRAME_W = 117;
 const FRAME_H = 115;
 
 const LevelButton = {
-  // 当前步骤：整体 frame 参考框 + 整张按钮图 main_level_btn_passed.png（117×115）
+  // 当前步骤：整体 frame 参考框(117×115，三态共用画布) + 已通关钮 main_level_btn_passed.png（70×68 居中贴于画布中心）
   draw(c, cx, cy, opts) {
     if (!c) c = ctx;
 
@@ -22,87 +22,74 @@ const LevelButton = {
       return;
     }
 
-    // 当前关：与未解锁同图，外圈加呼吸光环做区分（后续换图不影响逻辑）
+    // 当前关：main_level_btn_current.png（70×68，与已通关钮同尺寸居中贴于画布中心）。
     if (opts && opts.state === 'current') {
       this._drawCurrent(c, opts);
       c.restore();
       return;
     }
 
-    // 1) 整张按钮图 main_level_btn_passed.png（117×115，居中填满 frame）
-    //    left = calc(50% - 117/2) = 0    top = calc(50% - 115/2) = 0
+    // 已通关钮：main_level_btn_passed.png（70×68），按新设计稿居中贴在 frame 中心。
+    //   与 locked/current（69×68）几乎同尺寸，仅状态图不同；公共画布仍用 117×115，
+    //   这里把 70×68 钮居中铺在画布中心（ox=oy=(117-70)/2=23.5）。
+    var PASSED_W = 70, PASSED_H = 68;
+    var ox = (FRAME_W - PASSED_W) / 2;   // 23.5
+    var oy = (FRAME_H - PASSED_H) / 2;   // 23.5
     if (AssetPreloader.isReady('main_level_btn_passed')) {
-      c.drawImage(AssetPreloader.get('main_level_btn_passed'), 0, 0, FRAME_W, FRAME_H);
+      c.drawImage(AssetPreloader.get('main_level_btn_passed'), ox, oy, PASSED_W, PASSED_H);
     } else {
       // 素材未就绪时的占位，方便确认位置
       c.fillStyle = 'rgba(255,210,90,0.25)';
-      c.fillRect(0, 0, FRAME_W, FRAME_H);
+      c.fillRect(ox, oy, PASSED_W, PASSED_H);
     }
 
-    // 3) 关卡 ID 文字（17×32，居中偏上）
-    //    left = calc(50% - 17/2 - 1) = 49.0    top = 37（Figma 直接给定）
-    //    文字框中心 = (49.0 + 8.5, 37 + 16) = (57.5, 53.0)
-    var tx = 49.0 + 17 / 2; // 57.5
-    var ty = 37 + 32 / 2;   // 53.0
-    c.fillStyle = '#FF906A';
-    c.font = '32px ' + (typeof Theme !== 'undefined' && Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
+    // 关卡 ID 文字（20×32，水平居中、距钮顶 6px，相对 70×68 钮左上角）
+    //   文字框中心 = (35, 22)；color #FFFFFF，border 1px solid #1C8E0D，
+    //   text-shadow 0px 1px 2px #21840F。
+    var tx = ox + 35;          // 58.5
+    var ty = oy + 26;          // 49.5（全局「所有钮文字下移 4px」）
+    // Figma 关卡ID文字明确指定 font-family: 'PingFang SC'，故强制该字体
+    // （不用 Theme.font.family 的 GenSenRounded2TW，否则与稿不一致）
+    var family = 'PingFang SC';
+    c.save();
+    c.font = '400 32px ' + family;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
+    // 绿色投影（text-shadow: 0 1px 2px #21840F）
+    c.shadowColor = '#21840F';
+    c.shadowBlur = 2;
+    c.shadowOffsetX = 0;
+    c.shadowOffsetY = 1;
+    c.fillStyle = '#FFFFFF';
     c.fillText(String(opts && opts.levelId != null ? opts.levelId : 0), tx, ty);
+    // 绿色描边（border: 1px solid #1C8E0D）
+    c.shadowColor = 'transparent';
+    c.shadowBlur = 0;
+    c.shadowOffsetY = 0;
+    c.lineWidth = 1;
+    c.strokeStyle = '#1C8E0D';
+    c.strokeText(String(opts && opts.levelId != null ? opts.levelId : 0), tx, ty);
+    c.restore();
 
-    // 4) 星级花：按 opts.stars 顺序点亮前 N 朵（位置固定，不重排）
-    //   第1朵=中间(58.5,89.5,rot0)  第2朵=左边(26.69,91.69,rot-15°)  第3朵=右边(90.31,91.69,rot+15°)
-    //   普通 1~3 星 → N 朵「普通花」(colored:false，花瓣统一 #FFEE00 黄花)
-    //   特殊 4 星（魔法棒成就）→ 3 朵「彩花」(colored:true，彩色花瓣 / big_flower)
-    //   用户语义：3 朵普通花 = 3 星；3 朵彩花 = 4 星（数量同为 3，靠颜色区分档位）
-    //   Figma: filter: drop-shadow(0px 1px 3px rgba(0,0,0,0.25))
+    // 星星（之前的小花）：normal_flower.png 已得星；未得星用 empty_flower.png 占位。
+    //   3 个固定槽位（相对 70×68 钮左上角，center 坐标，尺寸均 25×25）：
+    //     星1 (12.5,52.5)  星2 (36.5,58.5)  星3 (60.5,52.5)
+    //   4 星成就 → 已得星画彩花(colored→big_flower)，槽位仍 3 个。
     var rawStars = (opts && typeof opts.stars === 'number') ? opts.stars : 0;
-    var isFourStar = rawStars >= 4;          // 4 星成就 → 画彩花
-    var starCount = rawStars;
-    if (starCount < 0) starCount = 0;
-    if (starCount > 3) starCount = 3;        // 花数上限 3（4 星也只画 3 朵，仅变色）
+    var isFourStar = rawStars >= 4;          // 4 星成就 → 已得星画彩花
     var flowerColored = isFourStar;          // 普通 1~3 星=黄花(colored:false)；4 星=彩花(colored:true)
-    var FLOWER_SLOTS = [
-      { x: 58.5,  y: 89.5,  r: 0 },
-      { x: 26.69, y: 91.69, r: -15 },
-      { x: 90.31, y: 91.69, r: 15 },
+    var STAR_SLOTS = [
+      { x: ox + 12.5, y: oy + 52.5 },
+      { x: ox + 36.5, y: oy + 58.5 },
+      { x: ox + 60.5, y: oy + 52.5 },
     ];
-    for (var fi = 0; fi < starCount; fi++) {
-      var fp = FLOWER_SLOTS[fi];
-      c.save();
-      c.shadowColor = 'rgba(0,0,0,0.25)';
-      c.shadowBlur = 3;
-      c.shadowOffsetX = 0;
-      c.shadowOffsetY = 1;
-      BPWidget.prototype.drawFlower.call({}, c, fp.x, fp.y, 25, 1, fp.r * Math.PI / 180, flowerColored, 1);
-      c.restore();
+    for (var fi = 0; fi < 3; fi++) {
+      var sp = STAR_SLOTS[fi];
+      var obtained = fi < rawStars;
+      var imgKey = obtained ? (flowerColored ? null : 'normal_flower') : 'empty_flower';
+      BPWidget.prototype.drawFlower.call({}, c, sp.x, sp.y, 25, 1, 0, flowerColored && obtained, 1, imgKey);
     }
 
-    c.restore();
-  },
-
-  // 呼吸光环（绿，青绿 #3FB6A8）：标记「可点击进入的关」。current 态常驻；选中已通关态临时显示。
-  //   中心 (cx, cy) 在 frame 局部坐标（draw 已 translate 到 frame 左上角）。
-  _drawBreathingRing(c, cx, cy) {
-    var pulse = (Math.sin(Date.now() / 1000 * 3) + 1) / 2; // 0..1 呼吸
-
-    // 外晕：柔光呼吸圈
-    c.save();
-    c.globalAlpha = 0.22 + pulse * 0.28;
-    c.strokeStyle = '#3FB6A8';
-    c.lineWidth = 6 + pulse * 3;
-    c.beginPath();
-    c.arc(cx, cy, 38 + pulse * 5, 0, Math.PI * 2);
-    c.stroke();
-    c.restore();
-
-    // 内实环：固定清晰描边
-    c.save();
-    c.strokeStyle = '#3FB6A8';
-    c.lineWidth = 3;
-    c.beginPath();
-    c.arc(cx, cy, 35, 0, Math.PI * 2);
-    c.stroke();
     c.restore();
   },
 
@@ -116,40 +103,72 @@ const LevelButton = {
       c.fillStyle = 'rgba(120,124,130,0.82)';
       c.fillRect(24, 27, 69, 68);
     }
-    // 关卡数字：居中于按钮体（灰圆中心 = (58.5, 61)）
-    //   与已通关态的 #FF906A 同色系；字号略小（灰圆 69×68 < 已通关 117×115）
-    var nx = 24 + 69 / 2;   // 58.5（灰圆水平中心）
-    var ny = 27 + 68 / 2;   // 61  （灰圆垂直中心）
-    // Figma 样式：大宝桃桃体 / 32px / weight 400 / color #7E8B97 / line-height 32px（=100%）
-    c.fillStyle = '#7E8B97';
-    c.font = '400 32px ' + (typeof Theme !== 'undefined' && Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
+    // 关卡数字：Figma 规范（/* 3 */）白字 + 灰描边 + 灰投影，32px/400/PingFang SC
+    //   文字框 20×32，相对 69×68 钮左上角：left=calc(50% - 20/2 + 0.5px)≈25、top=9
+    //   → 文字中心 = (24 + 35, 27 + 25) = (59, 52)（相对 frame 局部）
+    //   color #FFFFFF；border 1px solid #717171；text-shadow 0px 1px 2px #797979
+    var nx = 24 + 35;   // 59（钮宽 69：50% - 20/2 + 0.5 + 20/2 = 35）
+    var ny = 27 + 29;   // 56（top 9 + 32/2 + 4 = 29，全局下移 4px）
+    c.save();
+    c.font = '400 32px PingFang SC';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
+    // 灰投影（text-shadow: 0 1px 2px #797979）
+    c.shadowColor = '#797979';
+    c.shadowBlur = 2;
+    c.shadowOffsetX = 0;
+    c.shadowOffsetY = 1;
+    c.fillStyle = '#FFFFFF';
     c.fillText(String(opts && opts.levelId != null ? opts.levelId : 0), nx, ny);
+    // 灰描边（border: 1px solid #717171）
+    c.shadowColor = 'transparent';
+    c.shadowBlur = 0;
+    c.shadowOffsetY = 0;
+    c.lineWidth = 1;
+    c.strokeStyle = '#717171';
+    c.strokeText(String(opts && opts.levelId != null ? opts.levelId : 0), nx, ny);
+    c.restore();
   },
 
-  // 当前关：与未解锁完全相同的图片，仅在外部加一圈呼吸光环做区分
-  //   按钮体中心（frame 局部）= (24 + 69/2, 27 + 68/2) = (58.5, 61)
+  // 当前关：main_level_btn_current.png（70×68，与已通关钮同尺寸、同中心贴于画布）。
+  //   关卡数字居中于按钮中心。无额外呼吸环/光环效果。
+  //   按钮体中心（frame 局部）= ((117-70)/2 + 35, (115-68)/2 + 34) = (58.5, 57.5)
   _drawCurrent(c, opts) {
-    if (AssetPreloader.isReady('main_level_btn_unlocked')) {
-      c.drawImage(AssetPreloader.get('main_level_btn_unlocked'), 24, 27, 69, 68);
+    var CUR_W = 70, CUR_H = 68;
+    var cx0 = (FRAME_W - CUR_W) / 2;  // 23.5
+    var cy0 = (FRAME_H - CUR_H) / 2;  // 23.5
+    if (AssetPreloader.isReady('main_level_btn_current')) {
+      c.drawImage(AssetPreloader.get('main_level_btn_current'), cx0, cy0, CUR_W, CUR_H);
     } else {
       c.fillStyle = 'rgba(120,124,130,0.82)';
-      c.fillRect(24, 27, 69, 68);
+      c.fillRect(cx0, cy0, CUR_W, CUR_H);
     }
 
-    // 关卡数字（同 locked 态：居中、同色、同字）
-    var nx = 24 + 69 / 2;   // 58.5
-    var ny = 27 + 68 / 2;   // 61
-    c.fillStyle = '#7E8B97';
-    c.font = '400 32px ' + (typeof Theme !== 'undefined' && Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
+    // 关卡数字：Figma 规范（/* 1 */，当前正在玩）白字 + 橙描边 + 橙投影
+    //   color #FFFFFF；border 1px solid #C9780F；text-shadow 0px 1px 2px #BE8800
+    //   文字框 18×32，相对 70×68 钮左上角：left=26、top=6 → 中心 (35, 22)
+    //   全局「所有钮文字下移 4px」→ 中心 y = 22 + 4 = 26（钮局部）→ abs (58.5, 49.5)
+    var nx = cx0 + 35;   // 58.5
+    var ny = cy0 + 26;   // 49.5
+    c.save();
+    c.font = '400 32px PingFang SC';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
+    // 橙投影（text-shadow: 0 1px 2px #BE8800）
+    c.shadowColor = '#BE8800';
+    c.shadowBlur = 2;
+    c.shadowOffsetX = 0;
+    c.shadowOffsetY = 1;
+    c.fillStyle = '#FFFFFF';
     c.fillText(String(opts && opts.levelId != null ? opts.levelId : 0), nx, ny);
-
-    var bx = 24 + 69 / 2;  // 58.5
-    var by = 27 + 68 / 2;  // 61
-    this._drawBreathingRing(c, bx, by);
+    // 橙描边（border: 1px solid #C9780F）
+    c.shadowColor = 'transparent';
+    c.shadowBlur = 0;
+    c.shadowOffsetY = 0;
+    c.lineWidth = 1;
+    c.strokeStyle = '#C9780F';
+    c.strokeText(String(opts && opts.levelId != null ? opts.levelId : 0), nx, ny);
+    c.restore();
   },
 };
 
