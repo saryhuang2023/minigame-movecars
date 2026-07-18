@@ -908,9 +908,9 @@ class BranchProgressWidget extends UIComponent {
         // 预置小花朵：未达成时以静态小尺寸显示在树枝槽位（4★ 除外：默认完全隐藏，不画占位）
         var pfrac = this._starFrac(i);
         var ppos = this._pointAt(pfrac);
-        var panchor = FLOWER_ANCHOR * 28;
+        var panchor = FLOWER_ANCHOR * 18;
         // 预置占位小花：用 empty_flower（空心小花，与 LevelButton 占位约定一致），NOT normal_flower（那是已达成填充花，看着像大花）
-        this.drawFlower(ctx, ox + ppos.x, oy + ppos.y - panchor, 28, 1, 0, false, 1, 'empty_flower');
+        this.drawFlower(ctx, ox + ppos.x, oy + ppos.y - panchor, 18, 1, 0, false, 1, 'empty_flower');
       }
     }
   }

@@ -429,16 +429,13 @@ class PlayingEngine {
       databus.gameState = 'menu';
       return;
     }
-    // 入场动画已去除：关卡内所有 UI（顶栏/底栏/金币/步数/星级条/猪）默认直接显示，不再飞入/渐显。
-    // 仍保留 _entranceState 占位（phase 直接置 'done'），确保首帧渲染时 es 已存在且输入即刻可用。
+    // 入场动画已去除：仅保留 _entranceState 占位（phase 直接置 'done'）。
+    // 原代码读取 PlayDefine.PLAY.ENTRANCE.* 用作入场时序，现已无用（phase 恒为 'done'，
+    // 更新逻辑不读取这些字段，见 update 中 es.phase!=='done' 闸门）。
+    // 去掉对 PlayDefine.PLAY.ENTRANCE 的引用，避免重玩等场景下偶发的 undefined 崩溃。
     this._entranceState = {
       startTime: Date.now() + 50,
       phase: 'done',        // 直接终态：所有 UI / 猪 默认显示，无入场动画
-      pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,
-      pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,
-      uiStart: PlayDefine.PLAY.ENTRANCE.UI_START,
-      uiDur: PlayDefine.PLAY.ENTRANCE.UI_DUR,
-      totalDuration: PlayDefine.PLAY.ENTRANCE.TOTAL,
     };
     this.loadLevel(data);
     this._loading = false;
@@ -655,14 +652,10 @@ class PlayingEngine {
 
   /** 关卡入场动画已去除：交叉淡变结束、切场景那一刻直接置终态，所有 UI 默认显示（无飞入/渐显）。 */
   beginEntrance() {
+    // 入场时序字段已不再使用（phase 恒为 'done'），仅保留占位，避免引用 PlayDefine.PLAY.ENTRANCE 在重玩时偶发 undefined。
     this._entranceState = {
       startTime: Date.now(),
       phase: 'done',        // 直接终态：无飞入/渐显
-      pigFadeDelay: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DELAY,
-      pigFadeDur: PlayDefine.PLAY.ENTRANCE.PIG_FADE_DUR,
-      uiStart: PlayDefine.PLAY.ENTRANCE.UI_START,
-      uiDur: PlayDefine.PLAY.ENTRANCE.UI_DUR,
-      totalDuration: PlayDefine.PLAY.ENTRANCE.TOTAL,
     };
   }
 
