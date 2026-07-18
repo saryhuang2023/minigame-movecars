@@ -552,20 +552,27 @@ class BranchProgressWidget extends UIComponent {
       if (Math.abs(target - this._displayed) < 0.0005) this._displayed = target;
     }
 
-    // 4★ 出场（旋转 + 光芒）：等小蜜蜂真正「抵达 4★ 花位置（枝尾 frac≈1）」才触发；
-    // 旋转过程与「出场动画」一致（快速旋转 + 放光芒），转到第 1 秒才开始甩星星。
-    if (this._pendingFourStar && !this._fourRevealed && this._displayed >= 0.998) {
+    // 4★ 出场（旋转 + 光芒）：2★ 滑行结束后立即触发，不依赖蜜蜂是否抵达 4★ 位置。
+    // 原始需求：越过 2★ 后 4★ 花即显示并快速旋转 2s + 放光芒，作为出场动画；
+    // 即便最终未达 4★（如正常通关但积分未到顶），花也应早早在枝顶显示出来。
+    if (this._shifted && !this._fourRevealed && (now - this._shiftStart) >= SHIFT_DUR) {
       this._fourRevealed = true;
       this._fourRevealStart = now;
       this._flowers[3].obtained = true;
       this._flowers[3].colored = true;
       this._flowers[3].finalSize = FOUR_STAR_SIZE;
       this._flowers[3].popStart = 0;
-      this._castPending = true;          // 旋转 FOUR_CAST_DELAY_MS 后才甩星星
-      this._castDelayStart = now;
     }
 
-    // 4★ 花「出场旋转满 1 秒」后 → 甩星星（施法）：此时蜜蜂已到位，魔法棒开始挥舞
+    // 4★ 甩魔法：必须等蜜蜂「抵达 4★ 位置（枝尾 frac≈1）」才触发（施法需要蜜蜂到位挥魔法棒）；
+    // 蜜蜂到位后开始计时，蓄力/旋转满 FOUR_CAST_DELAY_MS(1s) 才开始甩星星。
+    // 蜜蜂未达 4★（如正常通关但积分未到顶）则永不触发，4★ 花仍保持已显示的出场状态。
+    if (!this._fourStarActive && this._fourRevealed && this._displayed >= 0.998 && !this._castPending) {
+      this._castPending = true;
+      this._castDelayStart = now;
+      this._fourSpinStart = now;       // 蜜蜂到位 → 4★ 花先转一下（蓄力），与出场动画同款旋转
+    }
+    // 4★ 花「蓄力旋转满 1 秒」后 → 甩星星（施法）：此时蜜蜂已到位，魔法棒开始挥舞
     if (this._castPending && !this._fourStarActive && (now - this._castDelayStart) >= FOUR_CAST_DELAY_MS) {
       this._castPending = false;
       this._pendingFourStar = false;     // 施法阶段由 _fourStarActive 接管；_pendingFourStar 复位（结算面板改由 isFourStarAnimating 延后）

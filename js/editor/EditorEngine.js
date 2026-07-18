@@ -682,7 +682,6 @@ class EditorEngine {
             if (this.gp.holeOccupied[i] === -999) this.gp.holeOccupied[i] = realId;
           }
           this.gp.updatePigOccupancy(realId, finalTail, finalLen, finalAngle);
-          this._clearAllHints();
           this.markCurrentDirty();
         } else {
           // 无法落孔 → 清理 temp 占用
@@ -1458,7 +1457,6 @@ class EditorEngine {
     this.gp.selectedPigId = null;
     this.showPigSheet = false;
     this.gp.rebuildOccupancy();
-    this._clearAllHints();
     this.markCurrentDirty();
     this.showToast('已删除小猪');
   }
