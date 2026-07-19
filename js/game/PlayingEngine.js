@@ -17,6 +17,7 @@ const TopBar = require('../ui/widgets/TopBar.js');
 const VictoryPopup = require('../ui/widgets/VictoryPopup.js');
 const FailPopup = require('../ui/widgets/FailPopup.js');
 const RightStepWidget = require('../ui/widgets/RightStepWidget.js');
+const ItemButton = require('../ui/widgets/ItemButton.js');
 const safeLayout = require('../utils/safeLayout.js');
 const LevelCache = require('../preload/LevelCache.js');
 const HintSystem = require('./HintSystem.js');
@@ -33,7 +34,6 @@ const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const CommonButton = require('../ui/widgets/CommonButton.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
 const drawBottomBar = require('../ui/drawBottomBar.js');
-const { drawAdBadge } = require('../ui/drawAdBadge.js');
 const { drawPigCounter } = require('../ui/drawPigCounter.js');
 const SceneDefaults = require('../define/GameDefine.js').SCENE;
 var PlayDefine = require('../define/PlayingDefine.js');
@@ -258,6 +258,13 @@ class PlayingEngine {
       this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 78 + this._branchDeltaY, zIndex: UIManager.LAYER.OVERLAY });
       this.ui.add(this._uiBranchProgress, UIManager.LAYER.OVERLAY);
 
+      // 底部道具按钮：步数（居中 bottom:32）+ 提示（right:38 bottom:20）+ 求助（left:38 bottom:20）
+      var BTN_W = 77, BTN_H = 77;
+      var bottomY20 = SCREEN_HEIGHT - 20 - BTN_H;
+      this._uiAddStepBtn = new ItemButton({ x: (SCREEN_WIDTH - BTN_W) / 2, y: SCREEN_HEIGHT - 32 - BTN_H, iconKey: 'level_item_addstep', label: '步数+3', count: this._addStepRemaining, side: 'left' });
+      this._uiHintBtn   = new ItemButton({ x: SCREEN_WIDTH - 38 - BTN_W, y: bottomY20, iconKey: 'level_item_hint', label: '提示', count: this._hintRemaining, side: 'right' });
+      this._uiHelpBtn   = new ItemButton({ x: 38, y: bottomY20, iconKey: 'level_item_help', label: '求助', count: this._helpRemaining, side: 'right' });
+
       // Layer 4 — VictoryPopup
       this._uiVictoryPopup = new VictoryPopup({
         zIndex: UIManager.LAYER.MODAL,
@@ -323,6 +330,12 @@ class PlayingEngine {
 
     // 右上角剩余步数组件（还原旧版 CrownPigWidget 的步数显示）
     // 结算面板弹出或失败时隐藏；由面板自身及常规层管理可见性，不做特殊浮层处理。
+
+    // 底部道具按钮计数同步（首次进关从 loadLevel 的 3 开始）
+    if (this._uiAddStepBtn) this._uiAddStepBtn.setData(this._addStepRemaining);
+    if (this._uiHintBtn) this._uiHintBtn.setData(this._hintRemaining);
+    if (this._uiHelpBtn) this._uiHelpBtn.setData(this._helpRemaining);
+
     if (this._uiRightStep) {
       // 步数转化积分进行中：剩余步数数字同步逐个递减（每 1 分 = 1 步已转化）
       var displaySteps = this.steps;
@@ -770,6 +783,7 @@ class PlayingEngine {
 
     // 道具每关限用次数（每次关卡游玩重置，不跨关）；断点续玩时由 checkpoint 原样恢复「已用过几次」
     this._addStepRemaining = 3;   // +3 步：每关 3 次
+    this._helpRemaining = 2;      // 求助：每关 2 次
     this._hintRemaining = 3;      // 提示：每关 3 次
   }
 
@@ -848,6 +862,7 @@ class PlayingEngine {
         }
         if (this._uiFailPopup._exitBtn && _hitRect(t.x, t.y, this._uiFailPopup._exitBtn)) {
           audio.play('button_click');
+          try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
           databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu';
           return;
         }
@@ -864,10 +879,8 @@ class PlayingEngine {
         return;
       }
 
-      // 顶部返回/设置按钮
-      // ⚠️ 命中区必须与 TopBar.js 绘制位置一致：TopBar 把设置按钮画在 backX=15 / backY=43（32×32，见 TopBar.js 设置按钮段）。
-      // 精确 32×32 @ (15,43)，与上方徽章命中区(15,23,32×16)不重叠。
-      if (_hitRect(t.x, t.y, { x: 15, y: 43, w: 32, h: 32 })) {
+      // 顶部返回/设置按钮（命中区 = 视觉按钮圆心 + 1.2× 半幅，跟随安全区；见 _hitSettingsBtn）
+      if (this._hitSettingsBtn(t.x, t.y)) {
         this._btnPress.press('settings');
         this._btnPress.breathe('settings');
         audio.play('button_click');
@@ -886,46 +899,54 @@ class PlayingEngine {
         return;
       }
 
-      // 关卡内底栏双圆按钮（赛+3 / 提提示）—— 入场动画完成前 / 失败 / 通关后 不响应
+      // 关卡内底栏道具按钮（ItemButton）— 入场动画完成前 / 失败 / 通关后 不响应
       var entranceActive = this._entranceState && this._entranceState.phase !== 'done';
       if (!entranceActive && !this._failed && !this._victory) {
-        var bSize = 68;
-        // 左按钮：+3 步（新设计 frame left:80 bottom:42 → 左上角 (80, SCREEN_HEIGHT-121)，包围盒 78×79）
-        var addX = 80;
-        var addY = SCREEN_HEIGHT - 101;
-        if (_hitRect(t.x, t.y, { x: addX, y: addY, w: 78, h: 79 })) {
-          if (this._addStepRemaining <= 0) return;   // 次数用完，不可再点
+        // 左按钮：+3 步（新 ItemButton）
+        var addRect = this._uiAddStepBtn ? this._uiAddStepBtn.getHitRect() : null;
+        if (addRect && _hitRect(t.x, t.y, addRect)) {
+          if (this._addStepRemaining <= 0) return;
           audio.play('button_click');
           this._btnPress.press('plus5');
           this._btnPress.breathe('plus5');
           this._addBonusSteps(3);
-          // +3 道具图标飞向剩余步数面板（与金币飞行一致），到达后面板播被击中抖动
+          // +3 道具图标飞向剩余步数面板
           if (this._itemFlyEffect && this._uiRightStep) {
             var sp2 = this._uiRightStep.getStepNumberPos();
-            this._itemFlyEffect.trigger(addX + 34, addY + 34, sp2.x, sp2.y);
+            this._itemFlyEffect.trigger(addRect.x + 38.5, addRect.y + 38.5, sp2.x, sp2.y);
           }
           this._addStepRemaining--;
-          this._saveCheckpoint();   // 道具次数已变，即时存盘（与逃猪录制即时存盘同思路；+3 虽改步数但即时更稳）
+          if (this._uiAddStepBtn) this._uiAddStepBtn.setData(this._addStepRemaining);
+          this._saveCheckpoint();
           return;
         }
-        // 右按钮：提示（与左对称，frame x=SCREEN_WIDTH-158，包围盒 78×79）
-        var hintX = SCREEN_WIDTH - 158;
-        var hintY = SCREEN_HEIGHT - 101;
-        if (_hitRect(t.x, t.y, { x: hintX, y: hintY, w: 78, h: 79 })) {
-          if (this._hintRemaining <= 0) return;   // 次数用完，不可再点
-          if (this._hint.isActive()) {
-            showToast('请先解救这一只', 1500);
-            return;
-          }
+        // 提示按钮
+        var hintRect = this._uiHintBtn ? this._uiHintBtn.getHitRect() : null;
+        if (this._hasHintData && hintRect && _hitRect(t.x, t.y, hintRect)) {
+          if (this._hintRemaining <= 0) return;
+          if (this._hint.isActive()) { showToast('请先解救这一只', 1500); return; }
+          audio.play('button_click');
           this._btnPress.press('bottomHint');
           this._btnPress.breathe('bottomHint');
           var best = this._hint.show();
           if (best) {
             audio.play('hint_reveal');
             this._hintRemaining--;
-            this._saveCheckpoint();   // 提示次数已变即时存盘：提示不改步数/猪数，无定时器兜底，必须即时写
-          } else {
-            showToast('提示已结束', 1500);
+            if (this._uiHintBtn) this._uiHintBtn.setData(this._hintRemaining);
+            this._saveCheckpoint();
+          } else { showToast('提示已结束', 1500); }
+          return;
+        }
+        // 求助按钮
+        var helpRect = this._uiHelpBtn ? this._uiHelpBtn.getHitRect() : null;
+        if (helpRect && _hitRect(t.x, t.y, helpRect)) {
+          audio.play('button_click');
+          this._btnPress.press('help');
+          this._btnPress.breathe('help');
+          showToast('功能待上线', 1500);
+          if (this._helpRemaining > 0) {
+            this._helpRemaining--;
+            if (this._uiHelpBtn) this._uiHelpBtn.setData(this._helpRemaining);
           }
           return;
         }
@@ -946,6 +967,16 @@ class PlayingEngine {
     }
   }
 
+  // 设置按钮命中检测：圆心 = TopBar 实际绘制中心（跟随安全区 _baseY），半径 = UI 半幅 × 1.2。
+  // 触控区与视觉按钮严格圆心对齐；关卡内/主菜单统一为 1.2× UI。
+  _hitSettingsBtn(px, py) {
+    var by = (this._uiTopBar && this._uiTopBar._baseY != null) ? this._uiTopBar._baseY : 0;
+    var half = 16 * 1.2;   // 32 UI → 1.2× 半幅 = 19.2（与主菜单 setHit 一致）
+    var cx = 15 + 16;      // backX(15) + 半幅(16)，圆心 X
+    var cy = by + 3 + 16;  // backY(by+3) + 半幅(16)，圆心 Y（跟随安全区）
+    return Math.abs(px - cx) <= half && Math.abs(py - cy) <= half;  // 居中正方形，匹配主菜单
+  }
+
   onTouchStart(x, y) {
     this._guide.onPlayerAction();  // 棋盘操作 → 重置空闲计时
     this._recordTouch('touchstart', x, y);
@@ -953,16 +984,10 @@ class PlayingEngine {
     // === 按钮检测（回放中跳过） ===
     if (!this._isPlayingBack) {
     var self = this;
-    // 顶栏左侧设置按钮（齿轮，Figma: left15/top16/32×32，圆形命中）
-    // 注：UIManager 触控未接入运行时，原 backBtn 判断恒为 null（死代码）；此处改按齿轮圆形精准命中。
-    //     rec.../hint... 状态文字仅纯绘制、无 hitTest，本就不拦截点击；设置按钮命中精准后不再与文字混淆。
+    // 顶栏左侧设置按钮（齿轮，32×32，圆心对齐 + 1.2× 半幅热区，跟随安全区；见 _hitSettingsBtn）
     var entranceDone = !this._entranceState || this._entranceState.phase === 'done';
     if (entranceDone && !this._failed && !this._victory) {
-      // 设置按钮中心 Y 跟随 TopBar._baseY 动态变化（贴安全线）
-      var setCY2 = (this._uiTopBar && this._uiTopBar._baseY != null) ? this._uiTopBar._baseY + 3 + 16 : 16 + 16;
-      var setCX = 15 + 16, setCY = setCY2;
-      var HIT_R = 24;  // 原始 16 × 1.5 倍热区
-      if ((x - setCX) * (x - setCX) + (y - setCY) * (y - setCY) <= HIT_R * HIT_R) {
+      if (this._hitSettingsBtn(x, y)) {
         audio.play('button_click');
         if (databus.returnState === 'editor') {
           // 试玩返回：将 hintId/hintAngle 写回关卡数据
@@ -995,17 +1020,30 @@ class PlayingEngine {
       }
     }
 
-    if (this.hintBtn && !this._hint.getTarget() && x >= this.hintBtn.x && x <= this.hintBtn.x + this.hintBtn.w &&
-        y >= this.hintBtn.y && y <= this.hintBtn.y + this.hintBtn.h) {
+    // 提示按钮（ItemButton）— 旧版兼容触控路径
+    var hintRect2 = this._uiHintBtn ? this._uiHintBtn.getHitRect() : null;
+    if (this._hasHintData && hintRect2 && !this._hint.getTarget() && x >= hintRect2.x && x <= hintRect2.x + hintRect2.w &&
+        y >= hintRect2.y && y <= hintRect2.y + hintRect2.h) {
       audio.play('button_click');
       this._btnPress.press('hint');
       this._btnPress.breathe('hint');
-      this._btnPress.breathe('remove');
       var best = this._hint.show();
-      if (best) {
-        audio.play('hint_reveal');
-      } else {
-        showToast('提示已结束', 1500);
+      if (best) audio.play('hint_reveal');
+      else showToast('提示已结束', 1500);
+      return;
+    }
+
+    // 求助按钮（ItemButton）— 旧版兼容触控路径
+    var helpRect2 = this._uiHelpBtn ? this._uiHelpBtn.getHitRect() : null;
+    if (helpRect2 && x >= helpRect2.x && x <= helpRect2.x + helpRect2.w &&
+        y >= helpRect2.y && y <= helpRect2.y + helpRect2.h) {
+      audio.play('button_click');
+      this._btnPress.press('help');
+      this._btnPress.breathe('help');
+      showToast('功能待上线', 1500);
+      if (this._helpRemaining > 0) {
+        this._helpRemaining--;
+        if (this._uiHelpBtn) this._uiHelpBtn.setData(this._helpRemaining);
       }
       return;
     }
@@ -1271,6 +1309,8 @@ class PlayingEngine {
   /** 触发失败：弹出失败面板，屏蔽棋盘与提示操作 */
   _triggerFail() {
     this._failed = true;
+    // 清除断点续玩存档——失败后不允许从失败位置恢复
+    try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
     this._uiFailPopup.visible = true;
     this._uiFailPopup.setData({ returnState: databus.returnState });  // 试玩→「返回编辑」
     this._uiFailPopup.open();
@@ -1690,76 +1730,6 @@ class PlayingEngine {
     ctx.restore();
   }
 
-  // 左/右 道具按钮（新设计，Ardot frame: left:80 bottom:42，框 78×79）
-  // 圆形底框(68) 复用 drawRoundMenuButton（金圆+橙内圈+图标 52 居中）；
-  // 叠加：广告角标（红圆+白三角）、文字框（label）
-  // side:'left' → frame x=80；side:'right' → 对称：frame x=SCREEN_WIDTH-158（=SCREEN_WIDTH-80-78）
-  _drawItemButton(ctx, key, side, iconKey, label) {
-    var fx = (side === 'right') ? (SCREEN_WIDTH - 158) : 80;
-    var fy = SCREEN_HEIGHT - 101;      // frame 左上角 y：bottom:22 + 高79 = 距底101（相对 bottom:42 设计稿再下移20px）
-    var s = this._btnPress.getScale(key);
-    // 以 frame 中心为锚做按下缩放
-    var ax = fx + 39, ay = fy + 39.5;
-    ctx.save();
-    ctx.translate(ax, ay);
-    ctx.scale(s, s);
-    ctx.translate(-ax, -ay);
-
-    // 内联圆角矩形
-    function _rr(c, x, y, w, h, r) {
-      r = Math.min(r, w / 2, h / 2);
-      c.beginPath();
-      c.moveTo(x + r, y);
-      c.arcTo(x + w, y, x + w, y + h, r);
-      c.arcTo(x + w, y + h, x, y + h, r);
-      c.arcTo(x, y + h, x, y, r);
-      c.arcTo(x, y, x + w, y, r);
-      c.closePath();
-    }
-
-    // 1. 圆形底框 68×68（left:0 top:0）+ 图标 52×52（left:8 top:8，恰为圆内居中）
-    drawBottomBar.drawRoundMenuButton(ctx, fx, fy, 68, '', true, iconKey);
-
-    // 2. 广告角标（统一红圆+白三角，与体力窗/胜利面板一致）
-    drawAdBadge(ctx, fx + 64, fy + 16, 13.5);
-
-    // 3. 文字框 50×25（left:9 top:52）+ 边框 #B5712B
-    ctx.save();
-    ctx.fillStyle = '#FEAB56';
-    ctx.strokeStyle = '#B5712B';
-    ctx.lineWidth = 1;
-    _rr(ctx, fx + 9, fy + 52, 50, 25, 12);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-
-    // 4. 文字：剩余次数（居中于文字框，白字 + 轻微阴影）
-    var isHint = (key === 'bottomHint');
-    var remaining = isHint ? this._hintRemaining : this._addStepRemaining;
-    if (remaining == null) remaining = 3;   // 兜底：未初始化按上限显示（提示/+3 当前上限均为 3）
-    ctx.save();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,0.25)';
-    ctx.shadowBlur = 1;
-    ctx.font = '400 16px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
-    ctx.fillText(remaining + '次', fx + 34, fy + 64.5);
-    ctx.restore();
-
-    ctx.restore();
-  }
-
-  // 左边「+3 步」按钮
-  _drawAddStepButton(ctx, key) {
-    this._drawItemButton(ctx, key, 'left', 'addstep_icon', '+3');
-  }
-
-  // 右边「提示」按钮（与左边对称，元素一致，仅图标 hint_icon + 文字 3次）
-  _drawHintButton(ctx, key) {
-    this._drawItemButton(ctx, key, 'right', 'hint_icon', '3次');
-  }
-
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
   render() {
     // 引导系统帧更新（所有状态下的引擎均需轮询）
@@ -1909,12 +1879,12 @@ class PlayingEngine {
       // 底栏图片始终绘制（失败时由失败面板覆盖）；交互按钮在失败/通关后隐藏
       drawBottomBar.drawLevelBottomBar(ctx);
       if (!this._failed && !this._victory) {
-        // 左按钮：+3 步（新设计，见 _drawAddStepButton）
-        this._drawAddStepButton(ctx, 'plus5');
-        if (this._hasHintData) {
-          // 右按钮：提示（与左对称，见 _drawHintButton）
-          this._drawHintButton(ctx, 'bottomHint');
-        }
+        // 底部道具按钮（新 ItemButton 组件）
+        var plus5PS = this._btnPress.getScale('plus5');
+        var hintPS = this._btnPress.getScale('bottomHint');
+        if (this._uiAddStepBtn) this._uiAddStepBtn.render(ctx, plus5PS);
+        if (this._hasHintData && this._uiHintBtn) this._uiHintBtn.render(ctx, hintPS);
+        if (this._uiHelpBtn) this._uiHelpBtn.render(ctx, this._btnPress.getScale('help'));
       }
     } else if (es.phase === 'ui') {
       // UI 飞入动画（500ms，ease-out cubic）
@@ -1945,10 +1915,11 @@ class PlayingEngine {
             render: function(c) {
               drawBottomBar.drawLevelBottomBar(c);
               if (!selfPE._failed && !selfPE._victory) {
-                selfPE._drawAddStepButton(c, 'plus5');
-                if (selfPE._hasHintData) {
-                  selfPE._drawHintButton(c, 'bottomHint');
-                }
+                var p5ps = selfPE._btnPress.getScale('plus5');
+                var hps = selfPE._btnPress.getScale('bottomHint');
+                if (selfPE._uiAddStepBtn) selfPE._uiAddStepBtn.render(c, p5ps);
+                if (selfPE._hasHintData && selfPE._uiHintBtn) selfPE._uiHintBtn.render(c, hps);
+                if (selfPE._uiHelpBtn) selfPE._uiHelpBtn.render(c, selfPE._btnPress.getScale('help'));
               }
             }
           }, cond: true },
@@ -2191,6 +2162,7 @@ class PlayingEngine {
       // 道具使用次数：+3步剩余、提示剩余（续玩原样镜像杀进程前状态）
       addStepRemaining: this._addStepRemaining,
       hintRemaining: this._hintRemaining,
+      helpRemaining: this._helpRemaining,
       savedAt: Date.now()
     };
   }
@@ -2319,6 +2291,7 @@ class PlayingEngine {
     // 存档缺失字段时兜底为 loadLevel 初值（2 / 1），与新鲜正式关行为一致。
     this._addStepRemaining = (cp.addStepRemaining != null) ? cp.addStepRemaining : this._addStepRemaining;
     this._hintRemaining = (cp.hintRemaining != null) ? cp.hintRemaining : this._hintRemaining;
+    this._helpRemaining = (cp.helpRemaining != null) ? cp.helpRemaining : this._helpRemaining;
     // +3 道具实际加成步数：续玩接回，保证「剩余步数 HUD」与杀进程前一致（否则 +3 后用掉的次数恢复了，但加的步数丢了，HUD 错位）
     this._bonusSteps = (cp.bonusSteps != null) ? cp.bonusSteps : this._bonusSteps;
 

@@ -1082,7 +1082,9 @@ class GameEngine {
     ctx.translate(-(setBtnCX + st.dx), -(setBtnCY + st.dy));
     ctx.globalAlpha = st.alpha;
     var setAreaRaw = this._drawSettingsBtn(setBtnX + st.dx, setBtnY + st.dy, setIconSize);
-    var setArea = { x: setBtnX, y: setBtnY, w: setAreaRaw.w, h: setAreaRaw.h };
+    // 触控区 = 1.2× UI（UI 取规范 32，不随菜单 scale，保证与关卡内设置按钮尺寸完全一致），圆心对齐视觉中心
+    var setHit = 32 * 1.2;
+    var setArea = { x: setBtnCX - setHit / 2, y: setBtnCY - setHit / 2, w: setHit, h: setHit };
     ctx.restore();
 
     // （体力 UI 已移至左上角单组件，绘制见开始按钮之后）
