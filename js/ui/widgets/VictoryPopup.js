@@ -8,6 +8,7 @@ var AssetPreloader = require('../AssetPreloader.js');
 var audio = require('../../audio/AudioManager.js');
 var CommonButton = require('./CommonButton.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
+var { drawAdBadge } = require('../drawAdBadge.js');
 
 // ===== 继续按钮手绘（复用 SettingsPanel 的 3 层 Figma 设计，参数化宽度）=====
 function _roundRect(ctx, x, y, w, h, r) {
@@ -98,7 +99,6 @@ class VictoryPopup extends UIComponent {
   this._goldClaimed = false;  // 双倍金币是否已领取
 
   // 通用按钮
-  var { drawAdBadge } = require('../drawAdBadge.js');
   this._continueBtn = new CommonButton({ w: 160, h: 48, color: 'blue' });
   this._doubleGoldCommonBtn = new CommonButton({ w: 208, h: 54, color: 'gold', label: '金币X2' });
 
