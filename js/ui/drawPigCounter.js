@@ -92,20 +92,24 @@ function _pcDetectChange(valueStr) {
  * 绘制「剩余猪数量」组件
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} frameX  frame 左上角 x（画布坐标）
- * @param {number} frameY  frame 左上角 y（画布坐标）
+ * @param {number} safeTop 顶部可用区上边界 y（safeLayout.safeLineY(SCREEN_WIDTH/2)），
+ *   面板顶贴此线下方 6px 间隙；原硬编码 frameY=-48 由 safeTop 动态推算。
  * @param {object} opts
  *   - iconKey {string}  图标资源 key，默认 'pig_icon'（后续可传 'bird_icon' 等）
  *   - value   {number|string} 展示的数字/文本，默认 ''
  *   - font    {string}  字体，默认 Theme.font.family（大宝桃桃体）
  */
-function drawPigCounter(ctx, frameX, frameY, opts) {
+function drawPigCounter(ctx, frameX, safeTop, opts) {
   opts = opts || {};
   var iconKey = opts.iconKey || 'pig_icon';
   var value = (opts.value != null) ? String(opts.value) : '';
   var fontFamily = opts.font || (Theme.font && Theme.font.family) || 'sans-serif';
 
+  // 棍子规则：只要面板不越安全线，尽量短，但可见部分 ≥ 22px。y=0 起画。
+  // panelTop = max(安全线下2px, 最低20) → frameY = panelTop - 70(pill.y)
+  var panelTop = Math.max(safeTop + 2, 20);
   var ox = frameX;
-  var oy = frameY;
+  var oy = panelTop - GEOM.pill.y;  // 面板(pill)顶 = panelTop
 
   // 剩余猪数变化检测 → 自动触发吊牌单摆（减少才弹；变大视为换关不弹）
   _pcDetectChange(value);

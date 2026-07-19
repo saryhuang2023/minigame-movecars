@@ -7,6 +7,7 @@ var Easing = require('../core/Easing.js');
 var PopupAnimator = require('./PopupAnimator.js');
 var AssetPreloader = require('./AssetPreloader.js');
 var audio = require('../audio/AudioManager.js');
+var { drawAdBadge } = require('./drawAdBadge.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../render.js');
 
 // ===== 手绘按钮（与 CheckpointDialog 完全一致） =====
@@ -225,6 +226,11 @@ function _renderBtn(ctx, p, isEntering, elapsed) {
   ctx.translate(-cx, -cy);
 
   _drawBtnBg(ctx, btnX, btnY, BTN_W, BTN_H);
+
+  // 广告角标（"领取"按钮右上角，与关卡内道具栏样式一致）
+  if (_mode === 'ad') {
+    drawAdBadge(ctx, btnX + BTN_W - 13, btnY + 14, 11);
+  }
 
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '22px ' + Theme.font.family;

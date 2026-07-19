@@ -98,8 +98,9 @@ class VictoryPopup extends UIComponent {
   this._goldClaimed = false;  // 双倍金币是否已领取
 
   // 通用按钮
+  var { drawAdBadge } = require('../drawAdBadge.js');
   this._continueBtn = new CommonButton({ w: 160, h: 48, color: 'blue' });
-  this._doubleGoldCommonBtn = new CommonButton({ w: 208, h: 54, color: 'gold', iconKey: 'ad_icon', label: '金币X2' });
+  this._doubleGoldCommonBtn = new CommonButton({ w: 208, h: 54, color: 'gold', label: '金币X2' });
 
   // 动画
   this._animStart = 0;
@@ -310,12 +311,13 @@ VictoryPopup.prototype.render = function (ctx) {
     // 设置点击区域
     this._doubleGoldBtn = { x: goldBtnX, y: goldBtnY, w: goldBtnW, h: goldBtnH };
 
-    // 通用按钮（gold + ad_icon）
+    // 通用按钮（gold，右上角统一广告角标替代旧 ad_icon.png）
     this._doubleGoldCommonBtn.x = goldBtnX;
     this._doubleGoldCommonBtn.y = goldBtnY;
     this._doubleGoldCommonBtn.w = goldBtnW;
     this._doubleGoldCommonBtn.h = goldBtnH;
     this._doubleGoldCommonBtn.render(ctx);
+    drawAdBadge(ctx, goldBtnX + goldBtnW - 14, goldBtnY + 14, 11);
 
     if (breatheScale !== 1) ctx.restore();
   } else {

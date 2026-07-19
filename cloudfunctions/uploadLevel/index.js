@@ -9,7 +9,6 @@ exports.main = async (event, context) => {
     return { code: -1, msg: '缺少 name 或 data' };
   }
 
-  const clientVersion = (typeof version === 'number') ? version : 0;
   const pigCount = (data.pigs && data.pigs.length) || 0;
   const starScores = (Array.isArray(data.starScores) && data.starScores.length === 4) ? data.starScores : null;
   const hasPublishedParam = (published !== null && published !== undefined);
@@ -35,27 +34,17 @@ exports.main = async (event, context) => {
       return { code: 0, msg: 'created', id: res._id, version: 1, stepBonusThreshold, starScores };
     }
 
-    // 已存在 — 版本号检查（乐观并发）
+    // 已存在 — 覆盖写入（提示信息玩家互相覆盖，不做版本校验）
     const doc = exist.data[0];
     const serverVersion = (typeof doc.version === 'number') ? doc.version : 0;
     // 深度合并：以客户端 data 为准全覆盖，避免旧文档缺字段（如 stepBonusThreshold）
     const mergedData = Object.assign({}, doc.data, data);
     mergedData.version = serverVersion + 1;
 
-    if (clientVersion > 0 && serverVersion > 0 && clientVersion !== serverVersion) {
-      return {
-        code: 2, msg: 'conflict',
-        serverVersion,
-        data: doc.data
-      };
-    }
-
-    // 版本匹配 — 原子条件更新
+    // 原子更新（仅按 _id 匹配，不做 version 校验）
     const newVersion = serverVersion + 1;
     const stepBonusThreshold = (typeof data.stepBonusThreshold === 'number') ? data.stepBonusThreshold : (typeof data.crownSteps === 'number' ? data.crownSteps : 0);
-    const whereCond = serverVersion > 0
-      ? { _id: doc._id, version: serverVersion }
-      : { _id: doc._id };
+    const whereCond = { _id: doc._id };
     
     // published: null/undefined → 保持现有值不变
     var updateData = { data: mergedData, pigCount, stepBonusThreshold, starScores, version: newVersion, updatedAt: now };

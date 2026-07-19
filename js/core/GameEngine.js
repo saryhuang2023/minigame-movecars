@@ -23,6 +23,7 @@ const PlayingEngine = require('../game/PlayingEngine.js');
 const BugReporter = require('../debug/BugReporter.js');
 const DebugPanel = require('../debug/DebugPanel.js');
 const { ToastWidget, showToast } = require('../ui/widgets/ToastWidget.js');
+const { getSafeLayout } = require('../utils/safeLayout.js');
 
 // 主菜单控件入场动画已移除：开始按钮 / 设置 / 体力栏 / 底部按钮 / 装扮 / 挑战
 // 均直接以最终态（alpha=1, scale=1）显示、立即可点击。仅保留菜单背景↔关卡背景的
@@ -110,6 +111,10 @@ class GameEngine {
     this._flyTrail = null;         // 飞行残影
     this._startScale = 1;
     console.log('[GameEngine] StaminaSystem 初始化完成');
+
+    // 安全区布局（刘海/状态栏/胶囊）：缓存一次，全程复用
+    this._safeLayout = getSafeLayout();
+    this._hudTopY = null;   // 菜单 HUD(设置/体力)顶部 y，renderMenu 每帧刷新
 
     // 预加载数据占位（LoadingManager 填充）
     this._preloadedPlayerData = null;
@@ -659,6 +664,51 @@ class GameEngine {
   }
 
   /**
+   * 画「可用区域上边界曲线」（绿线）+ 显式标出微信胶囊（橙虚线）。
+   * 绿线 = 线以下为可用区；绝大多数宽度统一 = safeArea.top（OS 按设备算好，全宽一致、不写死），
+   *   仅右上胶囊覆盖区平滑抬升到 capsule.bottom。
+   * 摄像头/刘海的具体形状不建模（那必须写死机型），已由 safeArea.top 统一涵盖，真机可核对线高是否够。
+   */
+  _drawSafeAreaLine(ctx) {
+    var safe = this._safeLayout;
+    if (!safe) return;
+    var sw = SCREEN_WIDTH;
+    var step = 6;
+    ctx.save();
+
+    // ① 边界曲线（绿线）：线以下 = 可用区
+    ctx.beginPath();
+    for (var x = 0; x <= sw; x += step) {
+      var y = safe.safeLineY(x);
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(122, 196, 80, 0.7)';
+    ctx.stroke();
+
+    // ② 真实障碍物（橙虚线）：让不可用区可见可核对
+    var obs = safe.getObstructions ? safe.getObstructions() : [];
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = 'rgba(255, 149, 0, 0.85)';
+    for (var oi = 0; oi < obs.length; oi++) {
+      var ob = obs[oi];
+      if (ob.type === 'ellipse') {
+        ctx.beginPath();
+        ctx.ellipse(ob.cx, ob.cy, ob.rx, ob.ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (ob.type === 'rect') {
+        ctx.strokeRect(ob.x, ob.y, ob.w, ob.h);
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  /**
    * 画猪鼻子 Logo
    */
   drawPigNoseLogo(cx, cy, size) {
@@ -999,22 +1049,30 @@ class GameEngine {
       this._challengeBtnRect = _challengeRect;
     }
 
-    // 计算按钮按压缩放（menuButtons 顺序：0=play 1=settings 2=dress 3=challenge 4=editor 5=debug）
+    // 计算按钮按压缩放（menuButtons 顺序：0=play 1=settings 2=stamina 3=dress 4=challenge 5=editor 6=debug）
     var pressScale = this._getBtnPressScale();
     var mainScale = this._pressedBtnIdx === 0 ? pressScale : 1;
     var setScale   = this._pressedBtnIdx === 1 ? pressScale : 1;
-    var dressPress = this._pressedBtnIdx === 2 ? pressScale : 1;
-    var challengePress = this._pressedBtnIdx === 3 ? pressScale : 1;
-    var editScale  = this._pressedBtnIdx === 4 ? pressScale : 1;
-    var debugScale = this._pressedBtnIdx === 5 ? pressScale : 1;
+    var staminaPress = this._pressedBtnIdx === 2 ? pressScale : 1;  // 体力栏无按压视觉反馈，恒为 1
+    var dressPress = this._pressedBtnIdx === 3 ? pressScale : 1;
+    var challengePress = this._pressedBtnIdx === 4 ? pressScale : 1;
+    var editScale  = this._pressedBtnIdx === 5 ? pressScale : 1;
+    var debugScale = this._pressedBtnIdx === 6 ? pressScale : 1;
 
-    // ===== 设置按钮（设计稿 left:16 top:54，32×32，按 393 设计宽等比缩放）=====
+    // ===== 设置按钮（左上，贴安全区上边界曲线；按 393 设计宽等比缩放）=====
     var scale = SCREEN_WIDTH / 393;
+    // 顶部 HUD 整体上贴「可用区域上边界曲线」：设置钮顶 = safeLineY(x) + 间隙，
+    // 体力钮保持在设置钮下方（沿用原 10px 间隔），整体最大限度上移。
+    var TOP_GAP = 6;  // 安全线 与 按钮顶部 之间的呼吸间隙(px)
     var setIconSize = 32 * scale;
     var setBtnX = 16 * scale;
-    var setBtnY = 54 * scale;
     var setBtnCX = setBtnX + setIconSize / 2;
+    this._hudTopY = this._safeLayout.safeLineY(setBtnCX) + TOP_GAP;
+    var setBtnY = this._hudTopY;
     var setBtnCY = setBtnY + setIconSize / 2;
+
+    // 顶部安全线 + 微信胶囊区（真机调试用）
+    this._drawSafeAreaLine(ctx);
 
     // 设置按钮（无入场动画，直接显示）
     var st = this._getMenuTransform('settings');
@@ -1114,10 +1172,17 @@ class GameEngine {
 
     // ===== 注册按钮碰撞区域 =====
     var self = this;
+    // 体力栏点击：获取完整 frame 矩形（内含 icon + bg + 文字），弹出体力不足广告窗
+    var staminaLayout = this._computeStaminaLayout();
+    var staminaFrame = staminaLayout.frame;
+
     this.menuButtons = [
       { key: 'play', x: startX, y: startY, w: startW, h: startH, action: function() { self._onClickPlayBtn(); } },
       { key: 'settings', x: setArea.x, y: setArea.y, w: setArea.w, h: setArea.h,
         action: function() { settingsPanel.open({ title: '设置' }); }
+      },
+      { key: 'stamina', x: staminaFrame.x, y: staminaFrame.y, w: staminaFrame.w, h: staminaFrame.h,
+        action: function() { self._onTapStaminaBar(); }
       }
     ];
 
@@ -1207,8 +1272,10 @@ class GameEngine {
   _computeStaminaLayout() {
     var ST = require('../define/GameDefine.js').GAME.STAMINA;
     var scale = SCREEN_WIDTH / 393;
-    // 整体 frame：left:16, top:96, 96×30（设计稿 px）
-    var fx = 16 * scale, fy = 96 * scale;
+    // 体力栏位于设置按钮右侧，垂直居中对齐（设置钮 32px vs 体力栏 30px）
+    var GAP = 6 * scale;  // 与设置钮之间的水平间距
+    var fx = 16 * scale + 32 * scale + GAP;                           // 设置钮右缘 + 间距
+    var fy = (this._hudTopY != null ? this._hudTopY : 54 * scale) + 1 * scale;  // 垂直居中：(32-30)/2 = 1
     var fw = 96 * scale, fh = 30 * scale;
     // 背景 energy_bg.png：rel (7,2) 89×26
     var bgX = fx + 7 * scale, bgY = fy + 2 * scale;
@@ -1521,6 +1588,21 @@ class GameEngine {
         StaminaAdPanel.openNoAds();
       }
     }, 300);
+  }
+
+  /** 处理点击体力栏：弹出体力广告窗（与体力不足时点开始按钮同款弹窗） */
+  _onTapStaminaBar() {
+    // 如果飞行动画/嵌入特效进行中，或弹窗已开 → 忽略
+    if (this._stamina.isFlying() || this._staminaEmbed || StaminaAdPanel.isOpen()) return;
+    this._stamina.load();
+    var self = this;
+    var hasAds = this._stamina.getAdRemainingToday() > 0;
+    if (hasAds) {
+      StaminaAdPanel.open(self._stamina.getAdRemainingToday(),
+        function () { self._onStaminaAdClaim(); });
+    } else {
+      StaminaAdPanel.openNoAds();
+    }
   }
 
   _onClickChallengeBtn() {

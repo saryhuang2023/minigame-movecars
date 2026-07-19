@@ -17,6 +17,7 @@ const TopBar = require('../ui/widgets/TopBar.js');
 const VictoryPopup = require('../ui/widgets/VictoryPopup.js');
 const FailPopup = require('../ui/widgets/FailPopup.js');
 const RightStepWidget = require('../ui/widgets/RightStepWidget.js');
+const safeLayout = require('../utils/safeLayout.js');
 const LevelCache = require('../preload/LevelCache.js');
 const HintSystem = require('./HintSystem.js');
 const CoinFlyEffect = require('../effects/CoinFlyEffect.js');
@@ -32,6 +33,7 @@ const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const CommonButton = require('../ui/widgets/CommonButton.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
 const drawBottomBar = require('../ui/drawBottomBar.js');
+const { drawAdBadge } = require('../ui/drawAdBadge.js');
 const { drawPigCounter } = require('../ui/drawPigCounter.js');
 const SceneDefaults = require('../define/GameDefine.js').SCENE;
 var PlayDefine = require('../define/PlayingDefine.js');
@@ -226,13 +228,34 @@ class PlayingEngine {
       this.ui.add(this._uiGoldWidget, UIManager.LAYER.CONTROL);
 
       // Layer INFO — 右上角剩余步数组件（还原旧版 CrownPigWidget 的步数显示，奖杯已删除）
-      this._uiRightStep = new RightStepWidget({ zIndex: UIManager.LAYER.INFO });
+      // safeY: 直接判断药丸矩形是否与胶囊水平重叠 → 重叠就用胶囊底推下去，不依赖 safeLineY 逐点查表
+      var selfPE = this;
+      this._safeL = safeLayout.getSafeLayout();
+      var safeL = this._safeL;
+      var stepSafeY = safeL.safeTop;  // 兜底：平面机无胶囊时 = safeArea.top
+      if (safeL.capsule) {
+        var pillLeftX = SCREEN_WIDTH - 14 - 66;        // OUTER_X
+        var pillRightX = pillLeftX + 66;                // OUTER_X + OUTER_W
+        var capL = safeL.capsule.left, capR = safeL.capsule.right;
+        if (pillRightX > capL && pillLeftX < capR) {   // 水平有交集
+          stepSafeY = safeL.capsule.bottom + 4;         // 胶囊底 + 留白
+        }
+      }
+      this._pigSafeTop = safeL.safeLineY(SCREEN_WIDTH / 2);
+      // 树枝进度条整体下移：猪面板底 + BRANCH_GAP，避免遮挡
+      var PANEL_GAP = 2;        // 猪面板顶与安全线间距
+      var PILL_H = 50;          // 猪面板药丸高度（drawPigCounter GEOM.pill.h）
+      var BRANCH_GAP = 5;       // 面板底与树枝顶之间的间隙
+      var ORIG_BRANCH_Y = 78;   // 树枝原始 Y（不加偏移时）
+      var panelTop = Math.max(this._pigSafeTop + PANEL_GAP, 20);
+      this._branchDeltaY = Math.max(0, panelTop + PILL_H + BRANCH_GAP - ORIG_BRANCH_Y);
+      this._uiRightStep = new RightStepWidget({ zIndex: UIManager.LAYER.INFO, safeY: stepSafeY });
       this.ui.add(this._uiRightStep, UIManager.LAYER.INFO);
 
       // Layer OVERLAY — 树枝进度条（小虫沿树枝爬动表示进度）；层级高于 INFO/CONTROL，
       // 使「步数→积分」飞花能盖过右上角步数牌（飞花是 BranchProgressWidget 内部绘制内容，
       // 无法单独提层，故整体提升到非模态最高层 OVERLAY，仍低于结算面板 MODAL）。
-      this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 78, zIndex: UIManager.LAYER.OVERLAY });
+      this._uiBranchProgress = new BranchProgressWidget({ x: 10, y: 78 + this._branchDeltaY, zIndex: UIManager.LAYER.OVERLAY });
       this.ui.add(this._uiBranchProgress, UIManager.LAYER.OVERLAY);
 
       // Layer 4 — VictoryPopup
@@ -272,8 +295,11 @@ class PlayingEngine {
   _syncUIData() {
     if (!this._uiTopBar) return;  // 哨兵检查
 
-    // TopBar 位置 + 内容（屏幕坐标系，y=0）
+    // TopBar 位置：左上设置钮 + 关卡徽章 + 金币整体贴上不可用区域下沿
+    var topSafeY = this._safeL ? this._safeL.safeLineY(31) : 16;  // 设置钮中心 x=15+16=31
+    this._topSafeY = topSafeY;  // 缓存，给状态指示器用
     this._uiTopBar.setBounds(0, 0, this._boardCardW, Theme.layout.topBarH);
+    this._uiTopBar.setBaseY(topSafeY);
     this._uiTopBar.setLevelText((parseInt(this.levelName || 1)) + '关');
     this._uiTopBar.setMode('normal');
 
@@ -288,7 +314,12 @@ class PlayingEngine {
       this._lastGoldLog = goldDisplay;
       console.log('[LOG_gold] _syncUIData goldDisplay=' + goldDisplay + ' settled=' + this._goldSettled + ' getGold=' + GoldSystem.getGold() + ' accum=' + this._levelAccumulatedGold);
     }
-    if (this._uiGoldWidget) this._uiGoldWidget.setData(goldDisplay);
+    // GoldWidget — 显示余额 + Y轴中心对齐关卡区域（设置钮+关卡徽章）
+    if (this._uiGoldWidget) {
+      this._uiGoldWidget.setData(goldDisplay);
+      var goldBaseY = topSafeY - 13;  // 金币内容中心(≈60.5)对齐关卡徽章中心(topSafeY+48)
+      this._uiGoldWidget.setBounds(this._uiGoldWidget.x, goldBaseY, this._uiGoldWidget.w, this._uiGoldWidget.h);
+    }
 
     // 右上角剩余步数组件（还原旧版 CrownPigWidget 的步数显示）
     // 结算面板弹出或失败时隐藏；由面板自身及常规层管理可见性，不做特殊浮层处理。
@@ -927,8 +958,11 @@ class PlayingEngine {
     //     rec.../hint... 状态文字仅纯绘制、无 hitTest，本就不拦截点击；设置按钮命中精准后不再与文字混淆。
     var entranceDone = !this._entranceState || this._entranceState.phase === 'done';
     if (entranceDone && !this._failed && !this._victory) {
-      var setCX = 15 + 16, setCY = 16 + 16;   // 与 TopBar 绘制中心一致
-      if ((x - setCX) * (x - setCX) + (y - setCY) * (y - setCY) <= 16 * 16) {
+      // 设置按钮中心 Y 跟随 TopBar._baseY 动态变化（贴安全线）
+      var setCY2 = (this._uiTopBar && this._uiTopBar._baseY != null) ? this._uiTopBar._baseY + 3 + 16 : 16 + 16;
+      var setCX = 15 + 16, setCY = setCY2;
+      var HIT_R = 24;  // 原始 16 × 1.5 倍热区
+      if ((x - setCX) * (x - setCX) + (y - setCY) * (y - setCY) <= HIT_R * HIT_R) {
         audio.play('button_click');
         if (databus.returnState === 'editor') {
           // 试玩返回：将 hintId/hintAngle 写回关卡数据
@@ -1601,19 +1635,42 @@ class PlayingEngine {
     audio.play('victory');
   }
 
-  /** 绘制关卡场景背景图（可被交叉淡变复用，alpha 控制不透明度） */
+  /** 画顶部不可用区域边界曲线（绿线，与主菜单一致），关卡内用于核对猪面板/步数牌是否避让到位 */
+  _drawSafeAreaLine(ctx) {
+    var safe = this._safeL;
+    if (!safe) return;
+    var sw = SCREEN_WIDTH, step = 6;
+    ctx.save();
+    ctx.beginPath();
+    for (var x = 0; x <= sw; x += step) {
+      var y = safe.safeLineY(x);
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(122, 196, 80, 0.7)';
+    ctx.stroke();
+
+    // 微信胶囊区（橙虚线）
+    var obs = safe.getObstructions ? safe.getObstructions() : [];
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = 'rgba(255, 149, 0, 0.85)';
+    for (var oi = 0; oi < obs.length; oi++) {
+      var ob = obs[oi];
+      if (ob.type === 'rect') ctx.strokeRect(ob.x, ob.y, ob.w, ob.h);
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  /** 绘制关卡场景背景图（全屏拉伸适配，所有图片内容可见、不裁剪） */
   drawSceneBackground(alpha) {
     if (!this._sceneBgLoaded) return;
-    var imgW = this._sceneBgImg.width;
-    var imgH = this._sceneBgImg.height;
-    var scale = Math.max(SCREEN_WIDTH / imgW, SCREEN_HEIGHT / imgH);
-    var dw = imgW * scale;
-    var dh = imgH * scale;
-    var dx = (SCREEN_WIDTH - dw) / 2;
-    var dy = (SCREEN_HEIGHT - dh) / 2;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.drawImage(this._sceneBgImg, dx, dy, dw, dh);
+    ctx.drawImage(this._sceneBgImg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     ctx.restore();
   }
 
@@ -1663,26 +1720,8 @@ class PlayingEngine {
     // 1. 圆形底框 68×68（left:0 top:0）+ 图标 52×52（left:8 top:8，恰为圆内居中）
     drawBottomBar.drawRoundMenuButton(ctx, fx, fy, 68, '', true, iconKey);
 
-    // 2. 广告角标：红圆 28×28（left:50 top:2）+ 白色三角（Figma Polygon 3，居中红圆，播放标）
-    ctx.save();
-    ctx.fillStyle = '#FF6363';
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(fx + 64, fy + 16, 13.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-    ctx.save();
-    ctx.fillStyle = '#FFFFFF';
-    // 白色三角形（Figma Polygon 3，广告/视频播放标），居中于红圆 (64,16)，朝右
-    ctx.beginPath();
-    ctx.moveTo(fx + 72, fy + 16);   // 顶点（右）
-    ctx.lineTo(fx + 60, fy + 8);    // 左上
-    ctx.lineTo(fx + 60, fy + 24);   // 左下
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    // 2. 广告角标（统一红圆+白三角，与体力窗/胜利面板一致）
+    drawAdBadge(ctx, fx + 64, fy + 16, 13.5);
 
     // 3. 文字框 50×25（left:9 top:52）+ 边框 #B5712B
     ctx.save();
@@ -1734,6 +1773,9 @@ class PlayingEngine {
 
     // ===== 场景背景图（覆盖 GameEngine 的菜单背景）=====
     this.drawSceneBackground(1);
+
+    // 顶部安全线 + 胶囊区（真机调试用）
+    this._drawSafeAreaLine(ctx);
 
     const safeTop = databus.safeTop;
 
@@ -1813,8 +1855,9 @@ class PlayingEngine {
 
     // 背景物件（image 718）：固定屏幕位置，绘制于棋盘之上（确保不被棋盘/孔位遮挡）
     // 新图尺寸 279×44、top:78（原 279×85、top:61，已去上下留白并下移），绘制矩形同步更新
+    var branchDY = this._branchDeltaY || 0;
     if (AssetPreloader.isReady('bg_deco_718')) {
-      ctx.drawImage(AssetPreloader.get('bg_deco_718'), 10, 78, 279, 44);
+      ctx.drawImage(AssetPreloader.get('bg_deco_718'), 10, 78 + branchDY, 279, 44);
     }
 
     // 树枝进度条「底层」（绿色已走过揭示 + 调试曲线）：绘制于草丛之下
@@ -1822,10 +1865,9 @@ class PlayingEngine {
     if (this._uiBranchProgress) this._uiBranchProgress.renderBranchLayer(ctx);
 
     // 草丛装饰（Figma 草丛节点）：替换原 Vector 6/7/8 三层纯色装饰
-    // 坐标全部为「相对屏幕左上角」的 Figma 原值，按屏幕坐标直接绘制（left:0, top:39, 69.32×121.07）
-    // 绘制于树枝底层之上：草丛(装饰树叶)盖住已走过的绿色树枝，处于最上层装饰
+    // 草丛装饰树叶，盖住已走过的绿色树枝；随 deltaY 下移
     if (AssetPreloader.isReady('level_brush')) {
-      ctx.drawImage(AssetPreloader.get('level_brush'), 0, 39, 69.32, 121.07);
+      ctx.drawImage(AssetPreloader.get('level_brush'), 0, 39 + branchDY, 69.32, 121.07);
     }
 
     // 树枝进度条「上层」（小虫 + 花朵 + 粒子 + 施法高光）：绘制于草丛之上
@@ -1833,14 +1875,12 @@ class PlayingEngine {
     if (this._uiBranchProgress) this._uiBranchProgress.renderUILayer(ctx);
 
     // 剩余未逃脱猪数量组件（可复用 drawPigCounter，父 frame 宽 55）
-    // 按 SCREEN_WIDTH 动态水平居中：设备宽 ≠375 时硬编码 160 会偏左，故实时算 frameX
-    // ⚠️ -9 的由来：Figma 内可见内容(pill/panel/猪头)相对 frame 左缘右偏 9px（pill left:169 vs frame left:160），
-    //    仅让 frame 盒子居中会让"眼睛看到的猪头"偏右 9px。故在 frame 居中的基础上再左移 9px，
-    //    使可见猪头计数器的视觉中心落于屏幕正中（而非仅 frame 盒子居中）。
-    // 剩余数 = 棋盘上仍在的猪
+    // pigSafeTop: start() 内缓存的安全线 y，面板顶贴线下方 6px（避让刘海/摄像头/胶囊，动态适配不同机型）
+    // 兜底：无法取到安全线时回退到旧硬编码等效值（面板顶≈22px）
+    var pigSafeTop = (typeof this._pigSafeTop === 'number' && isFinite(this._pigSafeTop)) ? this._pigSafeTop : 22;
     if (this.gp && this.gp.pigs) {
       var pigFrameX = Math.round((SCREEN_WIDTH - 55) / 2) - 9; // 55=frame宽，-9=内容视觉居中补偿
-      drawPigCounter(ctx, pigFrameX, -48, { iconKey: 'pig_icon', value: this.gp.pigs.length });
+      drawPigCounter(ctx, pigFrameX, pigSafeTop, { iconKey: 'pig_icon', value: this.gp.pigs.length });
     }
 
     // 通关后孔洞渐隐（1s 内 alpha 1→0）
@@ -2080,8 +2120,8 @@ class PlayingEngine {
     // 设置面板打开时不显示（避免遮挡）
     if (settingsPanel.isOpen()) return;
 
-    var indX = 5;
-    var indY = 5;
+    var indX = 55;   // 设置按钮右边（backX=15 + backW=32 + 8px gap）
+    var indY = (this._topSafeY || 16) + 12;  // 垂直中心对齐设置按钮(32px高 vs 14px高)
     var iconR = 4;
     var itemH = 14;
     var cy = indY + itemH / 2;

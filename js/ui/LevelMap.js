@@ -501,19 +501,28 @@ class LevelMap {
     var viewTop = this.scrollY;
     var viewBottom = this.scrollY + SCREEN_HEIGHT;
 
+    // ① 兜底底色：先铺可见区为不透明色，确保任何亚像素缝隙都落在底色上而非透明黑。
+    //   背景为绿系渐变，这里用偏下缘的绿，缝隙（仅 1~2px）视觉无碍。
+    var fb = cfg.background || {};
+    ctx.fillStyle = fb.fallbackBottom || '#8FD46F';
+    ctx.fillRect(0, Math.floor(viewTop), SCREEN_WIDTH, Math.ceil(viewBottom) - Math.floor(viewTop));
+
     for (var si = 0; si < this._segments.length; si++) {
       var seg = this._segments[si];
       if (seg.segTop + seg.segH < viewTop || seg.segTop > viewBottom) continue;
       var bgImg = this._bgImages[seg.bgKey];
       if (!bgImg || !bgImg.width) continue;
-      // 背景向下延伸到「下一段顶部」(末段延伸到 contentHeight)，覆盖段间补白区域，
-      //   避免相邻背景图之间露出黑底缝隙。背景图在补白区被轻微纵向拉伸（<10%），视觉无碍。
-      var drawTop = seg.segTop;
+      // 背景向下延伸到「下一段顶部」(末段延伸到 contentHeight)，覆盖段间补白区域。
       var drawBottom = (si === this._segments.length - 1)
         ? this._contentHeight
         : this._segments[si + 1].segTop;
-      var drawH = drawBottom - drawTop;
-      ctx.drawImage(bgImg, 0, drawTop, SCREEN_WIDTH, drawH);
+      // ② 整数对齐 + 跨段 overdraw ±1px：消除「浮点坐标经 DPR 放大后变成非整数物理
+      //   像素 + 缩放插值边缘半透明」造成的 1~2px 透黑缝（Android 真机尤其明显）。
+      //   各段背景图内容本就支持轻微位移/拉伸（<10% 不可见），±1px 重复/裁切完全无感。
+      var top = Math.round(seg.segTop) - 1;     // 上探 1px：盖住上一段底边缝隙
+      var bottom = Math.round(drawBottom) + 1;  // 下探 1px：盖住本段顶边缝隙
+      var drawH = bottom - top;
+      ctx.drawImage(bgImg, 0, top, SCREEN_WIDTH, drawH);
     }
     ctx.restore();
   }

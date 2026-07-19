@@ -63,12 +63,24 @@ var BREATHE_CY = OUTER_Y + OUTER_H / 2;      // 102
 
 class RightStepWidget extends UIComponent {
   constructor(opts) {
+    // ---- 关卡内右上角避让顶部不可用区（微信胶囊）----
+    // 棍子规则：只要面板不越安全线，尽量短，但 ≥ 60px；y=0 起画。
+    // pillTop = max(safeY+2, 60)，safeY 已由 PlayingEngine 精确算出（胶囊重叠检测）。
+    var safeY = (typeof opts.safeY === 'number') ? opts.safeY : 0;
+    var pillTop = Math.max(safeY + 2, 60);   // 药丸顶 = max(安全线下2px, 最短棍60)
+    var yOffset = pillTop - OUTER_Y;          // 相对原位置(72)的下移量
+    var barH = pillTop;                       // 棍子高度 = 药丸顶（从0起）
+
     super({
-      x: OUTER_X, y: 0,
-      w: OUTER_W, h: OUTER_Y + OUTER_H,
+      x: OUTER_X, y: yOffset,
+      w: OUTER_W, h: OUTER_Y + OUTER_H + yOffset,
       zIndex: opts.zIndex || 1,
       visible: true,
     });
+
+    // this 在 super() 后才可用，_yOffset/_barH 先用局部变量存、再赋给实例
+    this._yOffset = yOffset;
+    this._barH = barH;
 
     // 数据
     this._threshold = 0;   // 步数预算（原 crownSteps / 现 stepBonusThreshold）
@@ -177,7 +189,7 @@ class RightStepWidget extends UIComponent {
 
   /** 剩余步数数字中心屏幕坐标（供积分花朵飞行起点定位） */
   getStepNumberPos() {
-    return { x: NUM_CX, y: NUM_CY };
+    return { x: NUM_CX, y: NUM_CY + this._yOffset };
   }
 
   isHidden() {
@@ -247,14 +259,16 @@ class RightStepWidget extends UIComponent {
     var hasThreshold = this._threshold > 0;
     if (!hasThreshold) return;  // 没有配置阈值 → 功能未开放，完全不绘制
 
+    var off = this._yOffset;
+
     // 呼吸动画缩放（围绕主药丸中心）
     var breathScale = this._getBreatheScale();
 
     ctx.save();
     if (breathScale !== 1) {
-      ctx.translate(BREATHE_CX, BREATHE_CY);
+      ctx.translate(BREATHE_CX, BREATHE_CY + off);
       ctx.scale(breathScale, breathScale);
-      ctx.translate(-BREATHE_CX, -BREATHE_CY);
+      ctx.translate(-BREATHE_CX, -(BREATHE_CY + off));
     }
     // 被击中：整块面板绕吊绳顶端(PIVOT)做单摆式旋转摆动（绳顶端固定、下方荡动）
     var shakeAngle = this._getShakeAngle();
@@ -266,7 +280,7 @@ class RightStepWidget extends UIComponent {
 
     // === 顶部竖条 Rectangle 3469912 ===
     ctx.fillStyle = '#87725F';
-    ctx.fillRect(BAR_X, BAR_Y, BAR_W, BAR_H);
+    ctx.fillRect(BAR_X, BAR_Y, BAR_W, this._barH);
 
     // === 外层黄色药丸 Rectangle 3469910 ===
     ctx.save();
@@ -275,35 +289,35 @@ class RightStepWidget extends UIComponent {
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
     ctx.fillStyle = '#FFD036';
-    roundRect(ctx, OUTER_X, OUTER_Y, OUTER_W, OUTER_H, OUTER_R);
+    roundRect(ctx, OUTER_X, OUTER_Y + off, OUTER_W, OUTER_H, OUTER_R);
     ctx.fill();
     ctx.restore();
 
     // 外层药丸内高光（inset 2px 2px 4px #FFDA61）
     ctx.save();
-    roundRect(ctx, OUTER_X, OUTER_Y, OUTER_W, OUTER_H, OUTER_R);
+    roundRect(ctx, OUTER_X, OUTER_Y + off, OUTER_W, OUTER_H, OUTER_R);
     ctx.clip();
-    var outerHi = ctx.createLinearGradient(OUTER_X, OUTER_Y, OUTER_X + 18, OUTER_Y + 18);
+    var outerHi = ctx.createLinearGradient(OUTER_X, OUTER_Y + off, OUTER_X + 18, OUTER_Y + off + 18);
     outerHi.addColorStop(0, 'rgba(255, 218, 97, 0.9)');
     outerHi.addColorStop(1, 'rgba(255, 218, 97, 0)');
     ctx.fillStyle = outerHi;
-    ctx.fillRect(OUTER_X, OUTER_Y, OUTER_W, OUTER_H);
+    ctx.fillRect(OUTER_X, OUTER_Y + off, OUTER_W, OUTER_H);
     ctx.restore();
 
     // === 内层深棕药丸 Rectangle 3469911 ===
     ctx.fillStyle = '#602C16';
-    roundRect(ctx, INNER_X, INNER_Y, INNER_W, INNER_H, INNER_R);
+    roundRect(ctx, INNER_X, INNER_Y + off, INNER_W, INNER_H, INNER_R);
     ctx.fill();
 
     // 内层药丸内阴影（inset 2px 2px 4px rgba(0,0,0,0.25)）
     ctx.save();
-    roundRect(ctx, INNER_X, INNER_Y, INNER_W, INNER_H, INNER_R);
+    roundRect(ctx, INNER_X, INNER_Y + off, INNER_W, INNER_H, INNER_R);
     ctx.clip();
-    var innerSh = ctx.createLinearGradient(INNER_X, INNER_Y, INNER_X + 18, INNER_Y + 18);
+    var innerSh = ctx.createLinearGradient(INNER_X, INNER_Y + off, INNER_X + 18, INNER_Y + off + 18);
     innerSh.addColorStop(0, 'rgba(0, 0, 0, 0.25)');
     innerSh.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = innerSh;
-    ctx.fillRect(INNER_X, INNER_Y, INNER_W, INNER_H);
+    ctx.fillRect(INNER_X, INNER_Y + off, INNER_W, INNER_H);
     ctx.restore();
 
     // === 文字「剩余步数」===
@@ -311,10 +325,11 @@ class RightStepWidget extends UIComponent {
     ctx.font = '400 10px ' + Theme.font.family;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('剩余步数', LABEL_CX, LABEL_CY);
+    ctx.fillText('剩余步数', LABEL_CX, LABEL_CY + off);
 
     // === 剩余步数数字（位移滚动：增减都滚；方向=常规里程表
     //   变大→旧数字向上滑出顶部、新数字从底部滑入；变小→旧数字向下滑出底部、新数字从顶部滑入）===
+    var numCY = NUM_CY + off;
     var ROLL_DIST = 22; // 滚动距离（px）
     if (this._animActive) {
       var elapsed = Date.now() - this._animStart;
@@ -323,21 +338,21 @@ class RightStepWidget extends UIComponent {
       if (t >= 1) {
         this._animActive = false;
         this._displayValue = this._animTo;
-        this._drawStepNumber(ctx, String(this._animTo), NUM_CY, 1);
+        this._drawStepNumber(ctx, String(this._animTo), numCY, 1);
       } else {
         var goingUp = this._animTo > this._animFrom;  // 变大→视觉向上滚
         if (goingUp) {
-          this._drawStepNumber(ctx, String(this._animFrom), NUM_CY - e2 * ROLL_DIST, 1 - e2);
-          this._drawStepNumber(ctx, String(this._animTo), NUM_CY + (1 - e2) * ROLL_DIST, e2);
+          this._drawStepNumber(ctx, String(this._animFrom), numCY - e2 * ROLL_DIST, 1 - e2);
+          this._drawStepNumber(ctx, String(this._animTo), numCY + (1 - e2) * ROLL_DIST, e2);
         } else {
           // 变小→视觉向下滚：旧数字向下滑出、新数字从顶部滑入
-          this._drawStepNumber(ctx, String(this._animFrom), NUM_CY + e2 * ROLL_DIST, 1 - e2);
-          this._drawStepNumber(ctx, String(this._animTo), NUM_CY - (1 - e2) * ROLL_DIST, e2);
+          this._drawStepNumber(ctx, String(this._animFrom), numCY + e2 * ROLL_DIST, 1 - e2);
+          this._drawStepNumber(ctx, String(this._animTo), numCY - (1 - e2) * ROLL_DIST, e2);
         }
       }
     } else {
       var curValue = (this._displayValue === undefined) ? 0 : this._displayValue;
-      this._drawStepNumber(ctx, String(Math.round(curValue)), NUM_CY, 1);
+      this._drawStepNumber(ctx, String(Math.round(curValue)), numCY, 1);
     }
 
     ctx.restore();

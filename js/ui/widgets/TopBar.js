@@ -20,19 +20,25 @@ var PADDING = Theme.layout.padding || 16;
  */
 class TopBar extends UIComponent {
   constructor(opts) {
-  super({
-    x: opts.x || 0,
-    y: opts.y || 0,
-    w: opts.w || 375,
-    h: opts.h || Theme.layout.topBarH,
-    zIndex: opts.zIndex || 2,
-  });
+    super({
+      x: opts.x || 0,
+      y: opts.y || 0,
+      w: opts.w || 375,
+      h: opts.h || Theme.layout.topBarH,
+      zIndex: opts.zIndex || 2,
+    });
 
-  this.levelText = opts.levelText || '';
-  this.mode = opts.mode || 'normal';
-  this._buttonPress = opts.buttonPress;
-  this.onBack = opts.onBack || null;
-}
+    this.levelText = opts.levelText || '';
+    this.mode = opts.mode || 'normal';
+    this._buttonPress = opts.buttonPress;
+    this.onBack = opts.onBack || null;
+    this._baseY = 0;  // 整体垂直偏移（贴安全区用）
+  }
+
+  /** 设置整体垂直偏移——贴顶部不可用区域时，所有 Y 加此值上移 */
+  setBaseY(y) {
+    this._baseY = y || 0;
+  }
 }
 
 
@@ -46,11 +52,12 @@ TopBar.prototype.setMode = function (mode) {
 
 TopBar.prototype.render = function (ctx) {
   var barW = this.w;
+  var by = this._baseY || 0;
 
-  // === 左上角设置按钮（Figma: left 15 / top 16 / 32×32）===
+  // === 左上角设置按钮（贴安全区下方，原 Figma: left 15 / top 16）===
   var backW = 32, backH = 32;
   var backX = 15;
-  var backY = 16;
+  var backY = by + 3;  // GAP=3px 贴安全线
 
   var setScale = this._buttonPress ? this._buttonPress.getScale('settings') : 1;
   var setCX = backX + backW / 2;
@@ -66,10 +73,10 @@ TopBar.prototype.render = function (ctx) {
   drawSettingsButton(ctx, setCX - iconSz / 2, setCY - iconSz / 2, iconSz);
   ctx.restore();
 
-  // === 关卡徽章（左上角，Figma: left 15 / top 53 / 32×16 / 大宝桃桃体 16px）===
+  // === 关卡徽章（设置按钮下方 5px，原 Figma: left 15 / top 53）===
   {
     var badgeX = 15;
-    var badgeY = 53;
+    var badgeY = backY + 37;  // 设置钮底(backY+32) + 间隙 5px
     var badgeW = 32;
     var badgeH = 16;
 
