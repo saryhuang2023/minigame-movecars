@@ -54,7 +54,8 @@
   "packOptions": {
     "ignore": [
       { "type": "folder", "value": "cloud-src" },
-      { "type": "folder", "value": "tools" }
+      { "type": "folder", "value": "tools" },
+      { "type": "folder", "value": "document" }
     ],
     "include": [
       { "type": "file", "value": "assets/font/KeinannMaruPOP-subset.ttf" }
