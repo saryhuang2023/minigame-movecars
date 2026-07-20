@@ -10,6 +10,7 @@ var audio = require('../../audio/AudioManager.js');
 var CommonButton = require('./CommonButton.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 var { drawAdBadge } = require('../drawAdBadge.js');
+var ItemFlyEffect = require('../../effects/ItemFlyEffect.js');
 
 /**
  * @param {Object} opts
@@ -43,6 +44,14 @@ class VictoryPopup extends UIComponent {
   this._animator = null;  // PopupAnimator 实例（引擎注入）
   this._closing = false;
   this._closeCallback = null;
+
+  // 树枝引用（飞行起点取树枝花朵屏幕坐标）
+  this._branchWidget = null;
+  // 星星飞入特效：复用「加步数道具」飞行算法（二次贝塞尔+弹出缩放+速度拉伸+拖尾+光晕），金色光晕
+  this._flyEffect = new ItemFlyEffect('normal_flower', { glow: 'gold', size: 84, noRotate: true });
+  this._flyStarted = false;       // 开场动画结束后才逐颗触发飞入
+  this._flyTriggers = [];         // [{ slot, start }] 每颗升空的起飞时间戳
+  this._flyLanded = [false, false, false];  // 每颗是否已飞到（飞到后才画静态星）
 
   // 按钮区域
   this._exitBtn = null;
@@ -96,6 +105,12 @@ VictoryPopup.prototype.setData = function (data) {
   this._stars = (typeof data.stars === 'number') ? data.stars : 0;
   // 绿钮文案由引擎按三态判定后直接传入（继续闯关 / 恭喜通关 / 返回）
   this._btnLabel = data.btnLabel || '继续闯关';
+  // 飞入星星图片：4 星=彩星 big_flower，1~3 星=普通星 normal_flower
+  this._flyEffect.setImgKey(this._stars >= 4 ? 'big_flower' : 'normal_flower');
+};
+
+VictoryPopup.prototype.setBranchWidget = function (w) {
+  this._branchWidget = w;
 };
 
 VictoryPopup.prototype.open = function () {
@@ -195,6 +210,10 @@ VictoryPopup.prototype.render = function (ctx) {
     this._goldClaimed = false;
     this._goldRollTriggered = false;
     this._goldRolling = false;
+    // 新一次弹窗：重置星星飞入状态（重新从树枝飞入）
+    this._flyStarted = false;
+    this._flyTriggers = [];
+    this._flyLanded = [false, false, false];
   }
 
   // 若正在关闭且动画结束
@@ -272,7 +291,33 @@ VictoryPopup.prototype.render = function (ctx) {
   var STAR_LEFTS = [58, 138, 218];
   var rawStars = this._stars || 0;
   var starIsFour = rawStars >= 4;
-  // 底板：flower_bg.png 仅用于「未得星」的空格子；已得星的槽位不显示占位，直接画星星
+
+  // === 星星飞入：开场动画结束后，从树枝对应花朵位置飞到槽位（复用加步数道具飞行算法）===
+  var STAR_FLY_LEAD = 140;       // 开场动画结束后再延迟 ms 起飞
+  var STAR_FLY_STAGGER = 170;    // 相邻星星起飞间隔 ms（逐颗飞入）
+  var openEndAt = this._animator.getOpenStartTime() + this._animator.getOpenDur() + STAR_FLY_LEAD;
+  if (!this._flyStarted && this._stars > 0 && Date.now() >= openEndAt) {
+    this._flyStarted = true;
+    if (this._branchWidget) {
+      for (var fi = 0; fi < this._stars && fi < 3; fi++) {
+        var from = this._branchWidget._flowerCenter(fi);  // 树枝第 fi 颗星屏幕坐标
+        var toX = px + STAR_LEFTS[fi] + STAR_SLOT / 2;
+        var toY = py + STAR_TOP + STAR_SLOT / 2;
+        var delay = fi * STAR_FLY_STAGGER;
+        this._flyEffect.trigger(from.x, from.y, toX, toY, delay);
+        this._flyTriggers.push({ slot: fi, start: Date.now() + delay });
+      }
+    } else {
+      // 无树枝引用（异常态）：直接落定，不飞
+      for (var fi2 = 0; fi2 < this._stars && fi2 < 3; fi2++) this._flyLanded[fi2] = true;
+    }
+  }
+  // 更新每颗是否已飞到（飞到后才显示静态星）
+  var FLY_DUR = this._flyEffect.getDuration();
+  for (var li = 0; li < this._flyTriggers.length; li++) {
+    if (Date.now() - this._flyTriggers[li].start >= FLY_DUR) this._flyLanded[this._flyTriggers[li].slot] = true;
+  }
+  // 底板：flower_bg.png 用于「未得星 / 已得星但还没飞到」的空格子；飞到后直接画星星
   for (var si = 0; si < 3; si++) {
     var sx = px + STAR_LEFTS[si];
     var sy = py + STAR_TOP;
@@ -280,11 +325,12 @@ VictoryPopup.prototype.render = function (ctx) {
     var scy = sy + STAR_SLOT / 2;
     var hasStar = si < rawStars;
     // 未得星 → 画 flower_bg 占位
-    if (!hasStar) {
+    // 已得星但尚未飞到 → 继续显示占位（飞入过程中先占位，落定后才显示星）
+    if (!hasStar || !this._flyLanded[si]) {
       _drawStarBg(scx, scy);
     }
-    // 已得星：直接画星星覆盖（1~3 普通星，4 星 3 颗彩星），不画占位
-    if (hasStar) {
+    // 已得星且已飞到 → 画星星（1~3 普通星，4 星 3 颗彩星），不画占位
+    if (hasStar && this._flyLanded[si]) {
       _drawFlowerImg(scx, scy, STAR_FLOWER, starIsFour ? 'big_flower' : 'normal_flower');
     }
   }
@@ -453,6 +499,12 @@ VictoryPopup.prototype.render = function (ctx) {
   this._exitBtn = null;
 
   ctx.restore();
+
+  // 星星飞入动画：屏幕坐标系绘制（覆盖在遮罩/面板之上），飞向对应槽位后由 _flyLanded 接管显示静态星
+  if (this._flyStarted) {
+    this._flyEffect.update();
+    if (this._flyEffect.isActive()) this._flyEffect.render(ctx);
+  }
 };
 
 module.exports = VictoryPopup;

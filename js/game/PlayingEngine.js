@@ -280,6 +280,7 @@ class PlayingEngine {
         onDoubleGold: function () { self._onDoubleGoldClick(); },
       });
       this._uiVictoryPopup.setAnimator(this._victoryAnimator);
+      this._uiVictoryPopup.setBranchWidget(this._uiBranchProgress);
       this.ui.add(this._uiVictoryPopup, UIManager.LAYER.MODAL);
 
       // Layer 4 — FailPopup（步数用尽时弹出）
