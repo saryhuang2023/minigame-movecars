@@ -35,6 +35,7 @@ class ItemButton {
     this._count = (typeof opts.count === 'number') ? opts.count : 0;
     this.side = opts.side || 'right';
     this._bgImg = null;    // 延迟加载，render 时取 AssetPreloader.get
+    this._bobY = 0;        // 告警态小跳位移(px)，同步给 getHitRect 保证命中区与视觉一致
   }
 
   setData(count) {
@@ -42,12 +43,17 @@ class ItemButton {
   }
 
   getHitRect() {
-    return { x: this.x, y: this.y, w: FRAME_W, h: FRAME_H };
+    return { x: this.x, y: this.y + this._bobY, w: FRAME_W, h: FRAME_H };
   }
 
-  render(ctx, pressScale) {
+  render(ctx, pressScale, alert) {
     var s = pressScale || 1;
-    var cx = this.x + FRAME_W / 2, cy = this.y + FRAME_H / 2;
+    var alertActive = !!alert;
+    // 告警态原地小跳 hop（±4px）：纯时间驱动正弦，无状态机；与吊牌单摆同一套物理语言
+    var bobY = alertActive ? Math.sin(Date.now() / 1000 * 6.5) * 4 : 0;
+    this._bobY = bobY;   // 同步给 getHitRect，保证命中区与视觉一致（不能纯视觉位移）
+    var by = this.y + bobY;
+    var cx = this.x + FRAME_W / 2, cy = this.y + FRAME_H / 2 + bobY;
 
     ctx.save();
     if (s !== 1) {
@@ -58,13 +64,13 @@ class ItemButton {
 
     // 1. 背景底框 77×77
     if (AssetPreloader.isReady(BG_KEY)) {
-      ctx.drawImage(AssetPreloader.get(BG_KEY), this.x, this.y, FRAME_W, FRAME_H);
+      ctx.drawImage(AssetPreloader.get(BG_KEY), this.x, by, FRAME_W, FRAME_H);
     }
 
     // 2. 道具图标 52×52，居中偏左上 (8,8)
     if (AssetPreloader.isReady(this.iconKey)) {
       ctx.drawImage(AssetPreloader.get(this.iconKey),
-        this.x + ICON_X, this.y + ICON_Y, ICON_SIZE, ICON_SIZE);
+        this.x + ICON_X, by + ICON_Y, ICON_SIZE, ICON_SIZE);
     }
 
     // 3. 剩余次数（右上角，白色 11px）
@@ -73,12 +79,12 @@ class ItemButton {
     ctx.font = '400 11px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(String(this._count), this.x + COUNT_X, this.y + COUNT_Y);
+    ctx.fillText(String(this._count), this.x + COUNT_X, by + COUNT_Y);
     ctx.restore();
 
     // 4. 说明文字（居中偏底）
     var labelCX = this.x + FRAME_W / 2 + LABEL_OFFSET_X;
-    var labelCY = this.y + LABEL_TOP + LABEL_H / 2;
+    var labelCY = by + LABEL_TOP + LABEL_H / 2;
     ctx.save();
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '400 16px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');

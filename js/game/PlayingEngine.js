@@ -1950,7 +1950,9 @@ class PlayingEngine {
         // 底部道具按钮（新 ItemButton 组件）
         var plus5PS = this._btnPress.getScale('plus5');
         var hintPS = this._btnPress.getScale('bottomHint');
-        if (this._uiAddStepBtn) this._uiAddStepBtn.render(ctx, plus5PS);
+        // +3 步道具告警小跳：最后5步且道具仍有剩余次数时触发；纯实时判断，与失败/通关隐藏逻辑互斥
+        var addStepAlert = !!(this._uiRightStep && this._uiRightStep.isAlerting() && this._addStepRemaining > 0);
+        if (this._uiAddStepBtn) this._uiAddStepBtn.render(ctx, plus5PS, addStepAlert);
         if (this._hasHintData && this._uiHintBtn) this._uiHintBtn.render(ctx, hintPS);
         if (this._uiHelpBtn) this._uiHelpBtn.render(ctx, this._btnPress.getScale('help'));
       }

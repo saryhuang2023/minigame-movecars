@@ -113,6 +113,16 @@ class RightStepWidget extends UIComponent {
     this._SHAKE_OMEGA_STRONG = 2 * Math.PI * 2.6;  // ≈2.6Hz（比普通 2Hz 更急促，撞击感更强）
     this._SHAKE_MAX = 4;                    // 最多叠加脉冲数（防失控）
     this._lastTarget = undefined;           // 上一次 setData 的剩余步数（检测"变少"）
+
+    // 告警态持续抖动（最后5步提醒：高频小幅抖动 + 红色呼吸光晕；纯时间驱动、零状态机）
+    // 每帧实时判 remaining∈(0,5]：用 +3 后步数回涨自动停，无需进入/解除标志位
+    this._ALERT_AMP_X = 1.6;           // 水平抖动幅度(px)
+    this._ALERT_AMP_Y = 1.2;           // 垂直抖动幅度(px)
+    this._ALERT_AMP_ANG = 0.012;       // 旋转抖动幅度(rad) ≈ 0.7°
+    this._ALERT_FREQ_X = 18;           // 水平抖动角频率系数(≈Hz量级)
+    this._ALERT_FREQ_Y = 15;           // 垂直抖动角频率系数
+    this._ALERT_FREQ_ANG = 22;         // 旋转抖动角频率系数
+    this._ALERT_GLOW_PERIOD = 4;       // 红晕呼吸角频率系数
   }
 
   /** ease-out-cubic 缓动 */
@@ -253,6 +263,24 @@ class RightStepWidget extends UIComponent {
     return 1 + pulse * this._BREATHE_AMPLITUDE;
   }
 
+  /** 是否处于「最后5步」告警态（剩余步数 ∈ (0, 5]，纯实时判断、无状态机） */
+  _isAlerting() {
+    var remaining = this._threshold - this._steps;  // 原始剩余步数（与显示一致）
+    return remaining > 0 && remaining <= 5;
+  }
+
+  /** 公开：供 PlayingEngine 查询告警态（决定 +3 道具是否小跳） */
+  isAlerting() {
+    return this._isAlerting();
+  }
+
+  /** 告警态红晕呼吸 alpha（0~0.7 之间正弦呼吸；非告警态返回 0） */
+  _getAlertGlowAlpha() {
+    if (!this._isAlerting()) return 0;
+    var t = Date.now() / 1000;
+    return 0.35 + 0.35 * Math.sin(t * this._ALERT_GLOW_PERIOD);
+  }
+
   render(ctx) {
     if (this._hidden) return;
 
@@ -265,6 +293,19 @@ class RightStepWidget extends UIComponent {
     var breathScale = this._getBreatheScale();
 
     ctx.save();
+
+    // 告警态持续抖动（最后5步提醒）：高频小幅 translate + 轻微 rotate，围绕吊绳顶端
+    // 与下方 breathScale / 被击单摆为加法叠加关系，互不抢占，其它瞬时动画照常播
+    if (this._isAlerting()) {
+      var tNow = Date.now() / 1000;
+      var jx = Math.sin(tNow * this._ALERT_FREQ_X) * this._ALERT_AMP_X;
+      var jy = Math.cos(tNow * this._ALERT_FREQ_Y) * this._ALERT_AMP_Y;
+      var ja = Math.sin(tNow * this._ALERT_FREQ_ANG) * this._ALERT_AMP_ANG;
+      ctx.translate(PIVOT_X, PIVOT_Y);
+      ctx.rotate(ja);
+      ctx.translate(-PIVOT_X + jx, -PIVOT_Y + jy);
+    }
+
     if (breathScale !== 1) {
       ctx.translate(BREATHE_CX, BREATHE_CY + off);
       ctx.scale(breathScale, breathScale);
@@ -353,6 +394,21 @@ class RightStepWidget extends UIComponent {
     } else {
       var curValue = (this._displayValue === undefined) ? 0 : this._displayValue;
       this._drawStepNumber(ctx, String(Math.round(curValue)), numCY, 1);
+    }
+
+    // 告警态红色边缘呼吸光晕（风险提示双通道冗余：红晕作颜色兜底，不抢戏、非整牌变红）
+    // 跟随整块面板抖动变换自然同步，alpha 由 _getAlertGlowAlpha 控制
+    var alertGlow = this._getAlertGlowAlpha();
+    if (alertGlow > 0) {
+      ctx.save();
+      ctx.globalAlpha = alertGlow;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#FF3B30';
+      ctx.shadowColor = 'rgba(255, 59, 48, 0.85)';
+      ctx.shadowBlur = 12;
+      roundRect(ctx, OUTER_X - 1, OUTER_Y + off - 1, OUTER_W + 2, OUTER_H + 2, OUTER_R + 1);
+      ctx.stroke();
+      ctx.restore();
     }
 
     ctx.restore();
