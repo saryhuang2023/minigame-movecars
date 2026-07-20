@@ -34,7 +34,7 @@ const { getSafeLayout } = require('../utils/safeLayout.js');
 // 圆形过场（CircleTransition）统一三路：菜单→关卡 / 关卡→菜单 / 关卡→关卡，
 // 替代原交叉淡变。控件本身不再有出场动画（点开始即消失，不做下滑/渐隐）。
 var MENU_CROSSFADE_DURATION = 450;
-var CIRCLE_DURATION = 420;   // 圆形过场时长（ms）：慢→快张开 / 快→慢收缩
+var CIRCLE_DURATION = 840;   // 圆形过场时长（ms）：慢→快张开 / 快→慢收缩（用户要求慢一倍）
 
 
 class GameEngine {
@@ -1123,13 +1123,14 @@ class GameEngine {
       r0: 8,
       onComplete: function () {
         self._circle = null;
-        self._pendingContract = false;
         self._menuRevealStart = Date.now();   // 先置起点，避免首帧全亮闪一下
-        // 真正提交到主菜单（_prevState 当前仍为 'playing' → 触发 menu 激活）
+        // 真正提交到主菜单：pendingContract 仍为真 → checkStateTransition 跳过收缩分支、
+        // 走正常 menu 激活（playing.deactivate + 菜单音乐 + _menuEntranceDoneAt），避免无限重触发
         databus.gameState = 'menu';
         self._menuVisible = true;
         databus._menuExiting = false;
         self.checkStateTransition();
+        self._pendingContract = false;   // 激活完成（_prevState 已='menu'）后再解锁，供下次使用
       }
     });
     this._circle.start(Date.now());
