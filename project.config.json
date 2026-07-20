@@ -55,7 +55,19 @@
     "ignore": [
       { "type": "folder", "value": "cloud-src" },
       { "type": "folder", "value": "tools" },
-      { "type": "folder", "value": "document" }
+      { "type": "folder", "value": "document" },
+      { "type": "folder", "value": "admin" },
+      { "type": "folder", "value": "admin-deploy" },
+      { "type": "folder", "value": "cloudfunctions" },
+      { "type": "folder", "value": "trash" },
+      { "type": "file", "value": ".eslintrc.js" },
+      { "type": "file", "value": "cloudbaserc.json" },
+      { "type": "file", "value": "package.json" },
+      { "type": "file", "value": "package-lock.json" },
+      { "type": "file", "value": "project.private.config.json" },
+      { "type": "file", "value": "version.json" },
+      { "type": "file", "value": "_charset.txt" },
+      { "type": "file", "value": "update_font_subset.py" }
     ],
     "include": [
       { "type": "file", "value": "assets/font/KeinannMaruPOP-subset.ttf" }
