@@ -57,7 +57,7 @@
       { "type": "folder", "value": "tools" }
     ],
     "include": [
-      { "type": "file", "value": "assets/font/dabaotaotao.ttf" }
+      { "type": "file", "value": "assets/font/KeinannMaruPOP-subset.ttf" }
     ]
   },
   "isGameTourist": false,
