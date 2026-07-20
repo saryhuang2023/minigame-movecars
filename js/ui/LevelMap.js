@@ -18,6 +18,7 @@ const cfg = require('../define/LevelMapConfig.js');
 const databus = require('../databus.js');
 const LevelButton = require('./widgets/LevelButton.js');
 const ButtonPress = require('../anim/ButtonPress.js');
+const AssetPreloader = require('./AssetPreloader.js');
 
 // 开发预览开关
 const PREVIEW_CLEARED = false;
@@ -51,6 +52,11 @@ class LevelMap {
     this._total = this._readTotal();
     this._buildLevels();
     this.scrollY = this._computeFrontierScroll();
+
+    // 地图装饰：固定锚点 + 每锚点随机选图（会话内固定，构造时展开一次）。
+    this._pathPts = null;        // 路径点缓存（渲染复用）
+    this._decoItems = [];        // 展开后的装饰实例 [{x, y, key|null, size}]（world 坐标）
+    this._buildDecorationItems();
   }
 
   _readTotal() {
@@ -478,6 +484,7 @@ class LevelMap {
   }
 
   renderHand() {
+    if (databus._returningToMenu) return;   // 返回过场窗口（胜利/失败/关卡内返回）：屏蔽引导手，避免闪一下
     if (databus.gameState !== 'menu') return;
     if (databus._menuExiting) return;
     var doneAt = databus._menuEntranceDoneAt || 0;
@@ -528,6 +535,7 @@ class LevelMap {
       var drawH = bottom - top;
       c.drawImage(bgImg, 0, top, SCREEN_WIDTH, drawH);
     }
+    this._drawDecorations(c);   // 背景之上、路径之下（c 仍处 translate(0,-scrollY)）
     c.restore();
   }
 
@@ -545,9 +553,7 @@ class LevelMap {
     // 路径控制点（所有关卡中心）→ 先 Chaikin 倒圆角消除锐角，再 Catmull-Rom 平滑。
     //   Chaikin 保留首尾端点（首关/末关精确落在路端），内部每个尖角被切为圆弧，
     //   整体路由不变（仍依次经过各关），但转弯由「V 形锐角」变为「高速公路式缓弧」。
-    var pts = levels.map(function(l) { return { x: l.x, y: l.worldY }; });
-    var smooth = this._chaikin(pts, cfg.roadSmoothIters || 2);
-    var pathPts = this._catmullRomPath(smooth, smooth.length, stepPx);
+    var pathPts = this._computePathPts();
 
     c.save();
 
@@ -567,6 +573,77 @@ class LevelMap {
     c.setLineDash([cfg.roadDash[0] * s, cfg.roadDash[1] * s]);
     this._strokePath(pathPts, c);
 
+    c.restore();
+  }
+
+  // ===== 地图空白装饰（随机点缀）=====
+  //   探测与随机都在构造期完成（会话内固定）；绘制插在背景之上、路径之下。
+  _computePathPts() {
+    if (this._pathPts) return this._pathPts;
+    var levels = this._levels;
+    if (!levels || levels.length < 2) { this._pathPts = []; return this._pathPts; }
+    var s = SCREEN_WIDTH / cfg.designWidth;
+    var stepPx = 18 * s;
+    var pts = levels.map(function (l) { return { x: l.x, y: l.worldY }; });
+    var smooth = this._chaikin(pts, cfg.roadSmoothIters || 2);
+    this._pathPts = this._catmullRomPath(smooth, smooth.length, stepPx);
+    return this._pathPts;
+  }
+
+  // 固定锚点装饰：按段展开。每段 bgKey 对应 decorationAnchors 一组锚点；
+  // 背景图循环铺，故同组锚点每隔 3 段周期性复现。每锚点随机选一张装饰图，
+  // 并按 noneChance 概率留空（不画）。会话内固定（构造时展开一次）。
+  _buildDecorationItems() {
+    this._decoItems = [];
+    var anchors = cfg.decorationAnchors;
+    if (!anchors || !this._segments || !this._segments.length) return;
+    var s = SCREEN_WIDTH / cfg.designWidth;
+    var d = cfg.decoration || {};
+    var keys = cfg.decorations || [];
+    var noneChance = (typeof d.noneChance === 'number') ? d.noneChance : 0.2;
+    for (var si = 0; si < this._segments.length; si++) {
+      var seg = this._segments[si];
+      var group = anchors[seg.bgKey];
+      if (!group || !group.length) continue;
+      for (var i = 0; i < group.length; i++) {
+        var a = group[i];
+        var key = null;
+        if (keys.length && Math.random() >= noneChance) {
+          key = keys[Math.floor(Math.random() * keys.length)];
+        }
+        var jr = (d.jitter || 0) * s;                  // 抖动半径（world）
+        var ang = Math.random() * Math.PI * 2, rad = Math.random() * jr;
+        this._decoItems.push({
+          x: a.x * s + Math.cos(ang) * rad,   // design → world + 圆形随机抖动
+          y: seg.segTop + a.y * s + Math.sin(ang) * rad,
+          key: key,                   // null = 本锚点留空
+        });
+      }
+    }
+  }
+
+  // 背景层之上、路径之下绘制（c 已 translate(0,-scrollY)，直接用 world 坐标；以锚点为中心）。
+  //   按图片实际像素尺寸 × 缩放绘制（自然比例），不再用固定 size，避免憋小/失真；
+  //   带地面投影（shadow）增强“贴地”立体感。
+  _drawDecorations(c) {
+    var items = this._decoItems;
+    if (!items || !items.length) return;
+    var s = SCREEN_WIDTH / cfg.designWidth;
+    var d = cfg.decoration || {};
+    var sh = d.shadow || {};
+    c.save();   // 隔离阴影设置，不污染后续绘制
+    c.shadowColor = sh.color || 'rgba(0,0,0,0.25)';
+    c.shadowBlur = (sh.blur || 6) * s;
+    c.shadowOffsetX = (sh.offsetX || 0) * s;   // 负=向左（阳光右上方斜射）
+    c.shadowOffsetY = (sh.offsetY || 4) * s;   // 正=向下
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (!it.key) continue;                       // 本锚点留空
+      var img = AssetPreloader.get(it.key);
+      if (!img || !AssetPreloader.isReady(it.key)) continue;
+      var w = img.width * s, h = img.height * s;   // 实际尺寸 × design→world 缩放
+      c.drawImage(img, it.x - w / 2, it.y - h / 2, w, h);
+    }
     c.restore();
   }
 

@@ -58,6 +58,10 @@ var PHASE2 = {
     'assets/images/main_bg_0.jpg',
     'assets/images/main_bg_1.jpg',
     'assets/images/main_bg_2.jpg',
+    'assets/images/main_bg_item1.png',
+    'assets/images/main_bg_item2.png',
+    'assets/images/main_bg_item3.png',
+    'assets/images/main_bg_item4.png',
     'assets/skins/rock/idle/1.png',
     'assets/skins/rock/hint/1.png',
   ],
@@ -111,6 +115,10 @@ var ASSET_PRELOADER_MAP = {
   main_bg_0: 'assets/images/main_bg_0.jpg',
   main_bg_1: 'assets/images/main_bg_1.jpg',
   main_bg_2: 'assets/images/main_bg_2.jpg',
+  main_bg_item1: 'assets/images/main_bg_item1.png',
+  main_bg_item2: 'assets/images/main_bg_item2.png',
+  main_bg_item3: 'assets/images/main_bg_item3.png',
+  main_bg_item4: 'assets/images/main_bg_item4.png',
 };
 
 // ===== Phase 3 (80-100%): 云端数据 =====

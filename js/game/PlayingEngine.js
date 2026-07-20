@@ -288,7 +288,10 @@ class PlayingEngine {
       this._uiFailPopup = new FailPopup({
         zIndex: UIManager.LAYER.MODAL,
         onReplay: function () { self.restartLevel(); },
-        onExit: function () { databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; },
+        onExit: function () {
+          if (databus.returnState === 'editor') { databus.gameState = 'editor'; }
+          else { databus._returningToMenu = true; databus.gameState = 'menu'; }
+        },
       });
       this._uiFailPopup.setAnimator(this._failAnimator);
       this.ui.add(this._uiFailPopup, UIManager.LAYER.MODAL);
@@ -897,7 +900,8 @@ class PlayingEngine {
         if (this._uiFailPopup._exitBtn && _hitRect(t.x, t.y, this._uiFailPopup._exitBtn)) {
           audio.play('button_click');
           try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
-          databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu';
+          if (databus.returnState === 'editor') { databus.gameState = 'editor'; }
+          else { databus._returningToMenu = true; databus.gameState = 'menu'; }
           return;
         }
         return; // 失败后屏蔽其他触控
@@ -1577,7 +1581,13 @@ class PlayingEngine {
       }
     }
     // 「恭喜通关」/「返回」/ 试玩 → 主菜单（试玩回编辑器）
-    databus.gameState = (action === 'editor') ? 'editor' : 'menu';
+    // 返回菜单须置 _returningToMenu，屏蔽过场空窗的引导手（对称设置面板主页钮/关卡内返回）
+    if (action === 'editor') {
+      databus.gameState = 'editor';
+    } else {
+      databus._returningToMenu = true;
+      databus.gameState = 'menu';
+    }
   }
 
   /** 从广告领取后继续（消费体力已在 claimAd 调用前完成） */

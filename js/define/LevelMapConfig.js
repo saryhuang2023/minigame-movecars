@@ -105,4 +105,35 @@ module.exports = {
     rubberBand: 0.4,
     maxVelocity: 60,
   },
+
+  // ===== 地图装饰（固定锚点，增加地图丰富性）=====
+  //   decorations：装饰图资源 key（须同时在 LoadingConfig 注册 key→path）。
+  //     后续添加更多装饰直接在此 +1 项即可，算法自动适配。
+  //   decoration：通用参数
+  //     noneChance 每个锚点“无装饰”概率（0~1）；其余概率均分给 decorations 各图
+  //               装饰按图片【实际像素尺寸 × design→world 缩放】绘制（自然比例），
+  //               不再用固定 size（避免憋小/失真）。
+  //     jitter    绘制点相对锚点的随机抖动半径（design px，圆形范围）；0=不抖动
+  //     shadow    地面投影（增强“贴地”立体感）：color / blur / offsetX / offsetY（均 design px）
+  //               阳光自右上方斜射 → 投影落左下方：offsetX<0（向左）、offsetY>0（向下）
+  //   decorationAnchors：固定锚点（design 坐标，画布宽 = designWidth 393）。
+  //     以「每张背景图」分组（key 与 bgs.bg_*.key / 段 bgKey 对齐）；
+  //     top 从该背景图顶部往下量。背景图循环铺，故同组锚点每隔 3 段周期性复现。
+  //     ⚠️ 锚点由设计稿给出，手写维护；若调整装饰位置只需改这里，逻辑无需动。
+  decorations: ['main_bg_item1', 'main_bg_item2', 'main_bg_item3', 'main_bg_item4'],
+  decoration: {
+    noneChance: 0.2,   // 每个锚点“无装饰”概率（0~1）；其余均分给 decorations 各图
+    jitter: 30,        // 绘制点相对锚点的随机抖动半径（design px，圆形范围）；0=不动
+    shadow: {          // 地面投影（增强“贴地”立体感）；阳光自右上方斜射→投影落左下方
+      color: 'rgba(0,0,0,0.25)',
+      blur: 6,         // 模糊半径（design px）
+      offsetX: -6,     // 投影水平偏移（design px，负=向左）
+      offsetY: 4,      // 投影垂直偏移（design px，正=向下）
+    },
+  },
+  decorationAnchors: {
+    main_bg_0: [ {x:111,y:476},{x:331,y:341},{x:61,y:152},{x:326,y:23} ],
+    main_bg_1: [ {x:97,y:655},{x:317,y:485},{x:63,y:321},{x:312,y:202},{x:117,y:17} ],
+    main_bg_2: [ {x:319,y:646},{x:65,y:482},{x:103,y:231} ],
+  },
 };
