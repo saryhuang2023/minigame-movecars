@@ -18,6 +18,7 @@
 var UIComponent = require('../base/UIComponent.js');
 var AssetPreloader = require('../AssetPreloader.js');
 var StarScores = require('../../utils/starScores.js');
+var audio = require('../../audio/AudioManager.js');   // 音效门面：playLooped/stop
 
 // 离屏画布（复用，避免每帧创建）：用于「沿路径揭示 image_719」的遮罩合成
 var _revealCanvas = null;
@@ -207,6 +208,7 @@ class BranchProgressWidget extends UIComponent {
     this._castPending = false;     // 4★ 出场旋转已开始、但「甩星星」尚未触发（等旋转满 FOUR_CAST_DELAY_MS 才挥魔法）
     this._castDelayStart = 0;      // 「甩星星」倒计时起点（= 4★ 出场旋转起点时间戳）
     this._fourCastFired = false;   // 本关是否已成功施法一次（防通关后蜜蜂仍在枝尾→反复触发甩花）
+    this._starRotateHandle = 0;      // 4★ 源花旋转声循环句柄（0=未播放）
   }
 
   _makeFlowers() {
@@ -251,6 +253,7 @@ class BranchProgressWidget extends UIComponent {
     this._castPending = false;       // 复位：不处于「已转未甩」状态
     this._castDelayStart = 0;
     this._fourCastFired = false;     // 复位：本关尚未施法（防重复甩花）
+    if (this._starRotateHandle) { audio.stop(this._starRotateHandle); this._starRotateHandle = 0; }  // 复位旋转声
     var S3b = this._starScores[2], S4b = this._starScores[3] || 1;
     this._phase2A = S4b > 0 ? (S3b / S4b) * SHIFT_FACTOR : (2 / 3);
   }
@@ -635,6 +638,32 @@ class BranchProgressWidget extends UIComponent {
     for (var sfi = this._stepFlowers.length - 1; sfi >= 0; sfi--) {
       if ((now - this._stepFlowers[sfi].start) / this._stepFlowers[sfi].dur >= 1) this._stepFlowers.splice(sfi, 1);
     }
+
+    // ===== 4★ 源花旋转声：声音与旋转动画绑定（非逻辑事件）=====
+    // 只要源花处于「主动旋转」即循环播放 star_rotate；旋转停则停。
+    // 主动旋转三态：① 出场旋转(re<1) ② 蜜蜂到位→首朵 launch 前持续自转 ③ 每朵 launch 挥棒 flourish。
+    // 注：出场后永久 idle 慢转(FOUR_IDLE_SPIN_SPEED)不计入——否则声音永不停止。
+    var starSpinning = false;
+    if (this._fourRevealed) {
+      var reS = (now - this._fourRevealStart) / FOUR_REVEAL_MS;
+      if (reS < 1) {
+        starSpinning = true;                                   // ① 出场旋转
+      } else if (this._castDelayStart && now < (this._castDelayStart + FOUR_CAST_DELAY_MS + FOUR_CAST_DELAYS[0])) {
+        starSpinning = true;                                   // ② 计划 A 持续自转（填满等待真空）
+      }
+    }
+    if (this._fourSpinStart && (now - this._fourSpinStart) < FOUR_ROT_MS) {
+      starSpinning = true;                                     // ③ 挥棒 flourish（每朵 launch 旋转）
+    }
+    if (starSpinning) {
+      if (!this._starRotateHandle) {
+        var rh = audio.playLooped('star_rotate');
+        if (rh > 0) this._starRotateHandle = rh;               // 仅存有效句柄（-1=音效关闭时跳过）
+      }
+    } else if (this._starRotateHandle) {
+      audio.stop(this._starRotateHandle);
+      this._starRotateHandle = 0;
+    }
   }
 
   /**
@@ -854,9 +883,14 @@ class BranchProgressWidget extends UIComponent {
   // 4 朵星级花（含 4★ 出场旋转 + 施法特效）
   _renderFlowers(ctx, ox, oy) {
     var now = Date.now();
-    // 4★ 源花在「甩花瓣」瞬间旋转一圈（魔法棒挥舞感）；重叠施法时每次甩出都会重新触发，连续旋转
+    // 4★ 源花旋转：① 蓄力 + 触发后到首朵 launch 前 → 持续自转（锚定蜜蜂到位时刻，填满等待真空、消除停顿）；
+    // ② 每朵 launch 瞬间 → 单次挥棒 flourish（魔法棒挥舞感），重叠施法时各自重置连续旋转
     var fourRot = 0;
-    if (this._fourSpinStart) {
+    var spinEnd = this._castDelayStart ? (this._castDelayStart + FOUR_CAST_DELAY_MS + FOUR_CAST_DELAYS[0]) : 0;
+    if (this._castDelayStart && now < spinEnd) {
+      // 持续自转：1 圈/秒，与出场旋转同节奏（FOUR_REVEAL_SPINS/FOUR_REVEAL_MS）
+      fourRot = ((now - this._castDelayStart) / 1000) * Math.PI * 2;
+    } else if (this._fourSpinStart) {
       var fe = (now - this._fourSpinStart) / FOUR_ROT_MS;
       if (fe >= 1) {
         this._fourSpinStart = 0;

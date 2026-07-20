@@ -66,6 +66,8 @@ var SFX_EVENTS = {
   'hint_reveal':  { files: ['hint_reveal.mp3'],      priority: PRIORITY.ACTION },
   'stamina_add':  { files: ['button_click.mp3'],     priority: PRIORITY.UI },
   'rotate_loop':  { files: ['rotate_loop.mp3'],      priority: PRIORITY.AMBIENT },
+  // 4★ 彩花旋转声（star_rotate.mp3）：声音与旋转动画绑定，只要源花主动旋转（出场旋转/持续自转/挥棒）就循环播放
+  'star_rotate':  { files: ['star_rotate.mp3'],      priority: PRIORITY.AMBIENT },
   // 通关失败音效（云端 sfx/game_loss.mp3，已放入云音效文件夹）
   'fail':         { files: ['game_loss.mp3'],        priority: PRIORITY.VICTORY },
 };
