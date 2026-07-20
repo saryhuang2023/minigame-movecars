@@ -5,6 +5,7 @@
 var Easing = require('../../core/Easing.js');
 var audio = require('../../audio/AudioManager.js');
 var AssetPreloader = require('../AssetPreloader.js');
+var Theme = require('../../define/GameDefine.js').THEME;
 
 // ===== 三种颜色预设 =====
 var PRESETS = {
@@ -158,7 +159,7 @@ CommonButton.prototype.render = function (ctx) {
 
   // 6. 文字
   ctx.fillStyle = cfg.textColor;
-  ctx.font = this.fontSize + 'px sans-serif';
+  ctx.font = this.fontSize + 'px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(this.label, cx + iconShift, cy);
