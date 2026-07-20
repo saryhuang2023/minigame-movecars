@@ -287,8 +287,8 @@ VictoryPopup.prototype.render = function (ctx) {
   ctx.translate(-pCenterX, -pCenterY);
 
   // 面板背景
-  if (AssetPreloader.isReady('victory_bg')) {
-    ctx.drawImage(AssetPreloader.get('victory_bg'), px, py, pw, ph);
+  if (AssetPreloader.isReady('level_victory_bg')) {
+    ctx.drawImage(AssetPreloader.get('level_victory_bg'), px, py, pw, ph);
   }
 
   // === 双倍金币按钮（有金币且未领取时才显示）===

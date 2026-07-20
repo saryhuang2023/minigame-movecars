@@ -1,47 +1,43 @@
 // 通关失败弹窗 — PlayingEngine 步数用尽（剩余步数=0 且未通关）时弹出
-// 复用 VictoryPopup 的弹簧入场 + 遮罩结构，简化为「重玩 / 返回」两个按钮
+// 统一弹窗出场动画（PopupAnimator 注入的 scale/alpha 弹簧入场 + 遮罩）
+// 设计稿（designWidth=393，按 s = SCREEN_WIDTH/393 缩放）：
+//   背景 level_loss_bg.png  383.77×262  top:141 水平居中
+//   按钮 button_green.png   189×62     top:calc(50% - 62/2 + 85) 水平居中；点击=重新开始
+//   文字「重新挑战」96×29 相对按钮居中，白字 + #14671F 描边/投影
 
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../../define/GameDefine.js').THEME;
 var AssetPreloader = require('../AssetPreloader.js');
-var CommonButton = require('./CommonButton.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
+
+var DESIGN_W = 393;
 
 /**
  * @param {Object} opts
- * @param {Function} opts.onReplay - 重玩按钮回调
- * @param {Function} opts.onExit - 返回/退出按钮回调
+ * @param {Function} opts.onReplay - 重玩按钮回调（引擎实际直接调用 restartLevel，此处保留兼容）
  */
 class FailPopup extends UIComponent {
   constructor(opts) {
-  super({
-    x: 0, y: 0,
-    w: SCREEN_WIDTH, h: SCREEN_HEIGHT,
-    zIndex: opts.zIndex || 4,
-    visible: false,
-  });
+    super({
+      x: 0, y: 0,
+      w: SCREEN_WIDTH, h: SCREEN_HEIGHT,
+      zIndex: opts.zIndex || 4,
+      visible: false,
+    });
 
-  // 数据
-  this._returnState = 'menu';
+    // 动画（引擎注入 PopupAnimator）
+    this._animator = null;
+    this._closing = false;
+    this._closeCallback = null;
+    this._animStart = 0;
 
-  // 返回按钮（通用按钮，蓝）
-  this._backBtn = new CommonButton({ w: 160, h: 48, color: 'blue' });
+    // 按钮点击区域（供引擎 _hitRect 检测）
+    this._replayBtn = null;   // 绿色「重新挑战」按钮（= 重新开始）
+    this._exitBtn = null;     // 新设计无返回钮；置空以禁用引擎的返回分支
 
-  // 动画（引擎注入 PopupAnimator）
-  this._animator = null;
-  this._closing = false;
-  this._closeCallback = null;
-  this._animStart = 0;
-
-  // 按钮点击区域（供引擎 _hitRect 检测）
-  this._replayBtn = null;   // 重玩（左下，btn_again 图）
-  this._exitBtn = null;     // 返回（右下，通用按钮）
-
-  // 回调
-  this.onReplay = opts.onReplay || function () {};
-  this.onExit = opts.onExit || function () {};
-
-}
+    // 回调
+    this.onReplay = opts.onReplay || function () {};
+  }
 }
 
 
@@ -50,7 +46,7 @@ FailPopup.prototype.setAnimator = function (animator) {
 };
 
 FailPopup.prototype.setData = function (data) {
-  this._returnState = data.returnState || 'menu';
+  // 失败弹窗不再区分 returnState（无返回钮）
 };
 
 FailPopup.prototype.open = function () {
@@ -94,7 +90,7 @@ FailPopup.prototype.render = function (ctx) {
 
   var maskAlpha = state.maskAlpha;
 
-  // 遮罩
+  // 遮罩（点击不处理，仅视觉压暗）
   ctx.fillStyle = 'rgba(0, 0, 0, ' + maskAlpha.toFixed(3) + ')';
   ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -102,74 +98,68 @@ FailPopup.prototype.render = function (ctx) {
   var panelAlpha = state.alpha;
   if (panelAlpha < 0.01) return;
 
-  // 面板几何（与 VictoryPopup 完全一致，复用 victory_bg）
-  var pw = 359;
-  var ph = 384;
-  var px = (SCREEN_WIDTH - pw) / 2 + 1;
-  var py = (SCREEN_HEIGHT - ph) / 2 - 39;
+  var s = SCREEN_WIDTH / DESIGN_W;
+
+  // === 面板几何（设计稿 393 空间，乘 s 适配设备）===
+  var bgW = 383.77 * s;
+  var bgH = 262 * s;
+  var bgX = (SCREEN_WIDTH - bgW) / 2 - 0.5 * s;   // left: calc(50% - 383.77/2 - 0.5)
+  var bgY = 141 * s;                               // top: 141
+
+  var BTN_W = 189 * s;
+  var BTN_H = 62 * s;
+  var btnX = (SCREEN_WIDTH - BTN_W) / 2;           // 水平居中
+  var btnY = SCREEN_HEIGHT / 2 - BTN_H / 2 + 85 * s; // top: calc(50% - 62/2 + 85)
+  var btnCX = btnX + BTN_W / 2;
+  var btnCY = btnY + BTN_H / 2;
 
   ctx.save();
   ctx.globalAlpha = panelAlpha;
 
-  // 面板缩放（弹簧入场）
-  var pCenterX = px + pw / 2;
-  var pCenterY = py + ph / 2;
+  // 面板缩放（弹簧入场，以背景卡中心为锚）
+  var pCenterX = bgX + bgW / 2;
+  var pCenterY = bgY + bgH / 2;
   ctx.translate(pCenterX, pCenterY);
   ctx.scale(panelScale, panelScale);
   ctx.translate(-pCenterX, -pCenterY);
 
-  // 面板背景
-  if (AssetPreloader.isReady('victory_bg')) {
-    ctx.drawImage(AssetPreloader.get('victory_bg'), px, py, pw, ph);
+  // 背景（level_loss_bg.png；若资源未就绪则跳过，不崩）
+  if (AssetPreloader.isReady('level_loss_bg')) {
+    ctx.drawImage(AssetPreloader.get('level_loss_bg'), bgX, bgY, bgW, bgH);
   }
 
-  // === 标题「通关失败」===
-  ctx.save();
-  ctx.globalAlpha = panelAlpha;
-  ctx.fillStyle = '#E3632D';
-  ctx.font = 'bold 28px ' + Theme.font.family;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('通关失败', px + pw / 2, py + 96);
-  ctx.restore();
-
-  // === 副标题「步数用尽啦」===
-  ctx.save();
-  ctx.globalAlpha = panelAlpha;
-  ctx.fillStyle = '#7A5230';
-  ctx.font = '17px ' + Theme.font.family;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('步数用尽啦，再试一次吧', px + pw / 2, py + 138);
-  ctx.restore();
-
-  // === 按钮（位置与 VictoryPopup 对称：重玩左下，返回右下）===
-  var CONT_BTN_W = 160;
-  var CONT_BTN_H = 48;
-  var CONT_BTN_X = px + pw - 78 - CONT_BTN_W;            // right: 78
-  var CONT_BTN_Y = py + ph - 29 - CONT_BTN_H;            // bottom: 29
-
-  var REPLAY_BTN_W = 45;
-  var REPLAY_BTN_H = 45;
-  var REPLAY_BTN_X = px + 66;                              // left: 66
-  var REPLAY_BTN_Y = py + ph - 31 - REPLAY_BTN_H;        // bottom: 31
-
-  // 重玩按钮（btn_again 图）
-  var replayImg = AssetPreloader.get('btn_again');
-  if (replayImg && AssetPreloader.isReady('btn_again')) {
-    ctx.drawImage(replayImg, REPLAY_BTN_X, REPLAY_BTN_Y, REPLAY_BTN_W, REPLAY_BTN_H);
+  // 绿钮（button_green.png）
+  if (AssetPreloader.isReady('button_green')) {
+    ctx.drawImage(AssetPreloader.get('button_green'), btnX, btnY, BTN_W, BTN_H);
   }
-  this._replayBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
 
-  // 返回按钮（通用蓝按钮）
-  var backLabel = this._returnState === 'editor' ? '返回编辑' : '返回';
-  this._backBtn.x = CONT_BTN_X;
-  this._backBtn.y = CONT_BTN_Y;
-  this._backBtn.label = backLabel;
-  this._backBtn.render(ctx);
-  this._exitBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
+  // 文字「重新挑战」：相对按钮居中
+  // Figma: color #FFFFFF; border 1px solid #14671F; text-shadow 0 2px 0 #14671F
+  // 实现：整层阴影(绿, 2px 下, 0 模糊)作用于描边+填充；先描边(绿环)后白填充(压内侧→露出1px绿环 + 2px绿投影)
+  ctx.save();
+  ctx.globalAlpha = panelAlpha;
+  ctx.font = '400 ' + (24 * s) + 'px ' + Theme.font.family;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // 阴影（text-shadow: 0 2px 0 #14671F）作用于整个文字层（描边与填充都带）
+  ctx.shadowColor = '#14671F';
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2 * s;
+  ctx.shadowBlur = 0;
+  // 1) 描边：border 1px solid #14671F（画布描边居中，可见约 1px 绿环）
+  ctx.lineWidth = 1 * s;
+  ctx.strokeStyle = '#14671F';
+  ctx.strokeText('重新挑战', btnCX, btnCY);
+  // 2) 白字填充：压在描边内侧，露出 1px 绿环 + 其 2px 下绿投影
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('重新挑战', btnCX, btnCY);
+  ctx.restore();
 
   ctx.restore();
+
+  // 命中区：仅绿色「重新挑战」按钮（= 重新开始）
+  this._replayBtn = { x: btnX, y: btnY, w: BTN_W, h: BTN_H };
+  this._exitBtn = null;
 };
 
 module.exports = FailPopup;

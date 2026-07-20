@@ -28,7 +28,7 @@
     "usePerformanceTool": false
   },
   "compileType": "game",
-  "libVersion": "latest",
+  "libVersion": "3.16.1",
   "cloudfunctionRoot": "cloudfunctions/",
   "appid": "wxe02448bcf0540ff0",
   "projectname": "猪了个猪呀",

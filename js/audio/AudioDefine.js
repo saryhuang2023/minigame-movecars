@@ -66,6 +66,8 @@ var SFX_EVENTS = {
   'hint_reveal':  { files: ['hint_reveal.mp3'],      priority: PRIORITY.ACTION },
   'stamina_add':  { files: ['button_click.mp3'],     priority: PRIORITY.UI },
   'rotate_loop':  { files: ['rotate_loop.mp3'],      priority: PRIORITY.AMBIENT },
+  // 通关失败音效（云端 sfx/game_loss.mp3，已放入云音效文件夹）
+  'fail':         { files: ['game_loss.mp3'],        priority: PRIORITY.VICTORY },
 };
 
 // ===== 音乐配置 =====

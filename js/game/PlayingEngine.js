@@ -1309,6 +1309,7 @@ class PlayingEngine {
   /** 触发失败：弹出失败面板，屏蔽棋盘与提示操作 */
   _triggerFail() {
     this._failed = true;
+    audio.play('fail');   // 通关失败音效（云端 game_loss.mp3）
     // 清除断点续玩存档——失败后不允许从失败位置恢复
     try { wx.removeStorageSync('game_checkpoint'); } catch (e) {}
     this._uiFailPopup.visible = true;
@@ -1677,6 +1678,9 @@ class PlayingEngine {
 
   /** 画顶部不可用区域边界曲线（绿线，与主菜单一致），关卡内用于核对猪面板/步数牌是否避让到位 */
   _drawSafeAreaLine(ctx) {
+    // 调试虚线框（绿线=可用区边界 / 橙虚线=微信胶囊区）：默认隐藏。
+    // 真机核对安全区/胶囊遮挡时，在控制台执行 GameGlobal.DEBUG_SAFE_AREA = true 后重开页面即可恢复。
+    if (!GameGlobal.DEBUG_SAFE_AREA) return;
     var safe = this._safeL;
     if (!safe) return;
     var sw = SCREEN_WIDTH, step = 6;

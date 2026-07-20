@@ -670,6 +670,9 @@ class GameEngine {
    * 摄像头/刘海的具体形状不建模（那必须写死机型），已由 safeArea.top 统一涵盖，真机可核对线高是否够。
    */
   _drawSafeAreaLine(ctx) {
+    // 调试虚线框（绿线=可用区边界 / 橙虚线=微信胶囊区）：默认隐藏。
+    // 真机核对安全区/胶囊遮挡时，在控制台执行 GameGlobal.DEBUG_SAFE_AREA = true 后重开页面即可恢复。
+    if (!GameGlobal.DEBUG_SAFE_AREA) return;
     var safe = this._safeLayout;
     if (!safe) return;
     var sw = SCREEN_WIDTH;

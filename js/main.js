@@ -1,5 +1,58 @@
 // 主入口：启动主循环
 
+// ===== 全局错误兜底：把崩溃信息直接画到屏幕画布（不依赖 DevTools 控制台，真机可见）=====
+// 注意：此前兜底用 wx.createCanvas() 新建画布，但 render.js 已抢走屏幕画布，
+// 新建的其实是离屏画布，画上去屏幕看不到。此处改为画到 render.js 的屏幕画布。
+function showFatal(title, msg, stack) {
+  try {
+    var R = require('./render.js');
+    var screen = R.canvas;
+    var g = screen.getContext('2d');
+    g.fillStyle = '#1a0000';
+    g.fillRect(0, 0, screen.width, screen.height);
+    g.fillStyle = '#ff6363';
+    g.font = '14px sans-serif';
+    g.textBaseline = 'top';
+    g.textAlign = 'left';
+    var lines = ['[错误] ' + title, String(msg || '').substring(0, 90)];
+    var st = (stack || '').split('\n');
+    for (var i = 0; i < st.length && lines.length < 26; i++) {
+      lines.push(st[i].substring(0, 90));
+    }
+    var y = 24;
+    for (var j = 0; j < lines.length; j++) {
+      g.fillText(lines[j], 12, y);
+      y += 20;
+      if (y > screen.height - 24) break;
+    }
+  } catch (e2) {
+    // render.js 没加载成功（首屏前就崩）：退回新建画布，此时它就是屏幕画布
+    try {
+      var c = wx.createCanvas();
+      var x = c.getContext('2d');
+      x.fillStyle = '#1a0000'; x.fillRect(0, 0, c.width, c.height);
+      x.fillStyle = '#ff6363'; x.font = '14px sans-serif'; x.textBaseline = 'top';
+      x.fillText('[错误] ' + title + ': ' + String(msg || '').substring(0, 90), 12, 24);
+    } catch (e3) {}
+  }
+}
+
+// 捕获每帧渲染循环 / 异步任务里的崩溃（try-catch 只罩得住启动引导，罩不住 rAF 循环）
+function _globalErrHandler(msg, source, lineno, colno, error) {
+  var m = (typeof msg === 'string') ? msg
+    : (msg && msg.message) ? msg.message
+    : String(msg);
+  var stack = (error && error.stack) ? error.stack : '';
+  showFatal('运行时崩溃', m + ' @' + (source || '') + ':' + (lineno || ''), stack);
+}
+if (typeof GameGlobal !== 'undefined') GameGlobal.onerror = _globalErrHandler;
+if (typeof wx !== 'undefined' && wx.onError) {
+  wx.onError(function (err) {
+    if (typeof err === 'string') showFatal('运行时崩溃', err, '');
+    else showFatal('运行时崩溃', err.message || String(err), err.stack || '');
+  });
+}
+
 try {
   console.log('[Main] 入口文件开始执行');
   var cloud = require('./cloud.js');
@@ -33,16 +86,6 @@ try {
 } catch (e) {
   console.error('[Main] 致命错误:', e);
   console.error('[Main] 错误堆栈:', e.stack);
-  // 尝试在 Canvas 上画错误信息
-  try {
-    var c = wx.createCanvas();
-    var ctx2 = c.getContext('2d');
-    ctx2.fillStyle = '#000';
-    ctx2.fillRect(0, 0, c.width, c.height);
-    ctx2.fillStyle = '#f00';
-    ctx2.font = '16px ' + Theme.font.family + '';
-    ctx2.fillText('初始化失败: ' + (e.message || String(e)), 20, c.height / 2);
-  } catch (e2) {
-    // 彻底失败，无能为力
-  }
+  // 画到屏幕画布（覆盖启动引导阶段的崩溃）
+  showFatal('初始化失败', e.message || String(e), e.stack);
 }

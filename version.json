@@ -8,6 +8,7 @@
   "data/audio/sfx/collide_2.mp3": "3cb974de7616283dbc65d9109ad3fb90",
   "data/audio/sfx/collide_duang.mp3": "22eb3e76e2c65333971ddea0eba7295b",
   "data/audio/sfx/escape_2.mp3": "8c802894d3f728b7ac0e75047a1110e5",
+  "data/audio/sfx/game_loss.mp3": "82ece8dd64dd842d9cfa3ff4d38116f0",
   "data/audio/sfx/hint_reveal.mp3": "c803e543baf399841926a65abf1d15b7",
   "data/audio/sfx/rewards.mp3": "7b2552630278b7f97e27cf7063bb2bf0",
   "data/audio/sfx/rotate_loop.mp3": "92a62b917096ab7d8c1e712b33ca40a8",
