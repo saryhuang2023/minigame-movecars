@@ -12,7 +12,7 @@ var PHASE1 = {
   // idle 序列帧（通过 PigRenderer.preloadIdle 加载，此处声明数量用于进度）
   idleFrameCount: 11,
   // 自定义字体
-  fontPath: 'assets/font/dabaotaotao.ttf',
+  fontPath: 'assets/font/KeinannMaruPOP-subset.ttf',
 };
 
 // ===== Phase 2 (40-80%): 游戏运行时所需全部资源 =====
