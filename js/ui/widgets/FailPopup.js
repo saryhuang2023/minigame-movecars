@@ -8,6 +8,7 @@
 var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../../define/GameDefine.js').THEME;
 var AssetPreloader = require('../AssetPreloader.js');
+var { drawGreenButton } = require('./greenButton.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 var DESIGN_W = 393;
@@ -110,8 +111,6 @@ FailPopup.prototype.render = function (ctx) {
   var BTN_H = 62 * s;
   var btnX = (SCREEN_WIDTH - BTN_W) / 2;           // 水平居中
   var btnY = SCREEN_HEIGHT / 2 - BTN_H / 2 + 85 * s; // top: calc(50% - 62/2 + 85)
-  var btnCX = btnX + BTN_W / 2;
-  var btnCY = btnY + BTN_H / 2;
 
   ctx.save();
   ctx.globalAlpha = panelAlpha;
@@ -128,32 +127,11 @@ FailPopup.prototype.render = function (ctx) {
     ctx.drawImage(AssetPreloader.get('level_loss_bg'), bgX, bgY, bgW, bgH);
   }
 
-  // 绿钮（button_green.png）
-  if (AssetPreloader.isReady('button_green')) {
-    ctx.drawImage(AssetPreloader.get('button_green'), btnX, btnY, BTN_W, BTN_H);
-  }
-
-  // 文字「重新挑战」：相对按钮居中
-  // Figma: color #FFFFFF; border 1px solid #14671F; text-shadow 0 2px 0 #14671F
-  // 实现：整层阴影(绿, 2px 下, 0 模糊)作用于描边+填充；先描边(绿环)后白填充(压内侧→露出1px绿环 + 2px绿投影)
-  ctx.save();
-  ctx.globalAlpha = panelAlpha;
-  ctx.font = '400 ' + (24 * s) + 'px ' + Theme.font.family;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  // 阴影（text-shadow: 0 2px 0 #14671F）作用于整个文字层（描边与填充都带）
-  ctx.shadowColor = '#14671F';
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 2 * s;
-  ctx.shadowBlur = 0;
-  // 1) 描边：border 1px solid #14671F（画布描边居中，可见约 1px 绿环）
-  ctx.lineWidth = 1 * s;
-  ctx.strokeStyle = '#14671F';
-  ctx.strokeText('重新挑战', btnCX, btnCY);
-  // 2) 白字填充：压在描边内侧，露出 1px 绿环 + 其 2px 下绿投影
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText('重新挑战', btnCX, btnCY);
-  ctx.restore();
+  // 绿钮（button_green.png 底图 + 白字/绿描边/投影，统一由 drawGreenButton 绘制）
+  drawGreenButton(ctx, {
+    x: btnX, y: btnY, w: BTN_W, h: BTN_H,
+    label: '重新挑战', s: s,
+  });
 
   ctx.restore();
 

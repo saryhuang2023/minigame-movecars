@@ -47,12 +47,29 @@ function getSafeLayout() {
   }
 
   // 微信胶囊（···/⊙）：微信自己的 UI，必须用 API 取，不能假设位置/尺寸
+  // 注意：微信 Windows 开发者工具模拟器偶发 getMenuButtonBoundingClientRect 抛
+  //   "global.windowMap is not iterable"（与 getSystemNanoTime 同类环境 bug），
+  //   真机/预览/体验版不会出现 → 这里 try/catch 兜住，失败则 capsule=null 走 safeArea.top 回退。
   var capsule = null;
-  try {
-    if (typeof wx !== 'undefined' && wx.getMenuButtonBoundingClientRect) {
-      capsule = wx.getMenuButtonBoundingClientRect();
+  // Windows 微信开发者工具模拟器已知 bug：getMenuButtonBoundingClientRect 抛出
+  // "global.windowMap is not iterable"（与 getSystemNanoTime 同类）。
+  // 该异常在某些版本中可能绕过标准 try/catch 传播链，触发全局错误弹窗 → 直接跳过调用。
+  // 真机/预览/体验版/Mac 模拟器均不受影响。
+  var isWinSimulator = (typeof navigator !== 'undefined' && /Win/i.test(navigator.platform));
+  if (!isWinSimulator) {
+    try {
+      if (typeof wx !== 'undefined' && wx.getMenuButtonBoundingClientRect) {
+        var c = wx.getMenuButtonBoundingClientRect();
+        // 防御：API 偶发返回异常对象(字段缺失) → 视为无效，回退到 safeArea.top
+        if (c && typeof c.left === 'number' && typeof c.right === 'number' &&
+            typeof c.top === 'number' && typeof c.bottom === 'number') {
+          capsule = c;
+        }
+      }
+    } catch (e) {
+      capsule = null;
     }
-  } catch (e) {}
+  }
 
   // ---- 可调参数（极简，仅胶囊避让相关）----
   var CAP_MARGIN = 4;   // 胶囊外扩留白(px)，避免贴边

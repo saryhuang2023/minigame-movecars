@@ -91,6 +91,7 @@ class PlayingEngine {
     this._itemFlyEffect = new ItemFlyEffect('addstep_icon');  // +3道具图标飞向步数面板
     this._totalScore = 30;            // 测试写死：总积分（进度条分母），后续改关卡配置读取
     this._starScores = [0, 0, 0, 0];   // 星级积分门槛 [s1,s2,s3,s4]
+    this._victoryStar = 0;              // 本次通关结算星级（供结算面板展示，0~4）
     this._scoreBonusRemaining = 0;    // 通关后剩余步数转化的积分
     this._scoreBonusProgress = 0;     // 已灌入的积分
     this._scoreBonusSettled = false;  // 积分粒子结算完毕（防重入 _finishVictorySequence）
@@ -98,6 +99,8 @@ class PlayingEngine {
     this._showBoardBounds = false;    // 调试框：棋盘可用区域
     this._goldSettled = false;        // 通关结算已入库（入账后不再累积 _levelAccumulatedGold）
     this._isFirstGoldClear = false;    // 进入关卡时计算：本关是否首通（决定飞金币 + 金币发放）
+    this._startedAsFrontier = false;   // 进入关卡时计算：本关是否为最新关(frontier)；供胜利按钮三态判定
+    this._victoryAction = 'menu';      // 胜利按钮动作：menu / next / editor（_syncUIData 计算）
     this._settlementTriggered = false; // 结算已触发（防重入）
     this._settlementTimer = null;      // 2.5s 兜底定时器
 
@@ -167,6 +170,9 @@ class PlayingEngine {
     var liRaw = wx.getStorageSync('lastLevelIndex');
     var savedLi = (liRaw !== '' && liRaw !== undefined && liRaw !== null) ? parseInt(liRaw, 10) : -1;
     this._isFirstGoldClear = databus.returnState !== 'editor' && databus.currentLevelIndex > savedLi;
+    // 进关即记录：本关是否为「最新关」(frontier，即首通关) —— 通关时 lastLevelIndex 会被改写，
+    // 无法在胜利弹窗反推，故在进关时用 savedLi 判定并缓存。供胜利按钮三态判定（继续闯关 / 返回）。
+    this._startedAsFrontier = databus.returnState !== 'editor' && databus.currentLevelIndex > savedLi;
     this._settlementTriggered = false;
     this._lastGoldLog = -1;  // 诊断日志去重用
     // 清除兜底定时器
@@ -348,12 +354,30 @@ class PlayingEngine {
       this._uiRightStep.setHidden(this._failed); // 仅失败时隐藏；结算面板期间不隐藏（由面板遮罩覆盖，符合预期）
     }
 
-    // VictoryPopup
+    // VictoryPopup 绿钮三态判定（_startedAsFrontier 已在进关时记录本关是否为最新关）
+    var _vCur = databus.currentLevelIndex;
+    var _vLevels = databus.projectLevels || [];
+    var _vTotal = _vLevels.length;
+    var _vIsTrial = databus.returnState === 'editor';
+    var _vIsLast = !_vIsTrial && _vCur === _vTotal - 1;  // 当前为最后一关，无下一关
+    var _vLabel, _vAction;
+    if (_vIsLast) {
+      _vLabel = '恭喜通关'; _vAction = 'menu';
+    } else if (this._startedAsFrontier) {
+      // 最新关首通 → 继续闯关 → 进下一关
+      _vLabel = '继续闯关'; _vAction = 'next';
+    } else {
+      // 重玩旧关 → 返回 → 主菜单（试玩则回编辑器）
+      _vLabel = '返回'; _vAction = _vIsTrial ? 'editor' : 'menu';
+    }
+    this._victoryAction = _vAction;
     this._uiVictoryPopup.setData({
       steps: this.steps,
       returnState: databus.returnState || 'menu',
       goldAmount: this._goldAmount,
       showGold: this._goldAmount > 0,
+      btnLabel: _vLabel,
+      stars: this._victoryStar,
     });
     this._uiVictoryPopup.visible = this._victory && this._showVictoryPanel;
 
@@ -830,11 +854,6 @@ class PlayingEngine {
 
       // 通关界面按钮（UIManager）
       if (this._victory) {
-        if (this._uiVictoryPopup._restartBtn && _hitRect(t.x, t.y, this._uiVictoryPopup._restartBtn)) {
-          audio.play('button_click');
-          this.restartLevel();
-          return;
-        }
         if (this._uiVictoryPopup._doubleGoldBtn && !this._uiVictoryPopup._goldClaimed && _hitRect(t.x, t.y, this._uiVictoryPopup._doubleGoldBtn)) {
           audio.play('button_click');
           this._onDoubleGoldClick();
@@ -1374,14 +1393,16 @@ class PlayingEngine {
     console.log('[LOG_victory] 奖励计算完成: goldAmount=' + this._goldAmount + ' scoreBonusRemaining=' + this._scoreBonusRemaining + ' isFirstTime=' + (!isTrial && currentIdx >= savedIdx));
 
     // 花朵/积分历史最高记录 + 星级：仅正式模式落库（试玩不落库），多次通关保留最高
+    // 星级显示值（_victoryStar）无论试玩/正式都计算并缓存，供结算面板展示。
+    var achievedScore = this._escapedCount + this._scoreBonusRemaining;
+    var star = StarScores.getStarTier(achievedScore, this._starScores);
+    this._victoryStar = star;
     if (!isTrial) {
-      var achievedScore = this._escapedCount + this._scoreBonusRemaining;
       this._saveBestScore(achievedScore);
-      var star = StarScores.getStarTier(achievedScore, this._starScores);
       console.log('[Star] 计算星级: level=' + this.levelName + ' achievedScore=' + achievedScore + ' star=' + star + ' → 调用 _saveBestStar');
       this._saveBestStar(star);
     } else {
-      console.log('[Star] 试玩模式，跳过星级落库');
+      console.log('[Star] 试玩模式，跳过星级落库 star=' + star);
     }
 
     // 兜底定时器：试玩与正式一致启动，保证胜利序列一定能触发
@@ -1521,9 +1542,27 @@ class PlayingEngine {
     }
   }
 
-  /** 继续按钮 — 统一返回主菜单（主菜单/关卡选择/其它入口进入均回主菜单；editor 试玩回编辑器） */
+  /** 继续按钮 — 按胜利按钮三态(_victoryAction)分流：继续闯关→下一关 / 返回·恭喜通关→主菜单 / 试玩→编辑器 */
   _onContinueClick() {
-    databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu';
+    // 按胜利按钮三态判定结果分流（_victoryAction 由 _syncUIData 计算）
+    var action = this._victoryAction || 'menu';
+    // 「继续闯关」且非试玩 → 进入下一关
+    if (action === 'next' && databus.returnState !== 'editor') {
+      var curIdx = databus.currentLevelIndex;
+      var levels = databus.projectLevels || [];
+      var nextIdx = curIdx + 1;
+      if (nextIdx >= 0 && nextIdx < levels.length) {
+        var nextName = levels[nextIdx].name;
+        databus.currentLevelIndex = nextIdx;
+        databus.currentLevel = { name: nextName, data: null };
+        databus.returnState = 'menu';
+        this._skipRestore = true;  // 新关不恢复旧存档
+        this.startLevel(nextName);
+        return;
+      }
+    }
+    // 「恭喜通关」/「返回」/ 试玩 → 主菜单（试玩回编辑器）
+    databus.gameState = (action === 'editor') ? 'editor' : 'menu';
   }
 
   /** 从广告领取后继续（消费体力已在 claimAd 调用前完成） */

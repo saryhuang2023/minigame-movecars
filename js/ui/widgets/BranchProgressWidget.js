@@ -87,7 +87,7 @@ var FOUR_REVEAL_MS = 2000;    // 4★ 出场：快速旋转 2 秒
 var FOUR_REVEAL_SPINS = 2;    // 出场旋转圈数（2 秒 2 圈）
 var FOUR_IDLE_SPIN_SPEED = (Math.PI * 2) / 6;  // 出场后缓慢常驻自转（1 圈/6s）
 var FOUR_STAR_SIZE = Math.round(25 * 4 / 3 * 4 / 3);   // 大彩星尺寸（25 ×4/3 ×4/3 ≈ 44）：4★ 源花 + 3 颗被施法星，甩完后 4 颗全是大彩星
-var FOUR_CAST_DELAY_MS = 1000; // 4★ 花「出场旋转」开始 ⇒ 「甩星星(施法)」开始的间隔：蜜蜂到位后花先转 1 秒，第 1 秒末才挥魔法棒甩彩星
+var FOUR_CAST_DELAY_MS = 600; // 4★ 花「出场旋转」开始 ⇒ 「甩星星(施法)」开始的间隔：蜜蜂到位后花先转 0.6 秒，之后挥魔法棒甩彩星（配合 FOUR_CAST_DELAYS[0]=400，源花持续自转合计 1000ms）
 
 function catmullRomPoint(p0, p1, p2, p3, t) {
   var t2 = t * t, t3 = t2 * t;

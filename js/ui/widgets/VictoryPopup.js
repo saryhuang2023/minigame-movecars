@@ -5,80 +5,16 @@ var UIComponent = require('../base/UIComponent.js');
 var Theme = require('../../define/GameDefine.js').THEME;
 var Easing = require('../../core/Easing.js');
 var AssetPreloader = require('../AssetPreloader.js');
+var { drawGreenButton } = require('./greenButton.js');
 var audio = require('../../audio/AudioManager.js');
 var CommonButton = require('./CommonButton.js');
 var { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 var { drawAdBadge } = require('../drawAdBadge.js');
 
-// ===== 继续按钮手绘（复用 SettingsPanel 的 3 层 Figma 设计，参数化宽度）=====
-function _roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arcTo(x + w, y, x + w, y + r, r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-  ctx.lineTo(x + r, y + h);
-  ctx.arcTo(x, y + h, x, y + h - r, r);
-  ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
-  ctx.closePath();
-}
-
-function _drawContinueBtnBg(ctx, x, y, w, h) {
-  ctx.save();
-
-  // === 第1层：深青色外框, #1D6C72, radius 14 ===
-  _roundRect(ctx, x, y, w, h, 14);
-  ctx.fillStyle = '#1D6C72';
-  ctx.fill();
-
-  // === 第2层：青色渐变内框, #00C3D8, radius 12，偏移 (2, 2) ===
-  var ix = x + 2;
-  var iy = y + 2;
-  var iw = w - 4;
-  var ih = h - 4;
-
-  _roundRect(ctx, ix, iy, iw, ih, 12);
-  ctx.fillStyle = '#00C3D8';
-  ctx.fill();
-
-  // 内高光/阴影（clip 到内框）
-  _roundRect(ctx, ix, iy, iw, ih, 12);
-  ctx.save();
-  ctx.clip();
-
-  // inset top: 0px 3px 3px rgba(255,255,255,0.3)
-  var tGrad = ctx.createLinearGradient(ix, iy, ix, iy + 4);
-  tGrad.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-  tGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = tGrad;
-  ctx.fillRect(ix, iy, iw, 5);
-
-  // inset bottom: 0px -4px 0px #0A88B6
-  ctx.fillStyle = '#0A88B6';
-  ctx.fillRect(ix, iy + ih - 4, iw, 4);
-
-  ctx.restore();  // clip
-
-  // === 第3层：亮青色描边, 1.5px #33D4D7, radius 12 ===
-  var sx = x + 2;
-  var sy = y + 2;
-  var sw = w - 4;
-  var sh = h - 7;  // 41 height
-
-  _roundRect(ctx, sx, sy, sw, sh, 12);
-  ctx.strokeStyle = '#33D4D7';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  ctx.restore();  // outer save
-}
-
 /**
  * @param {Object} opts
- * @param {Function} opts.onContinue - 继续按钮回调
- * @param {Function} opts.onReplay - 重玩按钮回调
+ * @param {Function} opts.onContinue - 继续/通关按钮回调
+ * @param {Function} opts.onReplay - 重玩按钮回调（保留兼容，UI 已移除重玩钮）
  * @param {Function} opts.onExit - 退出按钮回调
  * @param {Function} opts.onDoubleGold - 双倍金币按钮回调
  */
@@ -93,13 +29,13 @@ class VictoryPopup extends UIComponent {
 
   // 数据
   this._steps = 0;
+  this._stars = 0;                 // 本次通关星级（0~4；4=彩星）
   this._returnState = 'menu';
   this._goldAmount = 0;
   this._showGold = false;
   this._goldClaimed = false;  // 双倍金币是否已领取
 
-  // 通用按钮
-  this._continueBtn = new CommonButton({ w: 160, h: 48, color: 'blue' });
+  // 通用按钮（仅双倍金币）
   this._doubleGoldCommonBtn = new CommonButton({ w: 208, h: 54, color: 'gold', label: '金币X2' });
 
   // 动画
@@ -113,6 +49,9 @@ class VictoryPopup extends UIComponent {
   this._restartBtn = null;
   this._nextBtn = null;
   this._doubleGoldBtn = null;
+
+  // 绿钮文案（setData 覆写；三态由引擎判定：继续闯关 / 恭喜通关 / 返回）
+  this._btnLabel = '继续闯关';
 
   // 回调
   this.onContinue = opts.onContinue || function () {};
@@ -153,6 +92,10 @@ VictoryPopup.prototype.setData = function (data) {
     this._goldAmount = data.goldAmount || 0;
   }
   this._showGold = !!data.showGold;
+  // 星级（0~4）：4 星=3 颗彩星；1~3 星=对应数量普通星；0=仅空格子
+  this._stars = (typeof data.stars === 'number') ? data.stars : 0;
+  // 绿钮文案由引擎按三态判定后直接传入（继续闯关 / 恭喜通关 / 返回）
+  this._btnLabel = data.btnLabel || '继续闯关';
 };
 
 VictoryPopup.prototype.open = function () {
@@ -271,8 +214,8 @@ VictoryPopup.prototype.render = function (ctx) {
 
   var showGold = this._showGold;
 
-  var pw = 359;
-  var ph = 384;
+  var pw = 351;
+  var ph = 409;
   var px = (SCREEN_WIDTH - pw) / 2 + 1;
   var py = (SCREEN_HEIGHT - ph) / 2 - 39;
 
@@ -289,6 +232,61 @@ VictoryPopup.prototype.render = function (ctx) {
   // 面板背景
   if (AssetPreloader.isReady('level_victory_bg')) {
     ctx.drawImage(AssetPreloader.get('level_victory_bg'), px, py, pw, ph);
+  }
+
+  // === 星级展示（Figma：3 个 75×75 槽位，top:150，left:58/138/218）===
+  // 底板：flower_bg.png（69×67）默认 3 个空格子；按星级从左到右叠加星星覆盖：
+  //   1~3 星 → normal_flower.png（75×75）；4 星 → 3 颗彩星 big_flower.png（75×75）。
+  // 花朵（与游戏内 drawFlower 一致：普通/空格带 drop-shadow；彩花无阴影）
+  var _drawFlowerImg = function (cx, cy, size, key) {
+    var img = AssetPreloader.get(key);
+    if (!img) return;
+    ctx.save();
+    if (key !== 'big_flower') {
+      var k = size / 25;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+      ctx.shadowBlur = 2 * k;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 1 * k;
+    }
+    ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+    ctx.restore();
+  };
+  // 底板（非正方形，单独绘制）：flower_bg.png 69×67，带阴影（与空格子同款）
+  var _drawStarBg = function (cx, cy) {
+    var img = AssetPreloader.get('flower_bg');
+    if (!img) return;
+    ctx.save();
+    var k = 67 / 25;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 2 * k;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 1 * k;
+    ctx.drawImage(img, cx - 69 / 2, cy - 67 / 2, 69, 67);
+    ctx.restore();
+  };
+
+  var STAR_SLOT = 75;       // 槽位定位框（Figma 75×75）基准
+  var STAR_FLOWER = 75;     // 星星/彩星尺寸（75×75）
+  var STAR_TOP = 150;
+  var STAR_LEFTS = [58, 138, 218];
+  var rawStars = this._stars || 0;
+  var starIsFour = rawStars >= 4;
+  // 底板：flower_bg.png 仅用于「未得星」的空格子；已得星的槽位不显示占位，直接画星星
+  for (var si = 0; si < 3; si++) {
+    var sx = px + STAR_LEFTS[si];
+    var sy = py + STAR_TOP;
+    var scx = sx + STAR_SLOT / 2;
+    var scy = sy + STAR_SLOT / 2;
+    var hasStar = si < rawStars;
+    // 未得星 → 画 flower_bg 占位
+    if (!hasStar) {
+      _drawStarBg(scx, scy);
+    }
+    // 已得星：直接画星星覆盖（1~3 普通星，4 星 3 颗彩星），不画占位
+    if (hasStar) {
+      _drawFlowerImg(scx, scy, STAR_FLOWER, starIsFour ? 'big_flower' : 'normal_flower');
+    }
   }
 
   // === 双倍金币按钮（有金币且未领取时才显示）===
@@ -329,7 +327,8 @@ VictoryPopup.prototype.render = function (ctx) {
     return { alpha: 1, scale: 1 };
   };
 
-  // === 文本框（相对背景面板定位）===
+  // === 信息行（金币 / 步数）：结构保持原样（金色胶囊底框 + 独立图标 + 独立标签 + 独立数值），
+  //   仅整体位置按需求：162 宽居中，金币 bottom:102 / 步数 bottom:140 ===
   var _drawInfoText = function (anim, text, x, y) {
     ctx.save();
     ctx.globalAlpha = anim.alpha;
@@ -341,33 +340,24 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  var infoX = px + 91;
-
-  // === 标签背景色块 ===
   var badgeW = 70, badgeH = 28;
-  var badgeX = px + pw - 91 - badgeW;  // right: 91px
+  var iconW = 32, iconH = 32;
 
+  // 标签背景色块（金色，与金币一致；胶囊形 6px 24px 24px 6px）
   var _drawBadge = function (anim, x, y, color) {
     ctx.save();
     ctx.globalAlpha = anim.alpha;
     ctx.fillStyle = color;
-    // CSS border-radius: 6px 24px 24px 6px
-    // Canvas 不自动钳位 → 手动 clamp：28px 高元素，24→14
     var rl = Math.min(6, badgeH / 2);
     var rr = Math.min(24, badgeH / 2);
     ctx.beginPath();
-    // 从上边左上角开始，顺时针绘制
     ctx.moveTo(x + rl, y);
-    // 上边 → 右上角
     ctx.lineTo(x + badgeW - rr, y);
     ctx.arc(x + badgeW - rr, y + rr, rr, -Math.PI / 2, 0);
-    // 右边 → 右下角
     ctx.lineTo(x + badgeW, y + badgeH - rr);
     ctx.arc(x + badgeW - rr, y + badgeH - rr, rr, 0, Math.PI / 2);
-    // 下边 → 左下角
     ctx.lineTo(x + rl, y + badgeH);
     ctx.arc(x + rl, y + badgeH - rl, rl, Math.PI / 2, Math.PI);
-    // 左边 → 左上角
     ctx.lineTo(x, y + rl);
     ctx.arc(x + rl, y + rl, rl, Math.PI, -Math.PI / 2);
     ctx.closePath();
@@ -375,18 +365,7 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  // 蓝 — 本关步数
-  var blueBadgeAnim = _elAnim();
-  _drawBadge(blueBadgeAnim, badgeX, py + 207, '#83DEFF');
-
-  // 黄 — 获得金币
-  var goldBadgeAnim = _elAnim();
-  _drawBadge(goldBadgeAnim, badgeX, py + 251, '#FFC500');
-
-  // === 图标（盖在色块上面）===
-  var iconW = 32, iconH = 32;
-  var iconX = px + pw - 143 - iconW;  // right: 143px
-
+  // 图标（盖在色块左侧）
   var _drawIcon = function (anim, key, x, y) {
     if (!AssetPreloader.isReady(key)) return;
     ctx.save();
@@ -399,21 +378,7 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  // 金币
-  var coinIconAnim = _elAnim();
-  _drawIcon(coinIconAnim, 'coin', iconX, py + 249);
-
-  // 本关步数（标签）
-  var stepsAnim = _elAnim();
-  _drawInfoText(stepsAnim, '本关步数', infoX, py + 207);
-
-  // 获得金币（标签）
-  var goldTextAnim = _elAnim();
-  _drawInfoText(goldTextAnim, '获得金币', infoX, py + 253);
-
-  // === 数据值（left:2px 相对 icon 右边缘，top 相对背景）===
-  var dataX = iconX + iconW + 2;  // icon 右边缘 + 2px
-
+  // 数值（icon 右边缘 + 2px，左对齐）
   var _drawDataText = function (anim, text, y) {
     ctx.save();
     ctx.globalAlpha = anim.alpha;
@@ -425,13 +390,31 @@ VictoryPopup.prototype.render = function (ctx) {
     ctx.restore();
   };
 
-  // 本关步数数据（top: 214px）
-  var myStepsAnim = _elAnim();
-  _drawDataText(myStepsAnim, this._steps + '步', py + 214);
+  // 整体 frame：宽 162、水平居中；内部沿用原相对排布（标签在左，胶囊底框在右）
+  var infoFrameLeft = px + (pw - 162) / 2;
+  var REL_LABEL_X = 0, REL_ICON_X = 93, REL_BADGE_X = 107, REL_VALUE_X = 127;
+  var REL_ICON_Y = 0, REL_BADGE_Y = 2, REL_LABEL_Y = 4, REL_VALUE_Y = 9;
+  var dataX = infoFrameLeft + REL_VALUE_X;
 
-  // 获得金币数据（top: 212px）— 双击双倍时翻滚，否则静态 +N
-  var myGoldAnim = _elAnim();
+  // === 步数：y 基准（bottom:140）===
+  var stepsFrameTop = py + ph - 140 - 28;
+  var stepsBadgeAnim = _elAnim();
+  _drawBadge(stepsBadgeAnim, infoFrameLeft + REL_BADGE_X, stepsFrameTop + REL_BADGE_Y, '#FFC500');
+  var stepsIconAnim = _elAnim();
+  _drawIcon(stepsIconAnim, 'main_battle_icon', infoFrameLeft + REL_ICON_X, stepsFrameTop + REL_ICON_Y);
+  var stepsLabelAnim = _elAnim();
+  _drawInfoText(stepsLabelAnim, '本关步数', infoFrameLeft + REL_LABEL_X, stepsFrameTop + REL_LABEL_Y);
+  var stepsDataAnim = _elAnim();
+  _drawDataText(stepsDataAnim, this._steps + '步', stepsFrameTop + REL_VALUE_Y);
 
+  // === 金币：y 基准（bottom:102）===
+  var goldFrameTop = py + ph - 102 - 28;
+  var goldBadgeAnim = _elAnim();
+  _drawBadge(goldBadgeAnim, infoFrameLeft + REL_BADGE_X, goldFrameTop + REL_BADGE_Y, '#FFC500');
+  var goldIconAnim = _elAnim();
+  _drawIcon(goldIconAnim, 'coin', infoFrameLeft + REL_ICON_X, goldFrameTop + REL_ICON_Y);
+  var goldLabelAnim = _elAnim();
+  _drawInfoText(goldLabelAnim, '获得金币', infoFrameLeft + REL_LABEL_X, goldFrameTop + REL_LABEL_Y);
   // 双倍翻滚中循环播放 coin_roll 音效
   if (this._goldRolling) {
     var rollElapsed = Date.now() - this._goldRollStart;
@@ -440,74 +423,33 @@ VictoryPopup.prototype.render = function (ctx) {
       this._goldRollSoundLast = rollElapsed;
     }
   }
-
   var displayGold = this._getRollDisplayGold();
+  var goldDataAnim = _elAnim();
+  _drawDataText(goldDataAnim, '+' + displayGold + '币', goldFrameTop + REL_VALUE_Y);
+
+  // === 按钮：单一绿钮（与失败面板「重新挑战」同款 button_green.png，水平居中）===
+  // 文案：有下一关「继续闯关」→ 进下一关；无下一关「恭喜通关」→ 回主菜单（由 setData 的 _btnLabel 决定）
+  // 位置：相对背景面板底部 bottom 25px，水平居中
+  var s = SCREEN_WIDTH / 393;
+  var GREEN_W = 189 * s;
+  var GREEN_H = 62 * s;
+  var btnX = px + (pw - GREEN_W) / 2;            // 水平居中
+  var btnY = py + ph - 25 - GREEN_H;            // 底边距背景底 25px
+
+  var contAnim = _elAnim();
   ctx.save();
-  ctx.globalAlpha = myGoldAnim.alpha;
-  ctx.fillStyle = '#000000';
-  ctx.font = '13px ' + Theme.font.family;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('+' + displayGold + '币', dataX, py + 258 + 6);
+  ctx.globalAlpha = contAnim.alpha;
+
+  // 绿钮底图 + 文字（统一由 drawGreenButton 绘制，与失败面板「重新挑战」同款）
+  drawGreenButton(ctx, {
+    x: btnX, y: btnY, w: GREEN_W, h: GREEN_H,
+    label: this._btnLabel || '继续闯关', s: s,
+  });
   ctx.restore();
 
-  // === 按钮（位置固定，样式同设置面板）===
-  var CONT_BTN_W = 160;
-  var CONT_BTN_H = 48;
-  var CONT_BTN_X = px + pw - 78 - CONT_BTN_W;            // right: 78
-  var CONT_BTN_Y = py + ph - 29 - CONT_BTN_H;            // bottom: 29
-
-  var REPLAY_BTN_W = 45;
-  var REPLAY_BTN_H = 45;
-  var REPLAY_BTN_X = px + 66;                              // left: 66
-  var REPLAY_BTN_Y = py + ph - 31 - REPLAY_BTN_H;        // bottom: 31
-
-  var _renderContinueBtn = (anim) => {
-    ctx.save();
-    ctx.globalAlpha = anim.alpha;
-    var cx = CONT_BTN_X + CONT_BTN_W / 2;
-    var cy = CONT_BTN_Y + CONT_BTN_H / 2;
-    ctx.translate(cx, cy);
-    ctx.scale(anim.scale, anim.scale);
-    ctx.translate(-cx, -cy);
-    this._continueBtn.x = CONT_BTN_X;
-    this._continueBtn.y = CONT_BTN_Y;
-    this._continueBtn.render(ctx);
-    ctx.restore();
-  };
-
-  var _renderReplayBtn = function (anim) {
-    ctx.save();
-    ctx.globalAlpha = anim.alpha;
-    var cx = REPLAY_BTN_X + REPLAY_BTN_W / 2;
-    var cy = REPLAY_BTN_Y + REPLAY_BTN_H / 2;
-    ctx.translate(cx, cy);
-    ctx.scale(anim.scale, anim.scale);
-    ctx.translate(-cx, -cy);
-    var img = AssetPreloader.get('btn_again');
-    if (img && AssetPreloader.isReady('btn_again')) {
-      ctx.drawImage(img, REPLAY_BTN_X, REPLAY_BTN_Y, REPLAY_BTN_W, REPLAY_BTN_H);
-    }
-    ctx.restore();
-  };
-
-  // ── 统一绘制：无论试玩/正式、有无金币，结算面板按钮布局完全一致 ──
-  // 始终绘制「返回」(右) + 「重玩」(左)；双倍金币按钮仅由 showGold 控制（上方已处理）。
-  // 试玩与正式的差异只在点击时分流（onContinue / onReplay 回调按 returnState 判断），
-  // 绘制层不区分，保证视觉一致。
-
-  // 重玩按钮（左）
-  var restAnim = _elAnim();
-  this._restartBtn = { x: REPLAY_BTN_X, y: REPLAY_BTN_Y, w: REPLAY_BTN_W, h: REPLAY_BTN_H };
-  _renderReplayBtn(restAnim);
-
-  // 返回按钮（右）：试玩/正式统一文案「返回」，不区分模式
-  var contAnim = _elAnim();
-  this._nextBtn = { x: CONT_BTN_X, y: CONT_BTN_Y, w: CONT_BTN_W, h: CONT_BTN_H };
-  this._continueBtn.label = '返回';
-  _renderContinueBtn(contAnim);
-
-  // 旧 _exitBtn 已并入 _nextBtn，不再单独维护
+  // 命中区（仅绿钮）
+  this._nextBtn = { x: btnX, y: btnY, w: GREEN_W, h: GREEN_H };
+  this._restartBtn = null;
   this._exitBtn = null;
 
   ctx.restore();

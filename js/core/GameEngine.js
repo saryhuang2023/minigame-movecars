@@ -224,13 +224,29 @@ class GameEngine {
     console.log('[GameEngine] 屏幕尺寸: ' + SCREEN_WIDTH + 'x' + SCREEN_HEIGHT);
 
     // 安全区：避开状态栏 + 微信胶囊按钮
-    try {
-      var menuBtn = wx.getMenuButtonBoundingClientRect();
-      databus.safeTop = menuBtn.bottom + 8;
-      console.log('[GameEngine] 安全区顶部: ' + databus.safeTop);
-    } catch (e) {
-      databus.safeTop = 28;
-      console.log('[GameEngine] 安全区获取失败，使用默认值');
+    // 微信 Windows 模拟器已知 bug：getMenuButtonBoundingClientRect 抛 "global.windowMap is not iterable"
+    // （环境 bug，真机/预览/体验版无）→ Windows 下直接跳过，回退到状态栏高度。
+    var _isWin = (typeof navigator !== 'undefined' && /Win/i.test(navigator.platform));
+    if (!_isWin) {
+      try {
+        var menuBtn = wx.getMenuButtonBoundingClientRect();
+        if (menuBtn && typeof menuBtn.bottom === 'number') {
+          databus.safeTop = menuBtn.bottom + 8;
+          console.log('[GameEngine] 安全区顶部: ' + databus.safeTop);
+        } else {
+          throw new Error('invalid capsule');
+        }
+      } catch (e) {
+        var _win = (typeof wx !== 'undefined' && wx.getWindowInfo) ? wx.getWindowInfo()
+          : (wx.getSystemInfoSync ? wx.getSystemInfoSync() : {});
+        databus.safeTop = (_win.statusBarHeight || 20) + 8;
+        console.log('[GameEngine] 安全区获取失败，使用状态栏高度回退: ' + databus.safeTop);
+      }
+    } else {
+      var _win2 = (typeof wx !== 'undefined' && wx.getWindowInfo) ? wx.getWindowInfo()
+        : (wx.getSystemInfoSync ? wx.getSystemInfoSync() : {});
+      databus.safeTop = (_win2.statusBarHeight || 20) + 8;
+      console.log('[GameEngine] Windows 模拟器跳过胶囊 API，使用状态栏高度回退: ' + databus.safeTop);
     }
 
     // 章节配置按需懒加载，在各引擎激活时读取，避免阻塞首帧渲染

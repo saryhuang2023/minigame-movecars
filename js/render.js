@@ -8,8 +8,12 @@ const realCanvas = wx.createCanvas();
 const realCtx = realCanvas.getContext('2d');
 
 // 逻辑分辨率（所有游戏坐标基于此）
-const SCREEN_WIDTH = realCanvas.width;
-const SCREEN_HEIGHT = realCanvas.height;
+// 主 canvas 在部分真机/预览环境下初始 width/height 为 0（尺寸尚未就绪），
+// 此时用系统窗口尺寸兜底，避免 offCanvas 宽高为 0 导致 present() drawImage 崩溃。
+const W = sysInfo.windowWidth || sysInfo.screenWidth || 375;
+const H = sysInfo.windowHeight || sysInfo.screenHeight || 667;
+const SCREEN_WIDTH = realCanvas.width || W;
+const SCREEN_HEIGHT = realCanvas.height || H;
 
 // 真实 Canvas 升级为物理分辨率，消除高 DPI 模糊
 realCanvas.width = SCREEN_WIDTH * DPR;
