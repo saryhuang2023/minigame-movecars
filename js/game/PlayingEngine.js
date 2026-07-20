@@ -2,6 +2,7 @@
 
 const databus = require('../databus.js');
 const cloud = require('../cloud.js');
+const compress = require('../libs/compress.js');   // 场外求助：解压云端 BASE64(DEFLATE) 快照/录制
 const audio = require('../audio/AudioManager.js');
 const settingsPanel = require('../ui/SettingsPanel.js');
 const ButtonPress = require('../anim/ButtonPress.js');
@@ -107,6 +108,12 @@ class PlayingEngine {
     // 录制回放系统（试玩模式）
     this._isRecording = false;
     this._recordingStart = 0;
+    this._externalHelpBusy = false;   // 场外求助发起中防重入
+    this._helpLevelData = null;    // 场外求助：协助/回放待加载的关卡快照（activate 消费）
+    this._helpReplayRecording = null; // 场外求助：回放待播放的录制（activate 消费）
+    this._helpReplaySrc = null;    // 场外求助：回放原始录制（再看一次复用，不被 activate 清空）
+    this._replayDone = false;      // 场外求助：回放是否已播放完毕（决定「再看一次」显隐）
+    this._helpOverlayBtns = [];    // 场外求助覆盖层按钮命中区（每帧重建）
     this._recordEntries = [];      // [{ type, x, y, dt }]
     this._isPlayingBack = false;
     this._playbackDotPos = null;  // { x, y } 回放触控位置指示
@@ -270,7 +277,7 @@ class PlayingEngine {
       var bottomY20 = SCREEN_HEIGHT - 20 - BTN_H;
       this._uiAddStepBtn = new ItemButton({ x: (SCREEN_WIDTH - BTN_W) / 2, y: SCREEN_HEIGHT - 32 - BTN_H, iconKey: 'level_item_addstep', label: '步数+3', count: this._addStepRemaining, side: 'left' });
       this._uiHintBtn   = new ItemButton({ x: SCREEN_WIDTH - 38 - BTN_W, y: bottomY20, iconKey: 'level_item_hint', label: '提示', count: this._hintRemaining, side: 'right' });
-      this._uiHelpBtn   = new ItemButton({ x: 38, y: bottomY20, iconKey: 'level_item_help', label: '求助', count: this._helpRemaining, side: 'right' });
+      this._uiHelpBtn   = new ItemButton({ x: 38, y: bottomY20, iconKey: 'level_item_help', label: '求助', count: 0, side: 'right' });
 
       // Layer 4 — VictoryPopup
       this._uiVictoryPopup = new VictoryPopup({
@@ -384,7 +391,8 @@ class PlayingEngine {
       btnLabel: _vLabel,
       stars: this._victoryStar,
     });
-    this._uiVictoryPopup.visible = this._victory && this._showVictoryPanel;
+    // 场外求助协助/回放：不显示常规 VictoryPopup（改用 _renderHelpOverlay 的专属按钮）
+    this._uiVictoryPopup.visible = this._victory && this._showVictoryPanel && databus.playMode === 'normal';
 
     // FailPopup
     this._uiFailPopup.setData({
@@ -594,7 +602,12 @@ class PlayingEngine {
     console.log('[TrialRec] 录制结束，保存 ' + this._recordEntries.length + ' 条操作 → ' + key);
   }
 
-  _trialStartPlayback() {
+  /**
+   * 启动录制回放。
+   * @param {Array|string} [events] 外部注入的录制（场外求助回放）；缺省则读本地试玩录制（trial_record_<levelName>）。
+   * @param {Function} [onComplete] 回放结束回调（无参则弹「回放完成」Toast）。
+   */
+  _trialStartPlayback(events, onComplete) {
     if (this._isPlayingBack) return;
     if (!this._allPigsOnBoard()) {
       showToast('请先重置关卡', 1500);
@@ -602,25 +615,28 @@ class PlayingEngine {
     }
     // 回放前先停止录制，防止回放操作被录进去
     this._isRecording = false;
-    var key = 'trial_record_' + this.levelName;
-    var raw = wx.getStorageSync(key);
+    var raw = events;
+    if (!raw) {
+      var key = 'trial_record_' + this.levelName;
+      raw = wx.getStorageSync(key);
+    }
     if (!raw) return;
 
-    var events = JSON.parse(raw);
-    if (!events || events.length === 0) return;
+    var evts = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+    if (!evts || evts.length === 0) return;
 
     this._isPlayingBack = true;
-    console.log('[TrialRec] 开始回放 ' + events.length + ' 条触控');
+    console.log('[TrialRec] 开始回放 ' + evts.length + ' 条触控');
 
     // 计算回放延迟：事件间隔超过 500ms 则压缩
     var MAX_GAP = PlayDefine.PLAY.REPLAY.MAX_GAP;
     var delayed = 0;  // 累积延迟
     var lastDt = 0;
     var self = this;
-    for (var i = 0; i < events.length; i++) {
-      var gap = events[i].dt - lastDt;
+    for (var i = 0; i < evts.length; i++) {
+      var gap = evts[i].dt - lastDt;
       if (gap > MAX_GAP) gap = MAX_GAP;
-      lastDt = events[i].dt;
+      lastDt = evts[i].dt;
       delayed += gap;
       (function (evt, playDt) {
         setTimeout(function () {
@@ -639,14 +655,15 @@ class PlayingEngine {
           else if (evt.type === 'touchmove') self.onTouchMove(sx, sy);
           else if (evt.type === 'touchend') self.onTouchEnd(sx, sy);
         }, playDt);
-      })(events[i], delayed);
+      })(evts[i], delayed);
     }
 
-    // 回放结束清理 + Toast
+    // 回放结束清理 + 回调
     var doneTimer = setTimeout(function () {
       self._isPlayingBack = false;
       console.log('[TrialRec] 回放完成');
-      showToast('回放完成', 1500);
+      if (typeof onComplete === 'function') onComplete();
+      else showToast('回放完成', 1500);
     }, delayed + 1000);
     this._playbackTimer = doneTimer;
   }
@@ -669,12 +686,375 @@ class PlayingEngine {
     this._trialStartPlayback();
   }
 
+  // ===== 场外求助（Help-a-Friend）=====
+
+  /** 确保已获得用户昵称/头像（隐私合规：首次经 createUserInfoButton 手势授权） */
+  _ensureUserInfo() {
+    return new Promise(function (resolve) {
+      var cached = null;
+      try { cached = wx.getStorageSync('userinfo_cache') || {}; } catch (e) { cached = {}; }
+      if (cached.nickName && cached.avatarUrl) {
+        resolve({ nickName: cached.nickName, avatarUrl: cached.avatarUrl });
+        return;
+      }
+      // 需要授权：创建全屏透明 userInfo 按钮（手势触发），用户点一次即弹授权
+      try {
+        var btn = wx.createUserInfoButton({
+          type: 'text',
+          text: '',
+          style: {
+            left: 0, top: 0, width: SCREEN_WIDTH, height: SCREEN_HEIGHT,
+            backgroundColor: 'rgba(0,0,0,0.01)', color: '#ffffff', fontSize: 1, lineHeight: 1, textAlign: 'center'
+          }
+        });
+        btn.onTap(function (res) {
+          btn.destroy();
+          var info = (res && res.userInfo) || {};
+          var nickName = info.nickName || cached.nickName || '玩家';
+          var avatarUrl = info.avatarUrl || cached.avatarUrl || '';
+          try {
+            wx.setStorageSync('userinfo_cache', {
+              nickName: nickName, avatarUrl: avatarUrl, avatarPath: cached.avatarPath || ''
+            });
+          } catch (e2) {}
+          resolve({ nickName: nickName, avatarUrl: avatarUrl });
+        });
+      } catch (e) {
+        resolve({ nickName: cached.nickName || '玩家', avatarUrl: cached.avatarUrl || '' });
+      }
+    });
+  }
+
+  /** 构造自包含棋盘快照（好友端据其原地重建棋盘，坐标天然一致） */
+  _buildHelpSnapshot() {
+    return {
+      board: {
+        rows: this.gp.rows,
+        oddCols: this.gp.oddCols,
+        boardWidth: this.gp.boardWidth,
+        boardRate: this.gp.boardRate
+      },
+      pigs: this.gp.pigs.map(function (p) {
+        return {
+          id: p.id,
+          tail: p.tailIndex,
+          length: p.length,
+          angle: p.angle,
+          type: p.type || 'pig',
+          skinId: p.skinId || 0,
+          hintId: p.hintId != null ? p.hintId : null,
+          hintAngle: p.hintAngle != null ? p.hintAngle : p.angle,
+          collisionWidth: p.collisionWidth != null ? p.collisionWidth : null
+        };
+      }),
+      steps: this.steps,
+      bonusSteps: this._bonusSteps,
+      levelName: this.levelName
+    };
+  }
+
+  /** Flow A：玩家在关卡内发起场外求助 → 存云端 + 分享卡片 */
+  _startExternalHelp() {
+    var self = this;
+    if (this._externalHelpBusy) return;
+    this._externalHelpBusy = true;
+    showToast('正在准备求助...', 1200);
+
+    this._ensureUserInfo().then(function (user) {
+      var snap = self._buildHelpSnapshot();
+      var snapshotMeta = {
+        steps: self.steps,
+        totalPigs: self._totalPigsInLevel || 0,
+        escapedPigs: self._escapedCount || 0,
+        levelName: self.levelName
+      };
+      return cloud.createHelpRequest({
+        snapshot: JSON.stringify(snap),
+        snapshotMeta: snapshotMeta,
+        requester: { nickName: user.nickName, avatarUrl: user.avatarUrl },
+        levelName: self.levelName
+      }).then(function (res) {
+        if (!res || res.code !== 0 || !res.helpKey) {
+          showToast('发起求助失败，请重试', 2000);
+          return null;
+        }
+        // 次数递减（每关 2 次，与 +3步/提示 一致；剩余次数已进 checkpoint 续玩接回）
+        self._helpRemaining--;
+        if (self._uiHelpBtn) self._uiHelpBtn.setData(self._helpRemaining);
+        self._saveCheckpoint();
+        try {
+          wx.shareAppMessage({
+            title: '帮我过这关！',
+            query: 'hk=' + res.helpKey
+            // imageUrl: 固定运营图待资源补充后填入（assets/share/help_share.png）
+          });
+          showToast('已发送给好友，等待协助', 1800);
+        } catch (e) {
+          showToast('分享失败，请重试', 2000);
+        }
+        return res;
+      });
+    }).catch(function (e) {
+      console.warn('[Help] _startExternalHelp 失败:', e && e.message);
+      showToast('发起求助失败', 2000);
+    }).then(function () {
+      self._externalHelpBusy = false;
+    });
+  }
+
+  /** 由自包含快照组装 loadLevel 所需的关卡 data */
+  _buildHelpLevelData(snap) {
+    if (!snap) return null;
+    return {
+      name: snap.levelName,
+      board: snap.board,
+      pigs: snap.pigs,
+      version: 0,
+      stepBonusThreshold: 0,
+      starScores: null,
+      totalScore: 30
+    };
+  }
+
+  /** Flow B：好友点开分享卡片 → 拉取求助 → 重建棋盘 → 进入协助录制（按决策②直接进关） */
+  _enterAssistFromHelpKey(helpKey) {
+    var self = this;
+    if (!helpKey) { showToast('无效的求助链接', 1500); return; }
+    databus.playMode = 'assist';
+    databus._pendingHelpKey = helpKey;
+    showToast('正在加载求助关卡...', 1500);
+
+    cloud.getHelpRequest(helpKey).then(function (res) {
+      if (!res || res.code === 2) { showToast('求助不存在', 2000); return self._exit(); }
+      if (res.code === 4 || (res.data && res.data.status === 'expired')) { showToast('求助已过期', 2000); return self._exit(); }
+      var data = res.data;
+      if (!data || !data.snapshot) { showToast('求助数据异常', 2000); return self._exit(); }
+      var snap = compress.inflateJson(data.snapshot);
+      if (!snap) { showToast('关卡还原失败', 2000); return self._exit(); }
+      var levelData = self._buildHelpLevelData(snap);
+      if (!levelData) { showToast('关卡数据缺失', 2000); return self._exit(); }
+      self._helpLevelData = levelData;
+      databus.gameState = 'playing';   // → GameEngine 过渡触发 activate() 自动 _loadAndStart
+      return null;
+    }).catch(function (e) {
+      console.warn('[Help] _enterAssistFromHelpKey 失败:', e && e.message);
+      showToast('加载求助失败', 2000);
+      self._exit();
+    });
+  }
+
+  /** Flow C：查看某位协助者的回放（自动播放，不快进） */
+  _enterReplayFromHelpKey(helpKey, idx) {
+    var self = this;
+    if (!helpKey) { showToast('无效的求助链接', 1500); return; }
+    databus.playMode = 'replay';
+    databus._pendingHelpKey = helpKey;
+    showToast('正在加载回放...', 1500);
+
+    cloud.getHelpRequest(helpKey).then(function (res) {
+      if (!res || res.code === 2) { showToast('求助不存在', 2000); return self._exit(); }
+      if (res.code === 4 || (res.data && res.data.status === 'expired')) { showToast('求助已过期', 2000); return self._exit(); }
+      var data = res.data;
+      if (!data || !data.snapshot || !data.assists || !data.assists[idx] || !data.assists[idx].recording) {
+        showToast('回放数据异常', 2000); return self._exit();
+      }
+      var snap = compress.inflateJson(data.snapshot);
+      if (!snap) { showToast('关卡还原失败', 2000); return self._exit(); }
+      var rec = compress.inflateJson(data.assists[idx].recording);
+      if (!rec) { showToast('回放数据缺失', 2000); return self._exit(); }
+      var levelData = self._buildHelpLevelData(snap);
+      if (!levelData) { showToast('关卡数据缺失', 2000); return self._exit(); }
+      self._helpLevelData = levelData;
+      self._helpReplayRecording = rec;
+      databus.gameState = 'playing';   // → activate() 载入后自动 _trialStartPlayback
+      return null;
+    }).catch(function (e) {
+      console.warn('[Help] _enterReplayFromHelpKey 失败:', e && e.message);
+      showToast('加载回放失败', 2000);
+      self._exit();
+    });
+  }
+
+  /** Flow B 收尾：协助者通关后提交录制 + 结果，随后回菜单（防闪小手：置 _returningToMenu） */
+  _submitAssist() {
+    var self = this;
+    if (this._externalHelpBusy) return;
+    if (!databus._pendingHelpKey) { showToast('无有效求助', 1500); return; }
+    this._externalHelpBusy = true;
+
+    var result = {
+      escapedPigs: this._escapedCount || 0,
+      totalPigs: this._totalPigsInLevel || 0
+    };
+    var recording = JSON.stringify(this._recordEntries || []);
+
+    this._ensureUserInfo().then(function (user) {
+      return cloud.submitAssist({
+        helpKey: databus._pendingHelpKey,
+        recording: recording,
+        result: result,
+        assistant: { nickName: user.nickName, avatarUrl: user.avatarUrl }
+      }).then(function (res) {
+        if (!res || res.code === 3) { showToast('协助名额已满', 2000); return; }
+        if (res.code === 5) { showToast('您已协助过', 2000); return; }
+        if (res.code === 2) { showToast('求助不存在', 2000); return; }
+        if (res.code === 4) { showToast('求助已过期', 2000); return; }
+        if (res && res.code === 0) { showToast('已发送给好友！', 1800); }
+        else { showToast('提交失败，请重试', 2000); }
+      });
+    }).catch(function (e) {
+      console.warn('[Help] _submitAssist 失败:', e && e.message);
+      showToast('提交失败', 2000);
+    }).then(function () {
+      self._externalHelpBusy = false;
+      self._exit();
+    });
+  }
+
+  /** 场外求助退出：复位 playMode 并回主菜单（过场前屏蔽引导手） */
+  _exit() {
+    databus.playMode = 'normal';
+    databus._pendingHelpKey = '';
+    this._helpLevelData = null;
+    this._helpReplayRecording = null;
+    this._helpReplaySrc = null;
+    this._replayDone = false;
+    this._helpOverlayBtns = [];
+    databus.gameState = 'menu';
+    databus._returningToMenu = true;
+  }
+
+  /** 复位求助态字段（不动 gameState / 过场标志）。供任意路径回主菜单时清理残留 playMode，
+   *  避免 'assist'/'replay' 残留在下一局正常关卡中跳过提示上传与通关结算。 */
+  _resetHelpState() {
+    databus.playMode = 'normal';
+    databus._pendingHelpKey = '';
+    this._helpLevelData = null;
+    this._helpReplayRecording = null;
+    this._helpReplaySrc = null;
+    this._replayDone = false;
+    this._helpOverlayBtns = [];
+  }
+
+  /** 场外求助覆盖层：协助通关「发送给好友」/ 回放「再看一次」+「返回」 */
+  _renderHelpOverlay(ctx) {
+    this._helpOverlayBtns = [];
+    var cx = SCREEN_WIDTH / 2;
+
+    if (databus.playMode === 'assist') {
+      if (this._victory) {
+        var bw = 220, bh = 56, bx = cx - bw / 2, by = SCREEN_HEIGHT - 160;
+        this._drawHelpBtn(ctx, bx, by, bw, bh, '发送给好友', '#FF8A3D');
+        this._helpOverlayBtns.push({ id: 'submit', x: bx, y: by, w: bw, h: bh });
+        ctx.save();
+        ctx.fillStyle = '#5A4A6A';
+        ctx.font = '20px ' + Theme.font.family;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('你帮好友过了这关！', cx, by - 16);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.fillStyle = 'rgba(90,74,106,0.85)';
+        ctx.font = '16px ' + Theme.font.family;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('协助好友通关中…', cx, databus.safeTop + 64);
+        ctx.restore();
+      }
+    } else if (databus.playMode === 'replay') {
+      var bw2 = 150, bh2 = 52, gap = 24, totalW = bw2 * 2 + gap;
+      var startX = cx - totalW / 2, by2 = SCREEN_HEIGHT - 150;
+      this._drawHelpBtn(ctx, startX, by2, bw2, bh2, '返回', '#9AA0B4');
+      this._helpOverlayBtns.push({ id: 'back', x: startX, y: by2, w: bw2, h: bh2 });
+      if (this._replayDone) {
+        var rx = startX + bw2 + gap;
+        this._drawHelpBtn(ctx, rx, by2, bw2, bh2, '再看一次', '#FF8A3D');
+        this._helpOverlayBtns.push({ id: 'again', x: rx, y: by2, w: bw2, h: bh2 });
+      } else {
+        ctx.save();
+        ctx.fillStyle = 'rgba(90,74,106,0.85)';
+        ctx.font = '16px ' + Theme.font.family;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('回放中…', cx, databus.safeTop + 64);
+        ctx.restore();
+      }
+    }
+  }
+
+  /** 简易圆角按钮（覆盖层用） */
+  _drawHelpBtn(ctx, x, y, w, h, label, color) {
+    ctx.save();
+    var r = h / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '20px ' + Theme.font.family;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x + w / 2, y + h / 2 + 1);
+    ctx.restore();
+  }
+
+  /** 覆盖层按钮点击分发 */
+  _onHelpOverlayTap(id) {
+    if (id === 'submit') {
+      this._submitAssist();
+    } else if (id === 'back') {
+      this._exit();
+    } else if (id === 'again') {
+      if (this._helpReplaySrc) {
+        var rec = this._helpReplaySrc;
+        this._replayDone = false;
+        this._isRecording = false;
+        this._recordEntries = rec;
+        var self = this;
+        this._trialStartPlayback(rec, function () { self._replayDone = true; });
+      }
+    }
+  }
+
   activate() {
+    // 场外求助：协助 / 回放 直接进关（按决策②绕过菜单/关卡地图）。
+    // 快照数据已由 _enterAssistFromHelpKey / _enterReplayFromHelpKey 拉取并存入 _helpLevelData。
+    if ((databus.playMode === 'assist' || databus.playMode === 'replay') && this._helpLevelData) {
+      var self = this;
+      var helpData = this._helpLevelData;
+      this._helpLevelData = null;
+      this.levelName = helpData.name;
+      this._setupUI();
+      this.input.off('playing');
+      this.input.on('playing', function (e) { self.handleEvent(e); });
+      this._loadAndStart(helpData);   // 内部 _afterEnterLevel → _trialStartRecord 启动录制（assist 用）
+      // 回放：载入后立刻用 assists[idx] 录制覆盖并自动播放
+      if (databus.playMode === 'replay' && this._helpReplayRecording) {
+        var rec = this._helpReplayRecording;
+        this._helpReplayRecording = null;
+        this._helpReplaySrc = rec;          // 留存原始录制，供「再看一次」复用
+        this._isRecording = false;
+        this._recordEntries = rec;
+        var replaySelf = this;
+        this._trialStartPlayback(rec, function () {
+          replaySelf._replayDone = true;   // 回放结束：覆盖层据其绘制「再看一次」+「返回」
+          console.log('[Help] 回放播放完成 playMode=replay');
+        });
+      }
+      return;
+    }
+
     // 菜单→关卡路径：prepareLevel 已在出场期间完成加载（_levelReady=true），这里只绑定输入、跳过重复加载。
     // 其它直接进关路径（冷启动 / 编辑器试玩）：_levelReady 仍为 false → 走 startLevel 兜底。
-    var self = this;
+    var self2 = this;
     if (this._levelReady) {
-      this.input.on('playing', function (e) { self.handleEvent(e); });
+      this.input.on('playing', function (e) { self2.handleEvent(e); });
     } else {
       var name = databus.currentLevel ? databus.currentLevel.name : '';
       this.startLevel(name);
@@ -939,8 +1319,8 @@ class PlayingEngine {
 
       // 关卡内底栏道具按钮（ItemButton）— 入场动画完成前 / 失败 / 通关后 不响应
       var entranceActive = this._entranceState && this._entranceState.phase !== 'done';
-      if (!entranceActive && !this._failed && !this._victory) {
-        // 左按钮：+3 步（新 ItemButton）
+      if (!entranceActive && !this._failed && !this._victory && databus.playMode === 'normal') {
+        // 左按钮：+3 步（新 ItemButton）— 协助/回放场景不渲染、不命中（见 onTouchStart / render 同步门控）
         var addRect = this._uiAddStepBtn ? this._uiAddStepBtn.getHitRect() : null;
         if (addRect && _hitRect(t.x, t.y, addRect)) {
           if (this._addStepRemaining <= 0) return;
@@ -975,22 +1355,10 @@ class PlayingEngine {
           } else { showToast('提示已结束', 1500); }
           return;
         }
-        // 求助按钮
-        var helpRect = this._uiHelpBtn ? this._uiHelpBtn.getHitRect() : null;
-        if (helpRect && _hitRect(t.x, t.y, helpRect)) {
-          audio.play('button_click');
-          this._btnPress.press('help');
-          this._btnPress.breathe('help');
-          showToast('功能待上线', 1500);
-          if (this._helpRemaining > 0) {
-            this._helpRemaining--;
-            if (this._uiHelpBtn) this._uiHelpBtn.setData(this._helpRemaining);
-          }
-          return;
-        }
       }
 
       // === 游戏世界（拖拽猪等）===
+      // 注：求助按钮的命中处理已下沉到 onTouchStart 统一路径（见 _startExternalHelp）
       this.onTouchStart(t.x, t.y);
     } else if (e.type === 'touchmove') {
       if (settingsPanel.isOpen()) return;
@@ -1016,6 +1384,18 @@ class PlayingEngine {
   }
 
   onTouchStart(x, y) {
+    // 场外求助覆盖层按钮（协助/回放）优先级最高，拦截一切（含回放中）
+    if (databus.playMode !== 'normal' && this._helpOverlayBtns && this._helpOverlayBtns.length) {
+      for (var hbi = 0; hbi < this._helpOverlayBtns.length; hbi++) {
+        var hb = this._helpOverlayBtns[hbi];
+        if (x >= hb.x && x <= hb.x + hb.w && y >= hb.y && y <= hb.y + hb.h) {
+          audio.play('button_click');
+          this._onHelpOverlayTap(hb.id);
+          return;
+        }
+      }
+    }
+
     this._guide.onPlayerAction();  // 棋盘操作 → 重置空闲计时
     this._recordTouch('touchstart', x, y);
 
@@ -1060,7 +1440,7 @@ class PlayingEngine {
 
     // 提示按钮（ItemButton）— 旧版兼容触控路径
     var hintRect2 = this._uiHintBtn ? this._uiHintBtn.getHitRect() : null;
-    if (this._hasHintData && hintRect2 && !this._hint.getTarget() && x >= hintRect2.x && x <= hintRect2.x + hintRect2.w &&
+    if (databus.playMode === 'normal' && this._hasHintData && hintRect2 && !this._hint.getTarget() && x >= hintRect2.x && x <= hintRect2.x + hintRect2.w &&
         y >= hintRect2.y && y <= hintRect2.y + hintRect2.h) {
       audio.play('button_click');
       this._btnPress.press('hint');
@@ -1071,18 +1451,15 @@ class PlayingEngine {
       return;
     }
 
-    // 求助按钮（ItemButton）— 旧版兼容触控路径
+    // 求助按钮（ItemButton）— 场外求助入口
     var helpRect2 = this._uiHelpBtn ? this._uiHelpBtn.getHitRect() : null;
-    if (helpRect2 && x >= helpRect2.x && x <= helpRect2.x + helpRect2.w &&
+    if (databus.playMode === 'normal' && helpRect2 && x >= helpRect2.x && x <= helpRect2.x + helpRect2.w &&
         y >= helpRect2.y && y <= helpRect2.y + helpRect2.h) {
+      if (this._helpRemaining <= 0) { showToast('本关求助次数已用完', 1500); return; }
       audio.play('button_click');
       this._btnPress.press('help');
       this._btnPress.breathe('help');
-      showToast('功能待上线', 1500);
-      if (this._helpRemaining > 0) {
-        this._helpRemaining--;
-        if (this._uiHelpBtn) this._uiHelpBtn.setData(this._helpRemaining);
-      }
+      this._startExternalHelp();   // 场外求助：存云端 + 分享卡片
       return;
     }
 
@@ -1300,16 +1677,21 @@ class PlayingEngine {
         } else {
           console.log('[RecHint] 通关: 跳过录像保存 (isRecording=false)');
         }
-        // 统一逻辑：通关后保存提示数据（正式+试玩）
-        if (!this._hintMerged && this._gameplayHintCache.length > 0) {
+        // 统一逻辑：通关后保存提示数据（正式+试玩）。场外求助协助/回放不污染原关卡提示。
+        if (databus.playMode === 'normal' && !this._hintMerged && this._gameplayHintCache.length > 0) {
           this._hintMerged = true;
           console.log('[RecHint] 通关: 上传提示 (hintCache=' + this._gameplayHintCache.length + ')');
           this._mergeAndUploadHints();
         } else {
-          console.log('[RecHint] 通关: 跳过提示上传 (hintMerged=' + this._hintMerged + ' hintCache=' + this._gameplayHintCache.length + ')');
+          console.log('[RecHint] 通关: 跳过提示上传 (playMode=' + databus.playMode + ' hintMerged=' + this._hintMerged + ' hintCache=' + this._gameplayHintCache.length + ')');
         }
-        // 通关：正式+试玩统一走结算流程（试玩仅金币不落库、不推进关卡索引）
-        this._markCleared();
+        // 通关：正式+试玩统一走结算流程（试玩仅金币不落库、不推进关卡索引）。
+        // 场外求助协助/回放：跳过结算与进度落库，仅置胜利态供 UI 展示「发送给好友 / 再看一次」。
+        if (databus.playMode === 'normal') {
+          this._markCleared();
+        } else {
+          console.log('[Help] 协助/回放通关：跳过结算与提示上传（playMode=' + databus.playMode + '）');
+        }
         this._victory = true;
         this._victoryTime = Date.now();
         console.log('[LOG_victory] 通关！pigs剩余=0 accumGold=' + this._levelAccumulatedGold + ' totalPigs=' + this._totalPigsInLevel);
@@ -1542,6 +1924,8 @@ class PlayingEngine {
   _syncToCloud() {
     // 试玩模式：结算不落库（金币/进度不写云端）
     if (databus.returnState === 'editor') return;
+    // 场外求助协助/回放：绝不等同于玩家自己的进度，禁止写云端
+    if (databus.playMode && databus.playMode !== 'normal') return;
     try {
       var lastLevelIndex = wx.getStorageSync('lastLevelIndex');
       var info = wx.getStorageSync('userinfo_cache') || {};
@@ -1958,8 +2342,8 @@ class PlayingEngine {
       // 5.2 关卡内底栏：level_buttom 背景 + 双圆按钮（赛+3 / !提示）
       // 底栏图片始终绘制（失败时由失败面板覆盖）；交互按钮在失败/通关后隐藏
       drawBottomBar.drawLevelBottomBar(ctx);
-      if (!this._failed && !this._victory) {
-        // 底部道具按钮（新 ItemButton 组件）
+      if (!this._failed && !this._victory && databus.playMode === 'normal') {
+        // 底部道具按钮（新 ItemButton 组件）— 协助/回放场景隐藏常规底栏道具
         var plus5PS = this._btnPress.getScale('plus5');
         var hintPS = this._btnPress.getScale('bottomHint');
         // +3 步道具告警小跳：最后5步且道具仍有剩余次数时触发；纯实时判断，与失败/通关隐藏逻辑互斥
@@ -1996,7 +2380,7 @@ class PlayingEngine {
         { comp: {
             render: function(c) {
               drawBottomBar.drawLevelBottomBar(c);
-              if (!selfPE._failed && !selfPE._victory) {
+              if (!selfPE._failed && !selfPE._victory && databus.playMode === 'normal') {
                 var p5ps = selfPE._btnPress.getScale('plus5');
                 var hps = selfPE._btnPress.getScale('bottomHint');
                 if (selfPE._uiAddStepBtn) selfPE._uiAddStepBtn.render(c, p5ps);
@@ -2067,6 +2451,11 @@ class PlayingEngine {
     // 6. 通关弹窗（UIManager）
     if (this._victory && this._showVictoryPanel) {
       this._uiVictoryPopup.render(ctx);
+    }
+
+    // 6a. 场外求助：协助/回放专属覆盖层（协助通关的「发送给好友」/ 回放的「再看一次」+「返回」）
+    if (databus.playMode !== 'normal') {
+      this._renderHelpOverlay(ctx);
     }
 
     // 6b. 失败弹窗（步数用尽）
@@ -2253,6 +2642,8 @@ class PlayingEngine {
 
   /** 保存当前关卡状态到本地持久化存储（实时调用：状态一变化即写整份镜像） */
   _saveCheckpoint() {
+    // 场外求助协助/回放：绝不写玩家自己的断点存档
+    if (databus.playMode && databus.playMode !== 'normal') return;
     // 仅最新未通关关卡才写盘
     if (!this._isLatestUnexploredLevel()) return;
     if (!this.levelName) {
@@ -2300,6 +2691,8 @@ class PlayingEngine {
 
   /** 断点续传单函数：恢复 / 清理（不再依赖定时器） */
   _updateCheckpoint() {
+    // 场外求助协助/回放：不恢复、不写盘玩家自己的断点存档
+    if (databus.playMode && databus.playMode !== 'normal') return;
     var skipRestore = this._skipRestore;
     this._skipRestore = false;
 

@@ -11,6 +11,7 @@ const SkinSystem = require('../game/SkinSystem.js');
 const StaminaSystem = require('../game/StaminaSystem.js');
 const SkinLoader = require('../entity/SkinLoader.js');
 const ShopPanel = require('../ui/ShopPanel.js');
+const HelpListPanel = require('../ui/HelpListPanel.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
 const LevelMap = require('../ui/LevelMap.js');
@@ -129,9 +130,24 @@ class GameEngine {
       console.log('[GameEngine] onHide — 进入后台');
       audioMgr.onHide();
     });
-    wx.onShow(function () {
+    wx.onShow(function (options) {
       console.log('[GameEngine] onShow — 回到前台');
       audioMgr.onShow();
+      // 场外求助：热启动带 hk（分享卡片）→ 进入协助场景
+      var hk = (options && options.query && options.query.hk) || '';
+      if (hk) {
+        databus._pendingHelpKey = hk;
+        self._routePendingHelp();
+      }
+    });
+
+    // 分享注册（被动「...」菜单转发 + 主动 wx.shareAppMessage 复用）；hk 为场外求助卡片参数
+    wx.onShareAppMessage(function () {
+      var hk = databus._pendingHelpKey || '';
+      return {
+        title: hk ? '帮我过这关！' : '推猪消除',
+        query: hk ? ('hk=' + hk) : ''
+      };
     });
 
     console.log('[GameEngine] constructor 完成，启动加载画面...');
@@ -276,6 +292,29 @@ class GameEngine {
 
     console.log('[GameEngine] 设置 gameState=menu（启动即主菜单）');
     console.log('[GameEngine] start() 完成');
+
+    // 场外求助：冷启动带 hk（分享卡片）→ 直接进入协助场景（按决策②绕过菜单）
+    var _lo = (wx.getLaunchOptionsSync && wx.getLaunchOptionsSync()) || {};
+    var _hk = (_lo.query && _lo.query.hk) || '';
+    if (_hk) {
+      databus._pendingHelpKey = _hk;
+      this._routePendingHelp();
+    }
+  }
+
+  /** 场外求助：消费 _pendingHelpKey → 进入协助场景（冷启/热启共用） */
+  _routePendingHelp() {
+    var hk = databus._pendingHelpKey;
+    if (!hk) return;
+    if (databus.playMode && databus.playMode !== 'normal') return;  // 已在协助/回放中，不重复进入
+    if (databus.gameState === 'menu') {
+      databus._pendingHelpKey = '';
+      if (this.playing && this.playing._enterAssistFromHelpKey) this.playing._enterAssistFromHelpKey(hk);
+    } else {
+      // 非菜单态（如关卡进行中）：先回菜单（触发 deactivate + 菜单激活），菜单激活后再路由（见 checkStateTransition menu 分支）
+      databus._returningToMenu = true;
+      databus.gameState = 'menu';   // _pendingHelpKey 保留，待 menu 激活分支消费
+    }
   }
 
   _syncFromCloud() {
@@ -912,6 +951,11 @@ class GameEngine {
         if (t2) settingsPanel.handleTouch(t2.x, t2.y, e.type);
         return;
       }
+      if (HelpListPanel.isOpen()) {
+        var t3 = e.touches && e.touches[0];
+        HelpListPanel.handleEvent({ type: e.type, x: t3 ? t3.x : 0, y: t3 ? t3.y : 0 });
+        return;
+      }
 
       // 关卡地图模式（仅在所有面板均关闭时生效）：控件区域交给 clay 菜单（保留原功能），
       // 空白/路径区域交给地图滚动（拖拽 + 惯性）。
@@ -1389,14 +1433,14 @@ class GameEngine {
       drawBottomBar.drawRoundMenuButton(ctx, this._dressBtnRect.x, this._dressBtnRect.y, this._dressBtnRect.w, '衣', _sideShadow, 'main_avatar_icon');
       ctx.restore();
 
-      // 挑战赛（左）
+      // 求助（左）— 复用原挑战赛按钮位置作为场外求助入口
       ctx.save();
       ctx.globalAlpha = _cBt.alpha;
       ctx.translate(_cBt.dx, _cBt.dy);   // 出场时随底部整体下移（入场 dx/dy=0 无影响）
       ctx.translate(_cCx, _cCy);
       ctx.scale(_cBt.scale * challengePress, _cBt.scale * challengePress);
       ctx.translate(-_cCx, -_cCy);
-      drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '赛', _sideShadow, 'main_battle_icon');
+      drawBottomBar.drawRoundMenuButton(ctx, this._challengeBtnRect.x, this._challengeBtnRect.y, this._challengeBtnRect.w, '助', _sideShadow, 'level_item_help');
       ctx.restore();
     }
 
@@ -1405,6 +1449,9 @@ class GameEngine {
 
     // 商城面板（比设置面板更高一层）
     ShopPanel.render(ctx);
+
+    // 求助记录面板（由挑战赛按钮打开）
+    HelpListPanel.render(ctx);
 
     // 体力飞行动画
     this._renderStaminaFly(ctx);
@@ -1756,8 +1803,8 @@ class GameEngine {
   }
 
   _onClickChallengeBtn() {
-    // TODO: 挑战赛功能尚未实现，先用 toast 占位反馈
-    showToast('挑战赛即将上线', 1200);
+    // 原挑战赛按钮复用为「场外求助」入口：打开求助记录面板
+    HelpListPanel.open();
   }
 
   /** 处理广告领取体力 */
@@ -1855,11 +1902,20 @@ class GameEngine {
           this._menuVisible = true;   // 回到主菜单：可见，未来离场播出场动画
           databus._menuExiting = false;   // 清除出场标志：引导手允许重新出现
           databus._returningToMenu = false;   // 返回过场结束、菜单正式激活：屏蔽旗复位，引导手按 3s 延迟重新出现
+        // 场外求助：任意路径回到菜单（含设置面板"返回主页"）都复位求助态，
+        // 避免 playMode 残留 'assist'/'replay' 污染下一局正常关卡（跳过提示上传/通关结算）。
+        if (this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
         // 从其他界面返回主菜单：入场动画已移除，控件直接显示。
         // 引导手/侧影延迟基准重置为菜单显示时刻。
         if (prev) {
           this._menuEntranceDoneAt = Date.now();
           databus._menuEntranceDoneAt = Date.now();   // 镜像给 LevelMap：引导手延迟基准
+        }
+        // 场外求助：热启动带 hk 且当时正处于关卡中 → 先回菜单，菜单激活后再进入协助场景
+        if (databus._pendingHelpKey && databus.playMode === 'normal' && this.playing && this.playing._enterAssistFromHelpKey) {
+          var _hk2 = databus._pendingHelpKey;
+          databus._pendingHelpKey = '';
+          this.playing._enterAssistFromHelpKey(_hk2);
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;

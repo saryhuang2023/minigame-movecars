@@ -356,6 +356,41 @@ async function deletePlayerProfile() {
   return callFunction('deletePlayerProfile', {}, 'Game');
 }
 
+/**
+ * 场外求助：创建求助
+ * @param {object} params { snapshot(string 明文 JSON，服务端 zlib 压缩后存 BASE64(DEFLATE)), snapshotMeta{steps,totalPigs,escapedPigs,levelName}, requester{nickName,avatarUrl}, levelName }
+ * @returns {Promise<{code, helpKey}>}
+ */
+async function createHelpRequest(params) {
+  return callFunction('createHelpRequest', params, 'Help');
+}
+
+/**
+ * 场外求助：按 helpKey 拉取求助详情（含压缩快照）
+ * @param {string} helpKey
+ * @returns {Promise<{code, data?}>}
+ */
+async function getHelpRequest(helpKey) {
+  return callFunction('getHelpRequest', { helpKey }, 'Help');
+}
+
+/**
+ * 场外求助：好友提交协助录制
+ * @param {object} params { helpKey, recording(string 明文 JSON，服务端压缩后存 BASE64(DEFLATE(entries))), result{escapedPigs,totalPigs}, assistant{nickName,avatarUrl} }
+ * @returns {Promise<{code}>}
+ */
+async function submitAssist(params) {
+  return callFunction('submitAssist', params, 'Help');
+}
+
+/**
+ * 场外求助：列出当前用户发起的全部求助（已剔除 snapshot/recording 大字段）
+ * @returns {Promise<{code, list}>}
+ */
+async function listMyHelpRequests() {
+  return callFunction('listMyHelpRequests', {}, 'Help');
+}
+
 module.exports = {
   initCloud,
   callFunction,
@@ -372,5 +407,9 @@ module.exports = {
   getAssetManifest,
   invalidateAssetManifest,
   settleLevel,
-  deletePlayerProfile
+  deletePlayerProfile,
+  createHelpRequest,
+  getHelpRequest,
+  submitAssist,
+  listMyHelpRequests
 };

@@ -21,6 +21,10 @@ class DataBus {
 
     // 调试开关
     this.debugUnlocked = false;  // 编辑器后门解锁后才变为 true
+
+    // 场外求助：三子模式（normal / assist / replay）+ 待进入的求助 key
+    this.playMode = 'normal';
+    this._pendingHelpKey = '';
   }
 }
 

@@ -33,6 +33,7 @@ class ItemButton {
     this.iconKey = opts.iconKey || '';
     this.label = opts.label || '';
     this._count = (typeof opts.count === 'number') ? opts.count : 0;
+    this._showCount = (opts.showCount !== false);   // 默认显示次数角标；场外求助按钮传 false 隐藏
     this.side = opts.side || 'right';
     this._bgImg = null;    // 延迟加载，render 时取 AssetPreloader.get
     this._bobY = 0;        // 告警态小跳位移(px)，同步给 getHitRect 保证命中区与视觉一致
@@ -73,14 +74,16 @@ class ItemButton {
         this.x + ICON_X, by + ICON_Y, ICON_SIZE, ICON_SIZE);
     }
 
-    // 3. 剩余次数（右上角，白色 11px）
-    ctx.save();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '400 11px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(String(this._count), this.x + COUNT_X, by + COUNT_Y);
-    ctx.restore();
+    // 3. 剩余次数（右上角，白色 11px）；showCount=false 时隐藏（如场外求助无限次）
+    if (this._showCount) {
+      ctx.save();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '400 11px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(String(this._count), this.x + COUNT_X, by + COUNT_Y);
+      ctx.restore();
+    }
 
     // 4. 说明文字（居中偏底）
     var labelCX = this.x + FRAME_W / 2 + LABEL_OFFSET_X;
