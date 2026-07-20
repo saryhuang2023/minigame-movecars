@@ -14,9 +14,9 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 源字体路径（可通过命令行参数覆盖）
-DEFAULT_SOURCE = r"C:\Users\58275\Downloads\font\GenSenRounded2TW-H.otf"
+DEFAULT_SOURCE = r"C:\Users\58275\WeChatProjects\minigame-movecars\document\font\KeinannMaruPOP_all.ttf"
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "assets", "font")
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "GenSenRounded2TW-H-subset.otf")
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "KeinannMaruPOP-subset.ttf")
 CHARSET_FILE = os.path.join(SCRIPT_DIR, "_charset.txt")
 
 
@@ -71,16 +71,16 @@ def main():
     for record in tt['name'].names:
         if record.nameID == 1:   # Family
             old = record.toUnicode()
-            record.string = 'GenSenRounded2TW'
-            print(f"[改名] nameID=1: '{old}' -> 'GenSenRounded2TW'")
+            record.string = 'KeinannMaruPOP'
+            print(f"[改名] nameID=1: '{old}' -> 'KeinannMaruPOP'")
         elif record.nameID == 4:  # Full Name
             old = record.toUnicode()
-            record.string = 'GenSenRounded2TW-H'
-            print(f"[改名] nameID=4: '{old}' -> 'GenSenRounded2TW-H'")
+            record.string = 'KeinannMaruPOP'
+            print(f"[改名] nameID=4: '{old}' -> 'KeinannMaruPOP'")
         elif record.nameID == 16:  # Typographic Family
             old = record.toUnicode()
-            record.string = 'GenSenRounded2TW'
-            print(f"[改名] nameID=16: '{old}' -> 'GenSenRounded2TW'")
+            record.string = 'KeinannMaruPOP'
+            print(f"[改名] nameID=16: '{old}' -> 'KeinannMaruPOP'")
 
     print("[OK] 保存字体...")
     tt.save(OUTPUT_FILE)

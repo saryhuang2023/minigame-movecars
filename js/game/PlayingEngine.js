@@ -218,7 +218,7 @@ class PlayingEngine {
             settingsPanel.open({
               title: '设置',
               buttons: [
-                { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; } },
+                { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); if (databus.returnState === 'editor') { databus.gameState = 'editor'; } else { databus.gameState = 'menu'; databus._returningToMenu = true; } } },
                 { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
                 { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
               ]
@@ -508,6 +508,7 @@ class PlayingEngine {
       this._loading = false;
       showToast('关卡数据加载失败', 2000);
       databus.gameState = 'menu';
+      databus._returningToMenu = true;   // 返回过场建立前屏蔽主菜单背景与引导手
       return;
     }
     // 入场动画已去除：仅保留 _entranceState 占位（phase 直接置 'done'）。
@@ -742,6 +743,7 @@ class PlayingEngine {
 
   deactivate() {
     this.input.off('playing');
+    if (this._uiBranchProgress) this._uiBranchProgress.stopStarRotate();   // 离开关卡：停掉可能仍在循环的 4★ 旋转声
     this._guide.reset();         // 退出关卡时强制结束引导
     this._entranceState = null;  // 清空入场动画，防止下一帧闪现旧猪
     this._levelReady = false;    // 重置并行加载标志，避免误判「已加载」跳过 startLevel（如编辑器试玩→进关）

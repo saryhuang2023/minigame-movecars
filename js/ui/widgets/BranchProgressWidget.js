@@ -680,6 +680,19 @@ class BranchProgressWidget extends UIComponent {
   }
 
   /**
+   * 立即停止 4★ 源花旋转循环音（star_rotate）。
+   * 关键：旋转声的停止原本只发生在 update() 的「停止分支」；但回到主菜单后
+   * GameEngine.render() 提前 return、PlayingEngine.render()（含本组件 update()）不再被调用，
+   * 停止分支便永远不执行 → 循环音卡死、回到主界面仍在播。故在「离开游玩态」的统一出口显式停掉。
+   */
+  stopStarRotate() {
+    if (this._starRotateHandle) {
+      audio.stop(this._starRotateHandle);
+      this._starRotateHandle = 0;
+    }
+  }
+
+  /**
    * 树枝底层（绿色已走过揭示 + 调试曲线）：绘制于装饰树叶「之下」。
    * 绿色进度条属于树枝皮肤的一部分，本应被前景草丛(树叶)压住。
    */

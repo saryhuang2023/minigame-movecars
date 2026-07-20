@@ -262,6 +262,7 @@ class GameEngine {
 
     // 始终进入主菜单（已移除"第1关自动进关"特殊处理，不再做任何关卡判断）
     databus.gameState = 'menu';
+    databus._returningToMenu = false;   // 启动即主菜单，无返回过场窗口
     this._hasLeftMenu = false;
     this._menuVisible = true;   // 主菜单可见，离场时应播放出场动画
 
@@ -1109,6 +1110,10 @@ class GameEngine {
   // 关卡 → 主菜单：收缩过场（关卡冻结帧 → 主菜单背景层快照，对称镜像）
   _beginContractToMenu() {
     var self = this;
+    // 离开游玩态：立即停掉可能仍在循环的 4★ 旋转声（star_rotate）。
+    // 合同期间 GameEngine.render() 提前 return，PlayingEngine.render()（含 BranchProgressWidget.update()）不再调用，
+    // 旋转声的「停止分支」不会执行；若不在此显式停，会一直循环到合同结束后才被 deactivate 刹住。
+    if (this.playing && this.playing._uiBranchProgress) this.playing._uiBranchProgress.stopStarRotate();
     // 冻结当前关卡帧作为源（缩圈内显现层）
     var sourceLayer = this._captureFrame();
     // 目标：主菜单背景层快照（满屏底图）
@@ -1845,10 +1850,11 @@ class GameEngine {
 
     // 激活新状态（menu 的输入在 setupMenuInput 已注册）
     switch (curr) {
-      case 'menu':
-        audio.playMusic('menu');
-        this._menuVisible = true;   // 回到主菜单：可见，未来离场播出场动画
-        databus._menuExiting = false;   // 清除出场标志：引导手允许重新出现
+        case 'menu':
+          audio.playMusic('menu');
+          this._menuVisible = true;   // 回到主菜单：可见，未来离场播出场动画
+          databus._menuExiting = false;   // 清除出场标志：引导手允许重新出现
+          databus._returningToMenu = false;   // 返回过场结束、菜单正式激活：屏蔽旗复位，引导手按 3s 延迟重新出现
         // 从其他界面返回主菜单：入场动画已移除，控件直接显示。
         // 引导手/侧影延迟基准重置为菜单显示时刻。
         if (prev) {
@@ -1869,6 +1875,19 @@ class GameEngine {
     // 圆形过场进行中：仅绘制过场 + 顶层 Toast/调试（源/目标快照独立于主画布，不受 beginFrame 影响）
     if (this._circle && this._circle.active) {
       this._circle.render(ctx, Date.now());
+      if (this._toast) this._toast.render(ctx);
+      DebugPanel.render(databus, this);
+      present();
+      return;
+    }
+
+    // 返回主菜单过场建立前的空窗（gameState 已切 menu、_circle 尚未接管）：
+    // 继续渲染关卡冻结帧，屏蔽主菜单背景与引导手，避免「引导小手闪一下」。
+    // 过场结束、菜单正式激活时（checkStateTransition 的 menu 分支）会清掉 _returningToMenu。
+    if (databus._returningToMenu) {
+      if (this.playing && this.playing.render) {
+        try { this.playing.render(); } catch (e) { /* 返回前置窗口：关卡渲染异常则跳过，避免崩溃 */ }
+      }
       if (this._toast) this._toast.render(ctx);
       DebugPanel.render(databus, this);
       present();

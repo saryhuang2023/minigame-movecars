@@ -329,6 +329,7 @@ class BugReporter {
         success: function () {
           if (self._databusRef) {
             self._databusRef.gameState = 'menu';
+            self._databusRef._returningToMenu = true;   // 返回过场建立前屏蔽主菜单背景与引导手
           }
         }
       });
