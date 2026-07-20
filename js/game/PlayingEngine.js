@@ -183,6 +183,7 @@ class PlayingEngine {
     // 试玩模式：实时提示记录计数器
     this._trialHintNextId = 0;
     this._escapedCount = 0;        // 逃逸猪数（只增不减，判断录制/回放前置条件）
+    this._revealStart = 0;         // 进入关卡过场：目标 UI 微淡入起点（0=非过场，alpha=1）
     this._isRecording = false;
     this._recordingStart = 0;
     this._recordEntries = [];
@@ -396,6 +397,12 @@ class PlayingEngine {
   startLevel(name, opts) {
     opts = opts || {};
 
+    // 关卡→关卡（重玩 / 下一关）：冻结当前关卡帧，交由主引擎播圆形展开过场
+    var circleSnapshot = null;
+    if (databus._gameEngine && databus.gameState === 'playing' && !opts.fromMenu) {
+      try { circleSnapshot = databus._gameEngine._captureFrame(); } catch (e) { circleSnapshot = null; }
+    }
+
     // 0. 如果当前有关卡在运行，先反初始化
     if (this.levelName) {
       this.input.off('playing');
@@ -461,6 +468,11 @@ class PlayingEngine {
 
     // 4. 音效、输入（不依赖关卡数据）
     this.input.on('playing', function(e) { self.handleEvent(e); });
+
+    // 关卡→关卡过场：旧帧已冻结，启动圆形展开（新关卡底图为目标层）
+    if (circleSnapshot && databus._gameEngine) {
+      databus._gameEngine._beginLevelExpand(circleSnapshot);
+    }
   }
 
   /** 读取本地关卡文件，失败返回 null */
@@ -1774,6 +1786,13 @@ class PlayingEngine {
     ctx.restore();
   }
 
+  // 进入关卡过场：目标 UI 微淡入 alpha（0→1，150ms）；非过场时返回 1（无影响）
+  _getRevealAlpha() {
+    if (!this._revealStart) return 1;
+    var t = (Date.now() - this._revealStart) / 150;
+    return t >= 1 ? 1 : Math.max(0, t);
+  }
+
   // ========== 渲染（Ardot 设计稿驱动，fileId: 694583967818218）==========
   render() {
     // 引导系统帧更新（所有状态下的引擎均需轮询）
@@ -1854,6 +1873,11 @@ class PlayingEngine {
       ctx.restore();
       return;
     }
+
+    // 进入关卡过场：目标 UI（棋盘/猪/顶栏等）统一 150ms 微淡入；非过场时 alpha=1 无影响
+    var _revealAlpha = this._getRevealAlpha();
+    ctx.save();
+    ctx.globalAlpha = _revealAlpha;
 
     // 1. 棋盘主体 — 每帧重算偏移，确保与配置值同步
     this.gp.topBarH = safeTop + BD_TOP;
@@ -2125,6 +2149,8 @@ class PlayingEngine {
 
     // ===== 录制/提示状态指示器（左上角） =====
     this._renderStatusIndicators();
+
+    ctx.restore();   // 配对 render 顶部 reveal save（非过场时 alpha=1，无副作用）
   }
 
   /** 左上角录制/提示状态指示器（水平排列） */

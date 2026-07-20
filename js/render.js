@@ -47,4 +47,4 @@ function present() {
   realCtx.drawImage(offCanvas, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 }
 
-module.exports = { canvas: realCanvas, ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present };
+module.exports = { canvas: realCanvas, ctx, DPR, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present };

@@ -16,7 +16,8 @@ const AssetPreloader = require('../ui/AssetPreloader.js');
 const LevelMap = require('../ui/LevelMap.js');
 const Theme = require('../define/GameDefine.js').THEME;
 const Easing = require('./Easing.js');
-const { ctx, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
+const CircleTransition = require('./transition/CircleTransition.js');
+const { ctx, DPR, SCREEN_WIDTH, SCREEN_HEIGHT, beginFrame, present } = require('../render.js');
 const InputManager = require('./InputManager.js');
 const EditorEngine = require('../editor/EditorEngine.js');
 const PlayingEngine = require('../game/PlayingEngine.js');
@@ -29,10 +30,11 @@ const { getSafeLayout } = require('../utils/safeLayout.js');
 // 均直接以最终态（alpha=1, scale=1）显示、立即可点击。仅保留菜单背景↔关卡背景的
 // 出场交叉淡变（见下方 MENU_CROSSFADE_DURATION 与 _startMenuExit）。
 
-// 出场（控件移除）后：先等关卡加载就绪，再做菜单背景↔关卡背景交叉淡变。
-// 交叉淡变时长 = 菜单背景渐隐(1→0) + 关卡背景渐显(0→1) 的重叠区间。
-// 控件本身不再有出场动画（点开始即消失，不做下滑/渐隐），仅背景做融合过渡。
+// 出场（控件移除）后：先等关卡加载就绪，再播「圆形虹膜过场」展开到关卡底图。
+// 圆形过场（CircleTransition）统一三路：菜单→关卡 / 关卡→菜单 / 关卡→关卡，
+// 替代原交叉淡变。控件本身不再有出场动画（点开始即消失，不做下滑/渐隐）。
 var MENU_CROSSFADE_DURATION = 450;
+var CIRCLE_DURATION = 420;   // 圆形过场时长（ms）：慢→快张开 / 快→慢收缩
 
 
 class GameEngine {
@@ -262,6 +264,15 @@ class GameEngine {
     databus.gameState = 'menu';
     this._hasLeftMenu = false;
     this._menuVisible = true;   // 主菜单可见，离场时应播放出场动画
+
+    // 圆形过场状态
+    this._circle = null;            // 进行中的 CircleTransition
+    this._pendingContract = false;  // 关卡→菜单 收缩过场进行中（防重复拦截）
+    this._menuRevealStart = 0;      // 主菜单控件 150ms 微淡入起点
+
+    // 供 PlayingEngine 回调编排过场（无 GameEngine 反向引用时的桥）
+    databus._gameEngine = this;
+
     console.log('[GameEngine] 设置 gameState=menu（启动即主菜单）');
     console.log('[GameEngine] start() 完成');
   }
@@ -1032,6 +1043,118 @@ class GameEngine {
     this.checkStateTransition();      // 激活 playing/editor
   }
 
+  // ========== 圆形虹膜过场（CircleTransition）==========
+  // 三路统一：菜单→关卡 / 关卡→菜单 / 关卡→关卡
+
+  // 冻结当前主画布（离屏）为独立快照 canvas（1:1 物理像素）
+  _captureFrame() {
+    var off = ctx.canvas;   // 离屏画布（DPR 缩放）
+    var snap = wx.createCanvas();
+    snap.width = SCREEN_WIDTH * DPR;
+    snap.height = SCREEN_HEIGHT * DPR;
+    var c = snap.getContext('2d');
+    c.drawImage(off, 0, 0);   // 1:1 拷贝当前帧
+    return snap;
+  }
+
+  // 渲染主菜单背景层（平铺+路径+装饰+关卡按钮）到独立快照 canvas
+  _captureMenuBackground() {
+    var snap = wx.createCanvas();
+    snap.width = SCREEN_WIDTH * DPR;
+    snap.height = SCREEN_HEIGHT * DPR;
+    var c = snap.getContext('2d');
+    c.scale(DPR, DPR);   // 逻辑坐标与全局 ctx 一致
+    this._levelMap.renderBackground(c);
+    this._levelMap.renderPath(c);
+    this._levelMap.renderButtons(c);
+    return snap;
+  }
+
+  // 主菜单控件 150ms 微淡入 alpha（过场结束后显现）
+  _menuRevealAlpha() {
+    if (!this._menuRevealStart) return 1;
+    var t = (Date.now() - this._menuRevealStart) / 150;
+    return t >= 1 ? 1 : Math.max(0, t);
+  }
+
+  // 菜单 → 关卡：展开过场（菜单背景层快照 → 关卡底图）
+  _beginMenuExitCircle() {
+    var self = this;
+    if (this._menuExit) this._menuExit.phase = 'circle';
+    // 源：主菜单背景层快照（无控件，控件已点开始即消失）
+    var sourceLayer = this._captureMenuBackground();
+    // 目标：关卡底图（与 LoadingConfig 同路径，零二次解码）
+    var targetLayer = this.playing._sceneBgImg;
+    this._circle = new CircleTransition({
+      direction: 'expand',
+      source: sourceLayer,
+      target: targetLayer,
+      duration: CIRCLE_DURATION,
+      r0: 8,
+      onComplete: function () {
+        self._circle = null;
+        self._menuExit = null;
+        self._menuVisible = false;
+        self._hasLeftMenu = true;
+        databus._menuExiting = false;
+        databus.gameState = 'playing';   // 提交到关卡
+        self.playing.beginEntrance();
+        self.playing._revealStart = Date.now();   // 目标 UI 150ms 微淡入
+        self.checkStateTransition();      // prev='menu' → 激活 playing
+      }
+    });
+    this._circle.start(Date.now());
+  }
+
+  // 关卡 → 主菜单：收缩过场（关卡冻结帧 → 主菜单背景层快照，对称镜像）
+  _beginContractToMenu() {
+    var self = this;
+    // 冻结当前关卡帧作为源（缩圈内显现层）
+    var sourceLayer = this._captureFrame();
+    // 目标：主菜单背景层快照（满屏底图）
+    var targetLayer = this._captureMenuBackground();
+    this._pendingContract = true;
+    // gameState 已由 PlayingEngine 置 'menu'，render 由 _circle 接管、update 由顶栏屏蔽
+    this._circle = new CircleTransition({
+      direction: 'contract',
+      source: sourceLayer,   // 关卡帧（缩圈内）
+      target: targetLayer,   // 主菜单背景（满屏）
+      duration: CIRCLE_DURATION,
+      r0: 8,
+      onComplete: function () {
+        self._circle = null;
+        self._pendingContract = false;
+        self._menuRevealStart = Date.now();   // 先置起点，避免首帧全亮闪一下
+        // 真正提交到主菜单（_prevState 当前仍为 'playing' → 触发 menu 激活）
+        databus.gameState = 'menu';
+        self._menuVisible = true;
+        databus._menuExiting = false;
+        self.checkStateTransition();
+      }
+    });
+    this._circle.start(Date.now());
+  }
+
+  // 关卡 → 关卡（重玩 / 下一关）：展开过场，目标底图换为新关卡 level_bg.jpg
+  // sourceLayer 为 PlayingEngine 在 startLevel 开头冻结的旧关卡帧
+  _beginLevelExpand(sourceLayer) {
+    var self = this;
+    var targetLayer = this.playing._sceneBgImg;   // 与 LoadingConfig 同路径
+    this._circle = new CircleTransition({
+      direction: 'expand',
+      source: sourceLayer,
+      target: targetLayer,
+      duration: CIRCLE_DURATION,
+      r0: 8,
+      onComplete: function () {
+        self._circle = null;
+        // gameState 仍为 'playing'，无需切状态；仅触发新关卡目标 UI 微淡入
+        self.playing._revealStart = Date.now();
+      }
+    });
+    this._circle.start(Date.now());
+  }
+
   /**
    * 离开主菜单：菜单可见时播放出场动画；否则直接切换（如启动即自动进关，菜单从未显示）。
    * @param {string} target 目标状态 'playing' | 'editor'
@@ -1641,30 +1764,32 @@ class GameEngine {
   update() {
     databus.frame++;
 
-    // 菜单出场进行中：控件已无出场动画（点开始即消失），仅推进「等关卡加载 → 背景融合 → 提交」
+    // 圆形过场进行中：仅推进过场、屏蔽输入与场景更新
+    if (this._circle && this._circle.active) {
+      this._circle.update(Date.now());
+      return;
+    }
+
+    // 菜单出场进行中：控件已无出场动画（点开始即消失），仅推进「等关卡加载 → 圆形过场 → 提交」
     if (this._menuExit) {
       var m = this._menuExit;
       var now = Date.now();
       if (m.phase === 'wait') {
-        // 控件已移除（不再滑动/渐隐），仅菜单背景可见；等关卡就绪后做交叉淡变
         if (m.target === 'editor') {
-          this._commitMenuExit('editor');   // 编辑器无交叉淡变，直接切
+          this._commitMenuExit('editor');   // 编辑器无过场，直接切
         } else if (this.playing._levelLoadFailed) {
           // 加载失败 → 退回主菜单（toast 已在 prepareLevel 内弹出）
           this._menuExit = null;
           this._menuVisible = true;
           this._hasLeftMenu = false;
         } else if (this.playing._levelReady) {
-          m.phase = 'crossfade';
-          m.crossStart = now;
+          // 关卡就绪 → 起手圆形过场（菜单背景层快照 → 关卡底图展开）
+          this._beginMenuExitCircle();
+          return;
         }
         // 否则继续等（关卡还在加载）
-      } else if (m.phase === 'crossfade') {
-        // 菜单背景渐隐 + 关卡背景渐显；结束后切场景并启动关卡入场
-        if (now - m.crossStart >= m.crossDuration) {
-          this._commitMenuExit('playing');
-        }
       }
+      // crossfade 阶段已弃用（被圆形过场取代）
       return;
     }
 
@@ -1695,6 +1820,15 @@ class GameEngine {
   checkStateTransition() {
     const curr = databus.gameState;
     if (curr === this._prevState) return;
+
+    // 过场进行中：暂不切换场景（由过场 onComplete 统一提交）
+    if (this._circle && this._circle.active) return;
+
+    // 关卡 → 主菜单：改走圆形收缩过场（对称于 expand）
+    if (this._prevState === 'playing' && curr === 'menu' && !this._pendingContract) {
+      this._beginContractToMenu();
+      return;
+    }
 
     const prev = this._prevState;
     console.log('[LOG] checkStateTransition: ' + prev + ' → ' + curr + ' (当前 _cloudMaxLevel=' + databus._cloudMaxLevel + ')');
@@ -1731,27 +1865,26 @@ class GameEngine {
   render() {
     beginFrame();
 
-    if (this._menuExit && this._menuExit.phase === 'crossfade') {
-      // 交叉淡变：菜单背景渐隐(1→0) + 关卡场景背景渐显(0→1)；菜单控件已不绘制（点开始即消失）
-      var cp = Math.min(1, (Date.now() - this._menuExit.crossStart) / this._menuExit.crossDuration);
-      ctx.save();
-      ctx.globalAlpha = 1 - cp;
-      this.drawBackground();
-      ctx.restore();
-      this.playing.drawSceneBackground(cp);    // 关卡背景叠在最上层渐显
-    } else {
-      // 关卡地图模式：草原背景随路径一起滚动，再叠加路径 + 关卡按钮，最后画主界面控件
-      if (this._useLevelMap && this._levelMap) {
-        this._levelMap.renderBackground();
-        this._levelMap.renderPath();
-        this._levelMap.renderButtons();
-      } else {
-        this.drawBackground();
-      }
-      this._renderCurrentScene();
-      // 引导手独立层：在开始按钮(屏幕固定HUD)之后绘制，保证手在按钮之上不被遮挡。
-      if (this._useLevelMap && this._levelMap) this._levelMap.renderHand();
+    // 圆形过场进行中：仅绘制过场 + 顶层 Toast/调试（源/目标快照独立于主画布，不受 beginFrame 影响）
+    if (this._circle && this._circle.active) {
+      this._circle.render(ctx, Date.now());
+      if (this._toast) this._toast.render(ctx);
+      DebugPanel.render(databus, this);
+      present();
+      return;
     }
+
+    // 关卡地图模式：草原背景随路径一起滚动，再叠加路径 + 关卡按钮，最后画主界面控件
+    if (this._useLevelMap && this._levelMap) {
+      this._levelMap.renderBackground();
+      this._levelMap.renderPath();
+      this._levelMap.renderButtons();
+    } else {
+      this.drawBackground();
+    }
+    this._renderCurrentScene();
+    // 引导手独立层：在开始按钮(屏幕固定HUD)之后绘制，保证手在按钮之上不被遮挡。
+    if (this._useLevelMap && this._levelMap) this._levelMap.renderHand();
 
     // 全局 Toast 替代组件 — 叠在所有游戏场景之上
     if (this._toast) this._toast.render(ctx);
@@ -1765,7 +1898,17 @@ class GameEngine {
     switch (databus.gameState) {
       case 'menu':
         // 出场进行中（控件已无出场动画、点开始即消失）→ 跳过菜单控件绘制，仅保留背景
-        if (!this._menuExit) this.renderMenu();
+        if (!this._menuExit) {
+          var mr = this._menuRevealAlpha();
+          if (mr < 1) {
+            ctx.save();
+            ctx.globalAlpha = mr;
+            this.renderMenu();
+            ctx.restore();
+          } else {
+            this.renderMenu();
+          }
+        }
         break;
       case 'playing':
         this.playing.render();

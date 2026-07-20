@@ -455,24 +455,26 @@ class LevelMap {
   }
 
   // ===== 渲染分层 =====
-  renderPath() {
-    ctx.save();
-    ctx.globalAlpha = this._alpha;
-    ctx.save();
-    ctx.translate(0, -this.scrollY);
-    this._renderRoad();
-    ctx.restore();
-    ctx.restore();
+  renderPath(c) {
+    c = c || ctx;
+    c.save();
+    c.globalAlpha = this._alpha;
+    c.save();
+    c.translate(0, -this.scrollY);
+    this._renderRoad(c);
+    c.restore();
+    c.restore();
   }
 
-  renderButtons() {
-    ctx.save();
-    ctx.globalAlpha = this._alpha;
-    ctx.save();
-    ctx.translate(0, -this.scrollY);
-    this._renderButtons();
-    ctx.restore();
-    ctx.restore();
+  renderButtons(c) {
+    c = c || ctx;
+    c.save();
+    c.globalAlpha = this._alpha;
+    c.save();
+    c.translate(0, -this.scrollY);
+    this._renderButtons(c);
+    c.restore();
+    c.restore();
   }
 
   renderHand() {
@@ -485,27 +487,29 @@ class LevelMap {
   }
 
   // ===== 背景（按段分配不同 bg 图）=====
-  renderBackground() {
+  // c：可选目标上下文；缺省用全局 ctx（支持离屏快照渲染）
+  renderBackground(c) {
+    c = c || ctx;
     if (!this._bgReady) {
       // 兜底渐变
       var b = cfg.background || { fallbackTop: '#BFE8A0', fallbackBottom: '#8FD46F' };
-      var g = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
+      var g = c.createLinearGradient(0, 0, 0, SCREEN_HEIGHT);
       g.addColorStop(0, b.fallbackTop || '#BFE8A0');
       g.addColorStop(1, b.fallbackBottom || '#8FD46F');
-      ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT); ctx.restore();
+      c.save(); c.fillStyle = g; c.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT); c.restore();
       return;
     }
 
-    ctx.save();
-    ctx.translate(0, -this.scrollY);
+    c.save();
+    c.translate(0, -this.scrollY);
     var viewTop = this.scrollY;
     var viewBottom = this.scrollY + SCREEN_HEIGHT;
 
     // ① 兜底底色：先铺可见区为不透明色，确保任何亚像素缝隙都落在底色上而非透明黑。
     //   背景为绿系渐变，这里用偏下缘的绿，缝隙（仅 1~2px）视觉无碍。
     var fb = cfg.background || {};
-    ctx.fillStyle = fb.fallbackBottom || '#8FD46F';
-    ctx.fillRect(0, Math.floor(viewTop), SCREEN_WIDTH, Math.ceil(viewBottom) - Math.floor(viewTop));
+    c.fillStyle = fb.fallbackBottom || '#8FD46F';
+    c.fillRect(0, Math.floor(viewTop), SCREEN_WIDTH, Math.ceil(viewBottom) - Math.floor(viewTop));
 
     for (var si = 0; si < this._segments.length; si++) {
       var seg = this._segments[si];
@@ -522,15 +526,16 @@ class LevelMap {
       var top = Math.round(seg.segTop) - 1;     // 上探 1px：盖住上一段底边缝隙
       var bottom = Math.round(drawBottom) + 1;  // 下探 1px：盖住本段顶边缝隙
       var drawH = bottom - top;
-      ctx.drawImage(bgImg, 0, top, SCREEN_WIDTH, drawH);
+      c.drawImage(bgImg, 0, top, SCREEN_WIDTH, drawH);
     }
-    ctx.restore();
+    c.restore();
   }
 
   // ===== 路径（程序化无缝道路：白色半透明路身 + 绿色虚线中线）=====
   //   替代原图绘制（road PNG），保证跨段/跨图 100% 无缝连接。
   //   样式还原原图：白色半透路身(~50设计px宽) + 绿色虚线中线(#7ECB50 ~5.5设计px)。
-  _renderRoad() {
+  _renderRoad(c) {
+    c = c || ctx;
     var levels = this._levels;
     if (levels.length < 2) return;
 
@@ -544,25 +549,25 @@ class LevelMap {
     var smooth = this._chaikin(pts, cfg.roadSmoothIters || 2);
     var pathPts = this._catmullRomPath(smooth, smooth.length, stepPx);
 
-    ctx.save();
+    c.save();
 
     // 第一层：白色半透明路身（粗实线）
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.30)';
-    ctx.lineWidth = 50 * s;       // 路身宽度（design px → world）
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.setLineDash([]);
-    this._strokePath(pathPts);
+    c.strokeStyle = 'rgba(255, 255, 255, 0.30)';
+    c.lineWidth = 50 * s;       // 路身宽度（design px → world）
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.setLineDash([]);
+    this._strokePath(pathPts, c);
 
     // 第二层：绿色虚线中线
-    ctx.strokeStyle = '#7ECB50';
-    ctx.lineWidth = 5.5 * s;
+    c.strokeStyle = '#7ECB50';
+    c.lineWidth = 5.5 * s;
     // dash 数组：每根短线段长 / 线段间空白长（design px），由 cfg.roadDash 控制。
     //   默认 [6, 16] = 短线段 + 稀疏间隔（高速路面标线观感）。
-    ctx.setLineDash([cfg.roadDash[0] * s, cfg.roadDash[1] * s]);
-    this._strokePath(pathPts);
+    c.setLineDash([cfg.roadDash[0] * s, cfg.roadDash[1] * s]);
+    this._strokePath(pathPts, c);
 
-    ctx.restore();
+    c.restore();
   }
 
   // ===== Chaikin 角点切割：把折线「倒圆角」，消除高速公路式的锐角 =====
@@ -612,21 +617,23 @@ class LevelMap {
   }
 
   // 沿路径点序列描边（单次 beginPath+stroke）
-  _strokePath(pathPts) {
+  _strokePath(pathPts, c) {
+    c = c || ctx;
     if (!pathPts || pathPts.length < 2) return;
-    ctx.beginPath();
-    ctx.moveTo(pathPts[0].x, pathPts[0].y);
-    for (var i = 1; i < pathPts.length; i++) ctx.lineTo(pathPts[i].x, pathPts[i].y);
-    ctx.stroke();
+    c.beginPath();
+    c.moveTo(pathPts[0].x, pathPts[0].y);
+    for (var i = 1; i < pathPts.length; i++) c.lineTo(pathPts[i].x, pathPts[i].y);
+    c.stroke();
   }
 
   // ===== 按钮（不变）=====
-  _renderButtons() {
+  _renderButtons(c) {
+    c = c || ctx;
     var top = this.scrollY - 40;
     var bottom = this.scrollY + SCREEN_HEIGHT + 40;
     var prog = this._getProgress();
 
-    ctx.save();
+    c.save();
     for (var i = 0; i < this._levels.length; i++) {
       var lv = this._levels[i];
       if (lv.worldY < top || lv.worldY > bottom) continue;
@@ -636,31 +643,32 @@ class LevelMap {
       var stars = prog.starsMap[name] || 0;
 
       if (PREVIEW_CLEARED) {
-        this._drawLevelButton(lv, { state: 'cleared', stars: 1 + (lv.index % 4), levelId: id });
+        this._drawLevelButton(lv, { state: 'cleared', stars: 1 + (lv.index % 4), levelId: id }, c);
         continue;
       }
       if (lv.index <= prog.lastIdx) {
-        this._drawLevelButton(lv, { state: 'cleared', stars: stars, levelId: id });
+        this._drawLevelButton(lv, { state: 'cleared', stars: stars, levelId: id }, c);
       } else if (lv.index === prog.frontier) {
-        this._drawLevelButton(lv, { state: 'current', levelId: id });
+        this._drawLevelButton(lv, { state: 'current', levelId: id }, c);
       } else {
-        this._drawLevelButton(lv, { state: 'locked', levelId: id });
+        this._drawLevelButton(lv, { state: 'locked', levelId: id }, c);
       }
     }
-    ctx.restore();
+    c.restore();
   }
 
-  _drawLevelButton(lv, opts) {
+  _drawLevelButton(lv, opts, c) {
+    c = c || ctx;
     var s = SCREEN_WIDTH / cfg.designWidth;
     var pressS = this._btnPress ? this._btnPress.getScale('lv' + lv.index) : 1;
     var isSmall = (opts.state === 'current' || opts.state === 'locked');
-    ctx.save();
-    ctx.translate(lv.x, lv.worldY);
-    ctx.scale(s, s);
-    if (isSmall) ctx.translate(0, -3.5);
-    ctx.scale(pressS, pressS);
-    LevelButton.draw(ctx, 0, 0, opts);
-    ctx.restore();
+    c.save();
+    c.translate(lv.x, lv.worldY);
+    c.scale(s, s);
+    if (isSmall) c.translate(0, -3.5);
+    c.scale(pressS, pressS);
+    LevelButton.draw(c, 0, 0, opts);
+    c.restore();
   }
 
   // ===== 引导手（不变）=====
