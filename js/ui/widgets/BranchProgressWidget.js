@@ -21,14 +21,27 @@ var StarScores = require('../../utils/starScores.js');
 var audio = require('../../audio/AudioManager.js');   // 音效门面：playLooped/stop
 
 // 离屏画布（复用，避免每帧创建）：用于「沿路径揭示 image_719」的遮罩合成
+// 按 DPR 提升物理分辨率 + 绘制时 scale(DPR) 用逻辑坐标(279×44)，贴回主画布时指定目标尺寸 →
+// 与主画布 scale(DPR) 完全对齐(1:1 物理像素)，消除低分辨率离屏被放大导致的边缘毛刺
+var _DPR = (function () {
+  try {
+    var s = wx.getSystemInfoSync();
+    return Math.min(s.pixelRatio || 2, 2);   // 与 render.js 一致：上限 2
+  } catch (e) { return 1; }
+})();
+var _REVEAL_W_PX = Math.round(279 * _DPR);
+var _REVEAL_H_PX = Math.round(44 * _DPR);
 var _revealCanvas = null;
 var _revealCtx = null;
 function _getRevealCtx() {
   if (!_revealCtx) {
     _revealCanvas = wx.createCanvas();
-    _revealCanvas.width = 279;
-    _revealCanvas.height = 44;
+    _revealCanvas.width = _REVEAL_W_PX;
+    _revealCanvas.height = _REVEAL_H_PX;
     _revealCtx = _revealCanvas.getContext('2d');
+    _revealCtx.scale(_DPR, _DPR);            // 内部用逻辑坐标(279×44)绘制，自动对齐主画布 DPR
+    _revealCtx.imageSmoothingEnabled = true;
+    _revealCtx.imageSmoothingQuality = 'high';
   }
   return _revealCtx;
 }
@@ -806,7 +819,8 @@ class BranchProgressWidget extends UIComponent {
     if (img) octx.drawImage(img, 0, 0, 279, 44);
     octx.globalCompositeOperation = 'source-over';
     // 3) 贴回主画布（与 image_718 绘制位置/尺寸一致：10,78,279,44）
-    ctx.drawImage(_revealCanvas, ox, oy);
+    //    指定目标逻辑尺寸 279×44 → 主 ctx 已 scale(DPR)，映射到 279*DPR 物理 = 离屏物理 1:1，边缘清晰无毛刺
+    ctx.drawImage(_revealCanvas, ox, oy, 279, 44);
   }
 
   _renderWorm(ctx, ox, oy) {
