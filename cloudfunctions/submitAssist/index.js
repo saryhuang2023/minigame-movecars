@@ -32,8 +32,6 @@ exports.main = async (event, context) => {
     const assists = doc.assists || [];
 
     if (isExpired(doc) || doc.status === 'expired') return { code: 4, msg: 'expired' };
-    if (assists.length >= 3) return { code: 3, msg: 'full' };
-    if (assists.some(a => a.assistantOpenId === OPENID)) return { code: 5, msg: 'duplicate' };
 
     const assistEntry = {
       assistantOpenId: OPENID,
@@ -46,6 +44,22 @@ exports.main = async (event, context) => {
       result: result || {},                          // { escapedPigs, totalPigs }
     };
 
+    // 已协助过 → 覆盖旧记录：移除旧的、追加新的；名额不新增（保证「重新协助覆盖旧记录」真正生效）
+    const existingIdx = assists.findIndex(a => a.assistantOpenId === OPENID);
+    if (existingIdx >= 0) {
+      const newAssists = assists.filter((_, i) => i !== existingIdx);
+      const newIdx = newAssists.length;   // 重新追加后的下标
+      newAssists.push(assistEntry);
+      const updateData = { assists: newAssists, lastAssistedBy: OPENID };
+      if (newAssists.length >= 3) updateData.status = 'full';
+      await db.collection('help_requests').doc(doc._id).update({ data: updateData });
+      return { code: 0, overwritten: true, openId: OPENID, idx: newIdx };
+    }
+
+    // 新协助者：满员（且不含自己）作为安全网拒绝，否则正常追加
+    if (assists.length >= 3) return { code: 3, msg: 'full' };
+
+    const newIdx = assists.length;   // 追加后的下标
     const updateData = {
       assists: _.push(assistEntry),
       lastAssistedBy: OPENID,
@@ -54,7 +68,7 @@ exports.main = async (event, context) => {
 
     await db.collection('help_requests').doc(doc._id).update({ data: updateData });
 
-    return { code: 0 };
+    return { code: 0, overwritten: false, openId: OPENID, idx: newIdx };
   } catch (err) {
     return { code: -1, msg: err.message };
   }

@@ -133,10 +133,12 @@ class GameEngine {
     wx.onShow(function (options) {
       console.log('[GameEngine] onShow — 回到前台');
       audioMgr.onShow();
-      // 场外求助：热启动带 hk（分享卡片）→ 进入协助场景
+      // 场外求助：热启动带 hk（分享卡片）→ 进入协助/回放场景（aid 存在则直接进该协助者回放）
       var hk = (options && options.query && options.query.hk) || '';
+      var aid = (options && options.query && options.query.aid) || '';
       if (hk) {
         databus._pendingHelpKey = hk;
+        databus._pendingHelpAid = aid;
         self._routePendingHelp();
       }
     });
@@ -296,24 +298,34 @@ class GameEngine {
     // 场外求助：冷启动带 hk（分享卡片）→ 直接进入协助场景（按决策②绕过菜单）
     var _lo = (wx.getLaunchOptionsSync && wx.getLaunchOptionsSync()) || {};
     var _hk = (_lo.query && _lo.query.hk) || '';
+    var _aid = (_lo.query && _lo.query.aid) || '';
+    // [TEST] 临时硬编码 hk 跳过卡片分享冷启——测完删除此行（注意 hk 本身不含引号）
+    // if (!_hk) _hk = 'hk_280547d056e5409d715083bebd08b172';
     if (_hk) {
       databus._pendingHelpKey = _hk;
+      databus._pendingHelpAid = _aid;
       this._routePendingHelp();
     }
   }
 
-  /** 场外求助：消费 _pendingHelpKey → 进入协助场景（冷启/热启共用） */
+  /** 场外求助：消费 _pendingHelpKey(+_pendingHelpAid) → 进入协助/回放场景（冷启/热启共用） */
   _routePendingHelp() {
     var hk = databus._pendingHelpKey;
     if (!hk) return;
     if (databus.playMode && databus.playMode !== 'normal') return;  // 已在协助/回放中，不重复进入
+    var aid = databus._pendingHelpAid || '';
     if (databus.gameState === 'menu') {
       databus._pendingHelpKey = '';
-      if (this.playing && this.playing._enterAssistFromHelpKey) this.playing._enterAssistFromHelpKey(hk);
+      databus._pendingHelpAid = '';
+      if (aid && this.playing && this.playing._enterReplayFromHelpKeyByAid) {
+        this.playing._enterReplayFromHelpKeyByAid(hk, aid);   // 协助者回传卡片 → 直接进该协助者回放
+      } else if (this.playing && this.playing._enterAssistFromHelpKey) {
+        this.playing._enterAssistFromHelpKey(hk);             // 普通求助卡片 → 进协助录制
+      }
     } else {
       // 非菜单态（如关卡进行中）：先回菜单（触发 deactivate + 菜单激活），菜单激活后再路由（见 checkStateTransition menu 分支）
       databus._returningToMenu = true;
-      databus.gameState = 'menu';   // _pendingHelpKey 保留，待 menu 激活分支消费
+      databus.gameState = 'menu';   // _pendingHelpKey / _pendingHelpAid 保留，待 menu 激活分支消费
     }
   }
 
@@ -1903,19 +1915,29 @@ class GameEngine {
           databus._menuExiting = false;   // 清除出场标志：引导手允许重新出现
           databus._returningToMenu = false;   // 返回过场结束、菜单正式激活：屏蔽旗复位，引导手按 3s 延迟重新出现
         // 场外求助：任意路径回到菜单（含设置面板"返回主页"）都复位求助态，
-        // 避免 playMode 残留 'assist'/'replay' 污染下一局正常关卡（跳过提示上传/通关结算）。
-        if (this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
+        // 避免 playMode 残留 'assist'/'replay' 污染下一局正常关卡（跳过提示上传/通关结算），
+        // 并清掉 _pendingHelpKey。
+        // 关键：初始冷启 'undefined → menu' 不做复位（prev 为空）——否则会清掉 _pendingHelpKey
+        // （=helpKey），导致协助关通关后 _submitAssist 取不到 helpKey 提交失败。
+        // （playMode 不再参与加载控制流，故无需为其设守卫；此守卫仅为保住 _pendingHelpKey。）
+        if (prev && this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
         // 从其他界面返回主菜单：入场动画已移除，控件直接显示。
         // 引导手/侧影延迟基准重置为菜单显示时刻。
         if (prev) {
           this._menuEntranceDoneAt = Date.now();
           databus._menuEntranceDoneAt = Date.now();   // 镜像给 LevelMap：引导手延迟基准
         }
-        // 场外求助：热启动带 hk 且当时正处于关卡中 → 先回菜单，菜单激活后再进入协助场景
-        if (databus._pendingHelpKey && databus.playMode === 'normal' && this.playing && this.playing._enterAssistFromHelpKey) {
+        // 场外求助：热启动带 hk 且当时正处于关卡中 → 先回菜单，菜单激活后再进入协助/回放场景
+        if (databus._pendingHelpKey && databus.playMode === 'normal' && this.playing) {
           var _hk2 = databus._pendingHelpKey;
+          var _aid2 = databus._pendingHelpAid || '';
           databus._pendingHelpKey = '';
-          this.playing._enterAssistFromHelpKey(_hk2);
+          databus._pendingHelpAid = '';
+          if (_aid2 && this.playing._enterReplayFromHelpKeyByAid) {
+            this.playing._enterReplayFromHelpKeyByAid(_hk2, _aid2);   // 协助者回传卡片 → 直接进该协助者回放
+          } else if (this.playing._enterAssistFromHelpKey) {
+            this.playing._enterAssistFromHelpKey(_hk2);               // 普通求助卡片 → 进协助录制
+          }
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;

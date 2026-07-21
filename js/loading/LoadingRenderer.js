@@ -202,10 +202,15 @@ LoadingRenderer.prototype._drawText = function () {
   ctx.save();
   ctx.translate(0, offsetY);
   ctx.globalAlpha *= alpha;
-  ctx.fillStyle = '#8B6B82';
   ctx.font = 'bold 14px ' + (Theme.font.family || 'sans-serif');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
+  // 白色加描边（与游戏内「白字描边」风格一致）
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.strokeText('加载中... ' + pct + '%', BAR_MID_X, TEXT_Y);
   ctx.fillText('加载中... ' + pct + '%', BAR_MID_X, TEXT_Y);
   ctx.restore();
 };

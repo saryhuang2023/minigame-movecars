@@ -25,6 +25,7 @@ class DataBus {
     // 场外求助：三子模式（normal / assist / replay）+ 待进入的求助 key
     this.playMode = 'normal';
     this._pendingHelpKey = '';
+    this._pendingHelpAid = '';   // 协助者回传卡片带的 assistant openId（请求者据此直接进该协助者回放）
   }
 }
 

@@ -12,6 +12,7 @@ function isExpired(doc) {
 }
 
 exports.main = async (event, context) => {
+  const { OPENID } = cloud.getWXContext();
   const { helpKey } = event;
 
   if (!helpKey) {
@@ -31,7 +32,14 @@ exports.main = async (event, context) => {
       doc.status = 'expired';
     }
 
-    return { code: 0, data: doc };
+    // 当前用户是否已协助过 / 协助是否已满（用于客户端分流提示，不阻断读取）
+    const assists = doc.assists || [];
+    const alreadyAssisted = !!(OPENID && assists.some(a => a.assistantOpenId === OPENID));
+    const isFull = assists.length >= 3;
+
+    // 始终返回 code 0 + 标志位；「已满 / 已协助」的拦截提示交由各端按意图处理
+    // （协助进入用 isFull&&!alreadyAssisted、alreadyAssisted 判定；回放只读 recording，不被拦截）
+    return { code: 0, data: { ...doc, alreadyAssisted, isFull } };
   } catch (err) {
     return { code: -1, msg: err.message };
   }

@@ -6,20 +6,37 @@
 
 var pako = require('./pako_inflate.min.js');
 
+/**
+ * base64 → Uint8Array
+ * 小游戏运行时不一定提供 wx.base64ToArrayBuffer（实测部分基础库缺失），
+ * 故做多重兜底：wx.base64ToArrayBuffer → atob → 纯 JS 解码，确保任何环境下都能解压。
+ */
 function _base64ToUint8Array(b64) {
-  // 微信小游戏：base64 → ArrayBuffer → Uint8Array
-  var ab = wx.base64ToArrayBuffer(b64);
-  return new Uint8Array(ab);
-}
-
-function _bytesToUtf8String(bytes) {
-  // bytes: Uint8Array（zlib 解压结果），按块转 UTF-8 字符串避免 apply 栈溢出
-  var s = '';
-  var chunk = 8192;
-  for (var i = 0; i < bytes.length; i += chunk) {
-    s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  if (typeof wx !== 'undefined' && typeof wx.base64ToArrayBuffer === 'function') {
+    return new Uint8Array(wx.base64ToArrayBuffer(b64));
   }
-  return s;
+  if (typeof atob === 'function') {
+    var bin = atob(b64);
+    var arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+  // 纯 JS 兜底：去掉填充符与空白后用查表解码
+  var clean = String(b64).replace(/[^A-Za-z0-9+/]/g, '');
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  var lookup = {};
+  for (var c = 0; c < chars.length; c++) lookup[chars.charAt(c)] = c;
+  var len = clean.length, out = [];
+  for (var j = 0; j < len; j += 4) {
+    var a = lookup[clean.charAt(j)] || 0;
+    var b = lookup[clean.charAt(j + 1)] || 0;
+    var cc = lookup[clean.charAt(j + 2)] || 0;
+    var d = lookup[clean.charAt(j + 3)] || 0;
+    out.push((a << 2) | (b >> 4));
+    if (j + 2 < len) out.push(((b & 15) << 4) | (cc >> 2));
+    if (j + 3 < len) out.push(((cc & 3) << 6) | d);
+  }
+  return new Uint8Array(out);
 }
 
 /**
@@ -30,9 +47,9 @@ function _bytesToUtf8String(bytes) {
 function inflateJson(b64) {
   if (!b64) return null;
   var bytes = _base64ToUint8Array(b64);
-  var out = pako.inflate(bytes); // 默认 zlib 格式，与 zlib.deflateSync 对齐
-  var json = _bytesToUtf8String(out);
-  return JSON.parse(json);
+  // pako.inflate 的 to:'string' 会按 UTF-8 正确解码（含中文），避免单字节 fromCharCode 乱码
+  var out = pako.inflate(bytes, { to: 'string' });
+  return JSON.parse(out);
 }
 
 module.exports = { inflateJson };

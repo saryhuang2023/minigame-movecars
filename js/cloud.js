@@ -132,7 +132,12 @@ async function callFunction(name, data = void 0, tag = '') {
           console.error(`${prefix} res.result:`, JSON.stringify(result).substring(0, 500));
         } else if (result.code !== 0) {
           // 云函数逻辑失败（如版本冲突、权限、参数错误等）
-          console.error(`${prefix} ✗ ${name}  code=${result.code}  msg=${result.msg || '?'}  ${JSON.stringify(result).substring(0, 300)}`);
+          if (result.code === 2) {
+            // code=2 属正常业务响应（如 getHelpRequest 的「协助已删除」），降级为 warning
+            console.warn(`${prefix} ✗ ${name}  code=2（业务正常响应） msg=${result.msg || '?'}`);
+          } else {
+            console.error(`${prefix} ✗ ${name}  code=${result.code}  msg=${result.msg || '?'}  ${JSON.stringify(result).substring(0, 300)}`);
+          }
         }
       }
 
@@ -213,6 +218,10 @@ async function listLevels() {
  * @param {boolean} [publishedOnly] 仅拉取已发布关卡
  */
 async function downloadLevel(id, name, publishedOnly) {
+  if (!id && !name) {
+    console.warn('[Load][cloud] ⚠ downloadLevel 跳过：id 与 name 均为空（疑似场外求助二次 activate 掉坑）');
+    return null;
+  }
   const res = await callFunction('downloadLevel', { id, name, publishedOnly }, 'Load');
   if (!res || !res.data) {
     console.log('[Load][cloud] downloadLevel 返回: null (code=' + (res && res.code) + ' msg=' + (res && res.msg) + ')');
@@ -384,8 +393,10 @@ async function submitAssist(params) {
 }
 
 /**
- * 场外求助：列出当前用户发起的全部求助（已剔除 snapshot/recording 大字段）
- * @returns {Promise<{code, list}>}
+ * 场外求助：列出当前用户的协助记录（双视图，已剔除 snapshot/recording 大字段）
+ * @returns {Promise<{code, sent:[...], assisted:[...]}>}
+ *   sent     —— 我发出的，每条协助者一行（无协助者则一条 noAssist 占位）
+ *   assisted —— 我协助的，每条我参与的请求一行（按我的协助时间倒序）
  */
 async function listMyHelpRequests() {
   return callFunction('listMyHelpRequests', {}, 'Help');
