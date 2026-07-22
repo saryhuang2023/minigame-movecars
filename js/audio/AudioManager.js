@@ -163,10 +163,13 @@ function isSfxEnabled() {
 }
 
 /**
- * 切场景时调用（音效不中断，让它自然播完）
+ * 切场景时调用：停掉所有正在播放的 SFX（含循环音效），
+ * 避免上一场景遗留的循环声（如旋转/星星旋转）跨场景继续播放。
+ * 背景音乐由 playMusic(scene) 自行切换，不在此处理。
  */
 function onSceneChange() {
-  console.log('[Audio]  scene change — SFX kept alive');
+  console.log('[Audio]  scene change — stopping all SFX (incl. looped)');
+  sfx.releaseAll();
 }
 
 /**

@@ -403,9 +403,9 @@ async function listMyHelpRequests() {
 }
 
 /**
- * 场外求助：删除某条协助记录里的一个协助者条目。
+ * 场外求助：删除某条协助记录里的一个协助者条目（仅删该条，绝不删整条文档）。
  * 权限由服务端 removeAssist 云函数严格判定：
- *   - 发起人(requesterOpenId===OPENID) 可删任意协助者、删空可移除整条文档；
+ *   - 发起人(requesterOpenId===OPENID) 可删任意协助者，删空仅留空数组、不删除整条文档；
  *   - 协助者(assists[].assistantOpenId===OPENID 且非发起人) 只能删自己那条，
  *     即使删空也绝不 remove 整条文档（那是别人发起的，无权删别人的东西）。
  * @param {string} helpKey
@@ -414,6 +414,17 @@ async function listMyHelpRequests() {
  */
 async function removeAssist(helpKey, targetOpenId) {
   return callFunction('removeAssist', { helpKey, targetOpenId }, 'Help');
+}
+
+/**
+ * 场外求助：删除整条求助记录（含其下全部协助）。
+ * 权限由服务端 removeHelpRequest 云函数严格判定：仅发起人(requesterOpenId===OPENID) 可调用，
+ * 协助者调用会被服务端拒绝（无权删别人的东西）。
+ * @param {string} helpKey
+ * @returns {Promise<{code:number, msg?:string}>}
+ */
+async function removeHelpRequest(helpKey) {
+  return callFunction('removeHelpRequest', { helpKey }, 'Help');
 }
 
 module.exports = {
@@ -437,5 +448,6 @@ module.exports = {
   getHelpRequest,
   submitAssist,
   listMyHelpRequests,
-  removeAssist
+  removeAssist,
+  removeHelpRequest
 };

@@ -1,8 +1,10 @@
-// 云函数：删除协助记录中的某条协助信息
+// 云函数：删除协助记录中的「某一条协助者条目」
 // 权限矩阵（严格对齐产品纪律）：
-//   发起人（requesterOpenId === OPENID）：可删任意一条 assist；若删空则整条文档归发起人，可移除。
+//   发起人（requesterOpenId === OPENID）：可删任意一条 assist；
+//     无论是否删空，都只移除该条协助（assists 可能变为空数组），绝不 remove 整条文档。
 //   协助者（assists[].assistantOpenId === OPENID 且非发起人）：只能删「自己那条」，
 //     即使删空也绝不 remove 整条文档（那是别人发起的，无权删别人的东西）。
+// 注：删除「整条求助记录」由专门的 removeHelpRequest 云函数负责（仅发起人可调用）。
 const cloud = require('wx-server-sdk');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
@@ -39,19 +41,11 @@ exports.main = async (event, context) => {
     const assists = doc.assists || [];
 
     if (isRequester) {
-      // 发起人：可删任意协助者；无协助者或删空后整条文档归我，可移除。
-      if (assists.length === 0) {
-        await db.collection('help_requests').doc(doc._id).remove();
-        return { code: 0, removedDoc: true };
-      }
+      // 发起人：可删任意协助者；无论是否删空，都只移除该条协助，绝不删除整条文档
+      // （整条删除由 removeHelpRequest 云函数专门负责）
       const idx = assists.findIndex(a => a.assistantOpenId === targetOpenId);
       if (idx < 0) return { code: 3, msg: 'target not in assists' };
       const newAssists = assists.filter((_, i) => i !== idx);
-      if (newAssists.length === 0) {
-        // 删空：整条文档归发起人，移除。
-        await db.collection('help_requests').doc(doc._id).remove();
-        return { code: 0, removedDoc: true };
-      }
       await db.collection('help_requests').doc(doc._id).update({ data: { assists: newAssists } });
       return { code: 0, removedDoc: false };
     } else {
