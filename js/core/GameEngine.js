@@ -135,13 +135,16 @@ class GameEngine {
     wx.onShow(function (options) {
       console.log('[GameEngine] onShow — 回到前台');
       audioMgr.onShow();
-      // 场外求助：热启动带 hk（分享卡片）→ 进入协助/回放场景（aid 存在则直接进该协助者回放）
+      // 场外求助：分享卡片带 hk → 进入协助/回放场景（aid 存在则直接进该协助者回放）
+      // 时序纪律（防回归）：冷启动阶段（_engineReady=false）仅暂存 key，交给 start() 统一路由；
+      // 否则 onShow 与 start() 会各发起一次异步协助加载，任一次失败调 _exit() 会撕裂另一次正在进入的协助关
+      // → 表现「点卡片有时不自动进协助」。热启动（app 已在运行）才在此处立即路由。
       var hk = (options && options.query && options.query.hk) || '';
       var aid = (options && options.query && options.query.aid) || '';
       if (hk) {
         databus._pendingHelpKey = hk;
         databus._pendingHelpAid = aid;
-        self._routePendingHelp();
+        if (self._engineReady) self._routePendingHelp();
       }
     });
 
@@ -154,6 +157,7 @@ class GameEngine {
       };
     });
 
+    this._engineReady = false;   // 冷启动完成标志：约束 onShow 求助卡片路由时机，避免与 start() 双重触发异步协助加载
     console.log('[GameEngine] constructor 完成，启动加载画面...');
     this._startLoading();
   }
@@ -302,12 +306,14 @@ class GameEngine {
     var _hk = (_lo.query && _lo.query.hk) || '';
     var _aid = (_lo.query && _lo.query.aid) || '';
     // [TEST] 临时硬编码 hk 跳过卡片分享冷启——测完删除此行（注意 hk 本身不含引号）
-    // if (!_hk) _hk = 'hk_414dd45d61132c9f08ca1ff4fb685e7d';
+    if (!_hk) _hk = 'hk_414dd45d61132c9f08ca1ff4fb685e7d';
     if (_hk) {
       databus._pendingHelpKey = _hk;
       databus._pendingHelpAid = _aid;
       this._routePendingHelp();
     }
+
+    this._engineReady = true;   // 冷启动完成：此后 onShow 携带的卡片 query 走热启动立即路由分支
   }
 
   /** 场外求助：消费 _pendingHelpKey(+_pendingHelpAid) → 进入协助/回放场景（冷启/热启共用） */
@@ -905,6 +911,11 @@ class GameEngine {
     databus.currentLevel = { name: lv.name, data: null };
     databus.currentLevelIndex = levelIndex;
     databus.returnState = 'menu';
+    // 场外求助：普通关卡入口强制复位求助态，杜绝上一次异常协助/回放残留 playMode='assist'/'replay'
+    // 泄漏到本局正常关卡（表现：点普通关却以协助关加载）。协助关不经此入口，不受影响。
+    if (databus.playMode !== 'normal' || databus._pendingHelpKey) {
+      if (this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
+    }
     this._leaveMenu('playing');   // 菜单可见则播出场动画，否则直接进关
 
     // 同步 databus.projectLevels（PlayingEngine 下一关/重玩依赖）
@@ -925,6 +936,10 @@ class GameEngine {
     databus.currentLevel = { name: lv.name, data: null };
     databus.currentLevelIndex = levelIndex;
     databus.returnState = 'menu';
+    // 场外求助：普通关卡入口强制复位求助态（同 startLastLevel），杜绝残留 assist/replay 泄漏
+    if (databus.playMode !== 'normal' || databus._pendingHelpKey) {
+      if (this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
+    }
     this._leaveMenu('playing');              // 菜单可见则播出场动画，否则直接进关
     this._buildProjectLevels(total);         // 同步 databus.projectLevels（下一关/重玩依赖）
   }
