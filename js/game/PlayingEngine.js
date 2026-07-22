@@ -33,6 +33,8 @@ const GoldSystem = require('./GoldSystem.js');
 const SkinSystem = require('./SkinSystem.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
 const CommonButton = require('../ui/widgets/CommonButton.js');
+const ConfirmDialog = require('../ui/ConfirmDialog.js');   // 通用确认/提示窗（场外求助「已协助过」覆盖确认）
+const LoadingDialog = require('../ui/LoadingDialog.js');   // 通用加载中窗（等待服务器回包 / 拉起微信分享时屏蔽触摸）
 const Easing = require('../core/Easing.js');
 const AssetPreloader = require('../ui/AssetPreloader.js');
 const drawBottomBar = require('../ui/drawBottomBar.js');
@@ -77,6 +79,7 @@ class PlayingEngine {
     this._helpSendBtn = null;        // 协助结算面板中间「发给好友」蓝色按钮实例缓存（复位防串台）
     this._helpEndReason = null;      // 协助关结束原因：'cleared' | 'early' | 'failed'（驱动结算文案）
     this._helpSent = false;          // 协助结算：是否已点「发给好友」（点后中钮变「返回」、隐藏两侧图标）
+    this._helpSending = false;       // 协助结算：正在「发给好友」异步发送中（期间屏蔽一切触控，结束后直接回主菜单）
     this._helpEndPanelShowTime = 0;  // 协助结算面板入场动画起始时间戳（0=未显示）
     this._victoryAnimStart = 0;     // 结算面板入场动画起始时间
     this._victoryAnimator = PopupAnimator.createPopupAnimator();
@@ -155,6 +158,7 @@ class PlayingEngine {
     this._showHelpEndPanel = false;   // 协助结束面板（替代 VictoryPopup）
     this._helpEndReason = null;      // 协助关结束原因：'cleared' | 'early' | 'failed'（驱动结算文案）
     this._helpSent = false;
+    this._helpSending = false;
     this._helpEndPanelShowTime = 0;
     this._victoryAnimStart = 0;
     this._victoryAnimator.close();  // 立即关闭（无动画）
@@ -204,6 +208,7 @@ class PlayingEngine {
     // 试玩模式：实时提示记录计数器
     this._trialHintNextId = 0;
     this._escapedCount = 0;        // 逃逸猪数（只增不减，判断录制/回放前置条件）
+    this._assistBaseEscaped = 0;   // 协助关残局已逃出基数（判定「额外跑出」是否为 0）
     this._revealStart = 0;         // 进入关卡过场：目标 UI 微淡入起点（0=非过场，alpha=1）
     this._isRecording = false;
     this._recordingStart = 0;
@@ -214,9 +219,11 @@ class PlayingEngine {
     this._gameplayHintCache = [];
     this._hintMerged = false;
     this._helpEnded = false;   // 场外求助：协助关「提前结束 / 通关」统一结束态标志
+    this._helpSettlePending = false;  // 协助关结算兜底：等待最后一只逃逸猪动画播完才落定（对齐正式关）
     this._showHelpEndPanel = false;
     this._helpEndReason = null;      // 协助关结束原因：'cleared' | 'early' | 'failed'（驱动结算文案）
     this._helpSent = false;
+    this._helpSending = false;
     this._helpEndPanelShowTime = 0;
   }
 
@@ -576,6 +583,7 @@ class PlayingEngine {
     if (databus.playMode !== 'normal' && databus.currentLevel && databus.currentLevel.data) {
       var hd = databus.currentLevel.data;
       this._escapedCount = hd.escapedCount || 0;                         // 小虫(树枝)进度基准
+      this._assistBaseEscaped = hd.escapedCount || 0;                    // 协助关：残局已逃出基数（判定「额外跑出」是否为 0 用）
       this._totalPigsInLevel = hd.totalPigs || this.gp.pigs.length;       // 全关猪数（提交结果用；PigCounter 读 gp.pigs.length 不受影响）
       if (this._uiBranchProgress) {
         // 用 loadLevel 已算好的分母(this._totalScore)，保证小虫位置正确
@@ -586,9 +594,11 @@ class PlayingEngine {
         databus.currentStep = this.steps;
       }
       this._helpEnded = false;   // 重新进入（再来一次）时复位结束态
+      this._helpSettlePending = false;
       this._showHelpEndPanel = false;
       this._helpEndReason = null;
       this._helpSent = false;
+      this._helpSending = false;
       this._helpEndPanelShowTime = 0;
     }
 
@@ -932,37 +942,45 @@ class PlayingEngine {
     var attempt = _attempt || 1;
     var MAX = 3;
 
+    LoadingDialog.open({ text: '加载中...' });   // 同步等待服务器回包：显示加载窗并屏蔽触摸
     cloud.getHelpRequest(helpKey).then(function (res) {
-      if (!res) { console.warn('[Help] 空响应 hk=' + helpKey); return self._showHelpBlocked('该协助异常（无响应）'); }
+      if (!res) { console.warn('[Help] 空响应 hk=' + helpKey); LoadingDialog.close(); return self._showHelpBlocked('该协助异常（无响应）'); }
       var code = res.code;
 
       // 分支②：阻塞类（单钮「好的」→ 返回主菜单）
-      if (code === 2) { console.warn('[Help] 求助不存在 hk=' + helpKey); showToast('该协助已删除', 2000); return self._exit(); }
-      if (code === 4 || (res.data && res.data.status === 'expired')) { console.warn('[Help] 求助已过期 hk=' + helpKey); return self._showHelpBlocked('请求已过期'); }
+      if (code === 2) { console.warn('[Help] 求助不存在 hk=' + helpKey); LoadingDialog.close(); showToast('该协助已删除', 2000); return self._exit(); }
+      if (code === 4 || (res.data && res.data.status === 'expired')) { console.warn('[Help] 求助已过期 hk=' + helpKey); LoadingDialog.close(); return self._showHelpBlocked('请求已过期'); }
       // 满员（且不含自己）：getHelpRequest 透出 isFull + alreadyAssisted 标志，此处判定
-      if (res.data && res.data.isFull && !res.data.alreadyAssisted) { console.warn('[Help] 协助已满(非本人) hk=' + helpKey); return self._showHelpBlocked('协助者已超上限3人'); }
+      if (res.data && res.data.isFull && !res.data.alreadyAssisted) { console.warn('[Help] 协助已满(非本人) hk=' + helpKey); LoadingDialog.close(); return self._showHelpBlocked('协助者已超上限3人'); }
       // 分支③：其它异常（含 -1 云端异常 / 1 参数缺失）
-      if (code === -1 || code === 1) { console.warn('[Help] 协助异常 code=' + code + ' hk=' + helpKey); return self._showHelpBlocked('该协助异常（' + code + '）'); }
+      if (code === -1 || code === 1) { console.warn('[Help] 协助异常 code=' + code + ' hk=' + helpKey); LoadingDialog.close(); return self._showHelpBlocked('该协助异常（' + code + '）'); }
 
       var data = res.data;
-      if (!data || !data.snapshot) { console.warn('[Help] 求助数据异常（无 snapshot）hk=' + helpKey); return self._showHelpBlocked('该协助异常（数据缺失）'); }
+      if (!data || !data.snapshot) { console.warn('[Help] 求助数据异常（无 snapshot）hk=' + helpKey); LoadingDialog.close(); return self._showHelpBlocked('该协助异常（数据缺失）'); }
 
-      // 分支①：已协助过 → 确认/取消（确认则覆盖重进，取消则回菜单）
+      // 分支①：已协助过 → 通用确认窗（确认则覆盖重进，取消则回菜单）
       if (data.alreadyAssisted === true) {
-        wx.showModal({
-          title: '',
-          content: '这局您已经协助过了，重新协助将覆盖掉旧的协助记录。',
+        // 动态文案：{m}的第{n}关您已协助（m=好友名≤4字超出加…，n=关卡ID）
+        var _reqName = (data.requester && data.requester.nickName) ? data.requester.nickName : '好友';
+        var _dispName = _reqName.length > 4 ? _reqName.slice(0, 4) + '...' : _reqName;
+        var _lv = parseInt(data.levelName || '0', 10) || 0;
+        var _content = _dispName + '的第' + _lv + '关您已协助，是否覆盖？';
+        LoadingDialog.close();   // 先关加载窗，再弹确认窗（确认窗绘制在加载窗之上）
+        ConfirmDialog.open({
+          title: '协助提示',
+          content: _content,
           confirmText: '确认',
           cancelText: '取消',
-          success: function (r) {
-            if (r && r.confirm) { self._proceedAssistLoad(helpKey, data); }
-            else { self._exit(); }
-          }
+          confirmColor: 'blue',
+          maskClosable: false,
+          onConfirm: function () { self._proceedAssistLoad(helpKey, data); },
+          onCancel: function () { self._exit(); },
         });
         return null;
       }
 
       // 正常进入协助录制
+      LoadingDialog.close();
       self._proceedAssistLoad(helpKey, data);
       return null;
     }).catch(function (e) {
@@ -977,6 +995,7 @@ class PlayingEngine {
       console.error('[Help] _enterAssistFromHelpKey 最终失败 errCode=' + ec + ' msg=' + em, e);
       // errCode=-501007 / errMsg 含 "function not found" → getHelpRequest 云函数未部署
       // errMsg 含 "env status is isolated" → 云环境被隔离，需到 CloudBase 控制台恢复环境
+      LoadingDialog.close();
       showToast('加载求助失败', 2500);
       self._exit();
     });
@@ -1005,15 +1024,17 @@ class PlayingEngine {
     }
   }
 
-  /** 场外求助进入失败/阻塞：单钮「好的」弹窗，确认后回主菜单 */
+  /** 场外求助进入失败/阻塞：单钮「好的」弹窗（通用确认窗），确认后回主菜单 */
   _showHelpBlocked(msg) {
     var self = this;
-    wx.showModal({
+    ConfirmDialog.open({
       title: '',
       content: msg,
       showCancel: false,
       confirmText: '好的',
-      success: function () { self._exit(); }
+      confirmColor: 'blue',
+      maskClosable: false,
+      onConfirm: function () { self._exit(); },
     });
   }
 
@@ -1080,21 +1101,22 @@ class PlayingEngine {
       databus.playMode = 'replay';
       databus._pendingHelpKey = helpKey;
       databus._pendingHelpAid = aid || '';
-      showToast('正在加载回放...', 1500);
     }
     var attempt = _attempt || 1;
     var MAX = 3;
 
+    LoadingDialog.open({ text: '加载回放中...' });   // 同步等待服务器回包：显示加载窗并屏蔽触摸
     cloud.getHelpRequest(helpKey).then(function (res) {
-      if (!res || res.code === 2) { showToast('求助不存在', 2000); return self._exit(); }
-      if (res.code === 4 || (res.data && res.data.status === 'expired')) { showToast('求助已过期', 2000); return self._exit(); }
+      if (!res || res.code === 2) { LoadingDialog.close(); showToast('求助不存在', 2000); return self._exit(); }
+      if (res.code === 4 || (res.data && res.data.status === 'expired')) { LoadingDialog.close(); showToast('求助已过期', 2000); return self._exit(); }
       var data = res.data;
-      if (!data || !data.assists) { showToast('回放数据异常', 2000); return self._exit(); }
+      if (!data || !data.assists) { LoadingDialog.close(); showToast('回放数据异常', 2000); return self._exit(); }
       var idx = -1;
       for (var i = 0; i < data.assists.length; i++) {
         if (data.assists[i].assistantOpenId === aid) { idx = i; break; }
       }
-      if (idx < 0) { showToast('回放数据异常', 2000); return self._exit(); }
+      if (idx < 0) { LoadingDialog.close(); showToast('回放数据异常', 2000); return self._exit(); }
+      LoadingDialog.close();
       self._applyReplay(helpKey, data, idx);
       return null;
     }).catch(function (e) {
@@ -1106,6 +1128,7 @@ class PlayingEngine {
       var ec = e && e.errCode;
       var em = (e && (e.errMsg || e.message)) || '云调用异常';
       console.error('[Help] _enterReplayFromHelpKeyByAid 最终失败 errCode=' + ec + ' msg=' + em, e);
+      LoadingDialog.close();
       showToast('加载回放失败', 2500);
       self._exit();
     });
@@ -1114,9 +1137,10 @@ class PlayingEngine {
   /** 协助关「发送给好友」：弹「正在发送中」→ 上传录制到云端 → 发送卡片(hk+aid)给好友 → 「协助已送达」+返回 */
   _submitAssist() {
     var self = this;
-    if (this._helpSent) return;                          // 防重复点击（已 morph 为「返回」）
+    if (this._helpSending) return;                       // 已在发送中，忽略重复触发
     if (!databus._pendingHelpKey) { showToast('无有效求助', 1500); return; }
-    this._helpSent = true;                               // 立即 morph：中钮→「返回」，两侧图标隐藏
+    this._helpSending = true;                             // 锁定 UI：发送期间屏蔽一切触控
+    LoadingDialog.open({ text: '发送中...' });             // 通用加载窗：覆盖「云端提交 + 拉起微信分享」全程并屏蔽触摸
 
     var result = {
       escapedPigs: this._escapedCount || 0,
@@ -1131,11 +1155,11 @@ class PlayingEngine {
         result: result,
         assistant: { nickName: user.nickName, avatarUrl: user.avatarUrl }
       }).then(function (res) {
-        if (!res || res.code === 3) { showToast('协助名额已满', 2000); self._helpSent = false; return; }
-        if (res.code === 5) { showToast('您已协助过', 2000); self._helpSent = false; return; }
-        if (res.code === 2) { showToast('求助不存在', 2000); self._helpSent = false; return; }
-        if (res.code === 4) { showToast('求助已过期', 2000); self._helpSent = false; return; }
-        if (res.code !== 0) { showToast('提交失败，请重试', 2000); self._helpSent = false; return; }
+        if (!res || res.code === 3) { showToast('协助名额已满', 2000); return _finish(); }
+        if (res.code === 5) { showToast('您已协助过', 2000); return _finish(); }
+        if (res.code === 2) { showToast('求助不存在', 2000); return _finish(); }
+        if (res.code === 4) { showToast('求助已过期', 2000); return _finish(); }
+        if (res.code !== 0) { showToast('提交失败，请重试', 2000); return _finish(); }
         // 上传成功：发送微信卡片给好友（hk + 自己的 openId）；请求者打开即直接进该协助者回放
         var aid = res.openId || '';
         try {
@@ -1144,13 +1168,20 @@ class PlayingEngine {
             query: 'hk=' + databus._pendingHelpKey + (aid ? ('&aid=' + aid) : '')
           });
         } catch (e) { console.warn('[Help] 发送卡片失败', e); }
-        // 成功后保持 morph（_helpSent 已 true）：面板仅剩「返回」钮
+        _finish();   // 成功：流程结束，直接回主菜单
       });
     }).catch(function (e) {
       console.warn('[Help] _submitAssist 失败:', e && e.message);
       showToast('提交失败', 2000);
-      self._helpSent = false;     // 失败回滚，允许重试
+      _finish();     // 失败：流程结束，同样直接回主菜单
     });
+
+    // 无论成功或失败，发送流程结束后解锁并直接返回主界面（不再停留 morph 面板）
+    function _finish() {
+      LoadingDialog.close();   // 关闭加载窗（「云端提交 + 拉起微信分享」流程结束）
+      self._helpSending = false;
+      self._exit();
+    }
   }
 
   /** 场外求助退出：复位 playMode 并回主菜单（过场前屏蔽引导手） */
@@ -1163,6 +1194,7 @@ class PlayingEngine {
     this._replayCounting = false;
     this._replayCountdownEnd = 0;
     this._helpSent = false;
+    this._helpSending = false;
     this._helpEndPanelShowTime = 0;
     this._helpOverlayBtns = [];
     this._helpPress = {};
@@ -1185,17 +1217,19 @@ class PlayingEngine {
     this._replayCounting = false;
     this._replayCountdownEnd = 0;
     this._helpEnded = false;
+    this._helpSettlePending = false;
     this._showHelpEndPanel = false;
     this._helpSendBtn = null;        // 清空「发给好友」按钮缓存，下一局重新 new
     this._helpEndReason = null;
     this._helpSent = false;
+    this._helpSending = false;
     this._helpEndPanelShowTime = 0;
     this._helpOverlayBtns = [];
     this._helpPress = {};
   }
 
   /** 场外求助覆盖层：
-   *  协助关(assist)：进行中居中「就帮到这吧」；提前结束 / 通关 / 步数用完 后统一结束面板（文案按结束原因变化）+「发送给好友」+「再来一次」+（下排）「下次再说」(回主菜单)。
+   *  协助关(assist)：进行中居中「协助完成」；提前结束 / 通关 / 步数用完 后统一结束面板（文案按结束原因变化）+「发送给好友」+「再来一次」+（下排）「下次再说」(回主菜单)。
    *  回放(replay)：「返回」+「再看一次」（保持原逻辑）。 */
   _renderHelpOverlay(ctx) {
     this._helpOverlayBtns = [];
@@ -1244,16 +1278,15 @@ class PlayingEngine {
         ctx.font = '20px ' + Theme.font.family;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText('协助完成', _pcx, _py + 65);
+        ctx.fillText(this._helpEndReason === 'noescape' ? '协助失败' : '协助完成', _pcx, _py + 65);
         ctx.restore();
 
         // 4) 中部三态文案（深色，居中，过长自动换行）
         var _endTxt;
-        if (this._helpSent) {
-          _endTxt = '该帮的也帮了，该我玩了';   // 发送成功后统一文案（仅剩「去玩玩」钮）
-        } else if (this._helpEndReason === 'cleared') _endTxt = '恭喜你通关了，快发给好友吧';
+        if (this._helpEndReason === 'noescape') _endTxt = '您需要协助至少逃脱一只小猪';
+        else if (this._helpEndReason === 'cleared') _endTxt = '恭喜你通关了，快发给好友吧';
         else if (this._helpEndReason === 'failed') _endTxt = '哎呀，步数不够了，就只能帮到这了';
-        else _endTxt = '差不多了，帮一点也是帮';   // 'early' 提前结束
+        else _endTxt = '您的操作已记录，是否发送给好友？';   // 'early' 提前结束
         ctx.save();
         ctx.fillStyle = '#5A4A6A';
         ctx.font = '18px ' + Theme.font.family;
@@ -1271,38 +1304,51 @@ class PlayingEngine {
         for (var _li = 0; _li < _lines.length; _li++) ctx.fillText(_lines[_li], _pcx, _baseY + _li * 28);
         ctx.restore();
 
-        // 5) 底部三钮（与设置面板 BOTTOM_ICON_CONFIG 同布局：左 home / 中 blue标签钮 / 右 again）
-        var _fromBottomSide = Math.max(26, Math.floor(_ph * 0.112));
-        var _sideSz = 36;
-        var _sideCY = _py + _ph - _fromBottomSide - _sideSz / 2;   // 侧钮垂直中心
-        var _cw = 127, _ch = 48;
-        var _centerTop = _py + _ph - 36 - _ch;                     // 中钮垂直顶（与 btn_continue fromBottom:36 一致）
-        var _centerX = _pcx - _cw / 2;
+        // 5) 底部按钮
+        if (this._helpEndReason === 'noescape') {
+          // 失败态（一头猪都没额外跑出）：仅 2 个绿钮（左 退出协助 / 右 再来一次），无「发给好友」
+          var _bw = 125, _bh = 44, _bgap = 14;
+          var _bTotal = _bw * 2 + _bgap;
+          var _bX = _pcx - _bTotal / 2;
+          var _bY = _py + _ph - 36 - _bh;
+          this._drawHelpBtn(ctx, _bX, _bY, _bw, _bh, '退出协助', 'later');   // 'later' → _exit 回主菜单
+          this._helpOverlayBtns.push({ id: 'later', x: _bX, y: _bY, w: _bw, h: _bh });
+          this._drawHelpBtn(ctx, _bX + _bw + _bgap, _bY, _bw, _bh, '再来一次', 'again');  // 'again' → 重拉好友关
+          this._helpOverlayBtns.push({ id: 'again', x: _bX + _bw + _bgap, y: _bY, w: _bw, h: _bh });
+        } else {
+          // 正常态：底部三钮（与设置面板 BOTTOM_ICON_CONFIG 同布局：左 home / 中 blue标签钮 / 右 again）
+          var _fromBottomSide = Math.max(26, Math.floor(_ph * 0.112));
+          var _sideSz = 36;
+          var _sideCY = _py + _ph - _fromBottomSide - _sideSz / 2;   // 侧钮垂直中心
+          var _cw = 127, _ch = 48;
+          var _centerTop = _py + _ph - 36 - _ch;                     // 中钮垂直顶（与 btn_continue fromBottom:36 一致）
+          var _centerX = _pcx - _cw / 2;
 
-        if (!this._helpSent) {
-          // 左：下次再说（btn_home 图标 → 返回主菜单）
-          var _homeX = _px + 26, _homeY = _sideCY - _sideSz / 2;
-          this._drawHelpIcon(ctx, 'btn_home', 'later', _homeX, _homeY, _sideSz);
-          this._helpOverlayBtns.push({ id: 'later', x: _homeX, y: _homeY, w: _sideSz, h: _sideSz });
-          // 右：再来一次（btn_again 图标 → 重拉好友关）
-          var _againX = _px + _pw - 26 - _sideSz, _againY = _sideCY - _sideSz / 2;
-          this._drawHelpIcon(ctx, 'btn_again', 'again', _againX, _againY, _sideSz);
-          this._helpOverlayBtns.push({ id: 'again', x: _againX, y: _againY, w: _sideSz, h: _sideSz });
+          if (!this._helpSending) {
+            // 左：下次再说（btn_home 图标 → 返回主菜单）
+            var _homeX = _px + 26, _homeY = _sideCY - _sideSz / 2;
+            this._drawHelpIcon(ctx, 'btn_home', 'later', _homeX, _homeY, _sideSz);
+            this._helpOverlayBtns.push({ id: 'later', x: _homeX, y: _homeY, w: _sideSz, h: _sideSz });
+            // 右：再来一次（btn_again 图标 → 重拉好友关）
+            var _againX = _px + _pw - 26 - _sideSz, _againY = _sideCY - _sideSz / 2;
+            this._drawHelpIcon(ctx, 'btn_again', 'again', _againX, _againY, _sideSz);
+            this._helpOverlayBtns.push({ id: 'again', x: _againX, y: _againY, w: _sideSz, h: _sideSz });
+          }
+
+          // 中：发给好友 / 发送中（蓝色标签钮；点击后进入发送流程，期间屏蔽所有操作直接回主菜单）
+          if (!this._helpSendBtn) this._helpSendBtn = new CommonButton({ x: _centerX, y: _centerTop, w: _cw, h: _ch, color: 'blue' });
+          this._helpSendBtn.x = _centerX; this._helpSendBtn.y = _centerTop;
+          this._helpSendBtn.w = _cw; this._helpSendBtn.h = _ch;
+          this._helpSendBtn.label = this._helpSending ? '发送中…' : '发给好友';
+          this._helpSendBtn.render(ctx);
+          this._helpOverlayBtns.push({ id: 'submit', x: _centerX, y: _centerTop, w: _cw, h: _ch });
         }
-
-        // 中：发给好友 / 返回（蓝色标签钮；点「发给好友」后变「返回」，两侧隐藏）
-        if (!this._helpSendBtn) this._helpSendBtn = new CommonButton({ x: _centerX, y: _centerTop, w: _cw, h: _ch, color: 'blue' });
-        this._helpSendBtn.x = _centerX; this._helpSendBtn.y = _centerTop;
-        this._helpSendBtn.w = _cw; this._helpSendBtn.h = _ch;
-        this._helpSendBtn.label = this._helpSent ? '去玩玩' : '发给好友';
-        this._helpSendBtn.render(ctx);
-        this._helpOverlayBtns.push({ id: 'submit', x: _centerX, y: _centerTop, w: _cw, h: _ch });
 
         ctx.restore();   // 结束面板缩放变换
       } else {
-        // 进行中：居中「就帮到这吧」单钮（屏幕底部 bottom 30，水平居中）
+        // 进行中：居中「协助完成」单钮（屏幕底部 bottom 30，水平居中；点之进入统一结束面板）
         var ew = 180, eh = 56, ex = cx - ew / 2, ey = SCREEN_HEIGHT - 30 - eh;
-        this._drawHelpBtn(ctx, ex, ey, ew, eh, '就帮到这吧', 'end');
+        this._drawHelpBtn(ctx, ex, ey, ew, eh, '协助完成', 'end');
         this._helpOverlayBtns.push({ id: 'end', x: ex, y: ey, w: ew, h: eh });
         // 「协助好友通关中」白字带描边 + rec 图标 改由 _renderStatusIndicators(assist) 画在左上角
       }
@@ -1354,13 +1400,6 @@ class PlayingEngine {
         var startX2 = cx - bw2 / 2;
         this._drawHelpBtn(ctx, startX2, by2, bw2, bh2, '返回', 'back');
         this._helpOverlayBtns.push({ id: 'back', x: startX2, y: by2, w: bw2, h: bh2 });
-        // 回放中（「返回」按钮下方）
-        ctx.save();
-        ctx.fillStyle = 'rgba(90,74,106,0.85)';
-        ctx.font = '16px ' + Theme.font.family;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillText('回放中…', cx, by2 + bh2 + 12);
-        ctx.restore();
       }
     }
   }
@@ -1426,18 +1465,22 @@ class PlayingEngine {
       // 协助关「下次再说」：直接返回主菜单
       this._exit();
     } else if (id === 'end') {
-      // 协助关「就帮到这吧」：停录并保留录制，进入统一结束面板
-      this._helpEndReason = 'early';
-      this._helpEnded = true;
+      // 协助关「协助完成」：停录并保留录制，进入统一结束面板
+      // 若一头猪都没额外跑出 → 失败态（标题「协助失败」+ 2 钮：再来一次/退出协助）
+      this._helpEndReason = this._helpNoExtraEscaped() ? 'noescape' : 'early';
+      // 不直接 _helpEnded：等最后一只逃逸猪动画播完再落定（对齐正式关结算手感）
+      this._helpSettlePending = true;
       if (this._isRecording) this._trialStopRecord(true);
     } else if (id === 'again') {
       if (databus.playMode === 'assist') {
         // 再来一次：重新挑战好友关（重新拉同一 helpKey，复盘好友残局）
         // 复位结算态，避免旧 attempt 的 _helpEnded/_showHelpEndPanel/_victory 干扰新一局渲染
         this._helpEnded = false;
+        this._helpSettlePending = false;
         this._showHelpEndPanel = false;
         this._helpEndReason = null;
         this._helpSent = false;            // 重玩：清除「已发送」morph，恢复三钮
+        this._helpSending = false;         // 重玩：确保发送锁已释放
         this._helpEndPanelShowTime = 0;
         this._victory = false;
         this._loading = true;            // 重拉期间显示「加载关卡中...」
@@ -1627,6 +1670,8 @@ class PlayingEngine {
   handleEvent(e) {
     // 加载中：阻止所有用户操作（云端关卡拉取中）
     if (this._loading) return;
+    // 场外求助「发给好友」发送中：屏蔽一切触控，直至流程结束（无论成功/失败均回主菜单）
+    if (this._helpSending) return;
     // 入场动画期间：猪渐显完成前（board/pigs 阶段），阻止所有操作
     if (this._entranceState && this._entranceState.phase !== 'done' && this._entranceState.phase !== 'ui') {
       // 测试按钮例外：开发调试用，所有阶段均可操作
@@ -2164,8 +2209,11 @@ class PlayingEngine {
         if (databus.playMode === 'normal') {
           this._markCleared();
         } else if (databus.playMode === 'assist') {
-          // 协助关：仅播「步数转积分」动画，动画结束弹协助结束面板（不落库/不同步/不发金币）
-          this._markClearedHelp();
+          // 协助关：不立即弹面板。置"通关原因 + 待结算"，等最后一只逃逸猪动画播完
+          // （onExit 将其从 flyingPigs 移除）后，由 render 每帧 _trySettleHelp 落定并弹结算面板
+          // （对齐正式关手感：最后一头猪跑出屏幕才弹，而非刚点下去就弹）。
+          this._helpEndReason = 'cleared';
+          this._helpSettlePending = true;
         } else {
           console.log('[Help] 回放通关：跳过结算与提示上传（playMode=' + databus.playMode + '）');
         }
@@ -2203,13 +2251,34 @@ class PlayingEngine {
     }
   }
 
+  /** 协助关结算兜底：最后一只逃逸猪的动画播完（从 flyingPigs 移除）后，才落定结算面板（对齐正式关手感）。
+   *  仅当 _helpSettlePending 为真时生效：early/failed/noescape 三种结束触发后置位，cleared 也在
+   *  最后一猪刚被 tap（推入 flyingPigs）时置位、待其离屏后此处落定。 */
+  _trySettleHelp() {
+    if (!this._helpSettlePending) return;
+    if (this._hasEscapingPigs()) return;   // 还有猪在逃跑，继续等
+    this._helpSettlePending = false;
+    if (this._helpEndReason === 'cleared') {
+      this._markClearedHelp();   // 通关：清遗留定时器 + 置 _showHelpEndPanel（内容=恭喜通关）
+    } else {
+      this._helpEnded = true;    // early/failed/noescape：落定结束态，面板照旧渲染
+    }
+  }
+
+  /** 是否仍有猪正处于逃逸动画中（gp.flyingPigs 在离屏回调 onExit 时移除，故其长度即"在逃猪数"） */
+  _hasEscapingPigs() {
+    return !!(this.gp && this.gp.flyingPigs && this.gp.flyingPigs.length > 0);
+  }
+
   /** 触发失败：弹出失败面板，屏蔽棋盘与提示操作 */
   _triggerFail() {
     // 协助关：步数用完 = 本次协助到此为止。协助本身没有成功/失败，任何操作都能回放，
     // 故直接走「就帮到这吧」同款统一结算面板（记录已跑出的猪数 → 可发给好友），不弹普通失败窗。
     if (databus.playMode === 'assist') {
-      this._helpEndReason = 'failed';
-      this._helpEnded = true;
+      // 步数用完：若一头猪都没额外跑出 → 失败态（无「发给好友」，仅 再来一次/退出协助）
+      this._helpEndReason = this._helpNoExtraEscaped() ? 'noescape' : 'failed';
+      // 等最后一只逃逸猪动画播完再落定（步数用完也可能有猪正在逃跑）
+      this._helpSettlePending = true;
       if (this._isRecording) this._trialStopRecord(true);
       return;
     }
@@ -2317,6 +2386,12 @@ class PlayingEngine {
     // 直接置结算面板标志，由 _renderHelpOverlay 弹出统一结束面板（发给好友/再来一次/下次再说）
     this._helpEndReason = 'cleared';
     this._showHelpEndPanel = true;
+  }
+
+  /** 协助关：本次协助是否「一头猪都没额外跑出去」（额外 = 当前累计 − 残局基数） */
+  _helpNoExtraEscaped() {
+    var base = (typeof this._assistBaseEscaped === 'number') ? this._assistBaseEscaped : 0;
+    return (this._escapedCount - base) <= 0;
   }
 
   /** 花朵/积分历史最高记录落库（仅正式模式；试玩不落库，多次通关保留最高） */
@@ -2704,6 +2779,7 @@ class PlayingEngine {
     var dt = this._lastFrameTime ? (now - this._lastFrameTime) / 1000 : 0;
     this._lastFrameTime = now;
     if (dt > 0 && dt < 1) this._guide.onFrame(dt); // dt > 1s 视为异常（如切后台），跳过
+    this._trySettleHelp();   // 协助关：等最后一只逃逸猪动画播完再落定结算面板
 
     // 兜底：若 UI 层尚未初始化（_setupUI 可能因异常未执行），静默跳过
     if (!this._uiTopBar) return;
@@ -3082,7 +3158,7 @@ class PlayingEngine {
   _renderStatusIndicators() {
     // 设置面板打开时不显示（避免遮挡）
     if (settingsPanel.isOpen()) return;
-    // 协助/回放关：左上角仍显示「来自好友的求助/帮助」+ 好友头像昵称（与录制/提示分离，互不干扰）
+    // 协助/回放关：左上角显示「第X关」+ 头像/昵称/状态（回放中·请求协助），与左下角录制/提示分离
     if (databus.playMode === 'assist' || databus.playMode === 'replay') {
       this._renderAssistStatusIndicators();
     }
@@ -3144,34 +3220,49 @@ class PlayingEngine {
     ctx.restore();
   }
 
-  /** 协助/回放关左上角状态：「来自好友的求助/帮助」(行1) + 好友头像+昵称(行2，白字描边），顶到非展示区（状态栏）上边缘 */
+  /** 协助/回放关左上角状态：行1「第X关」+ 状态(回放中/请求协助)；行2 = 头像 + 昵称(≤4字) */
   _renderAssistStatusIndicators() {
     var safeT = databus.safeTop || 0;
     var x = 14;                  // 紧贴左上角（常规机型左侧无刘海，14px 安全避让）
     ctx.save();
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';   // 注：此处用 middle 仅作基线，不影响其它
-
-    // 第一行文字：协助关「来自好友的求助」/ 回放关「来自好友的帮助」（rec 已移至左下角，此处不再绘制）
-    var prefix = (databus.playMode === 'replay') ? '来自好友的帮助' : '来自好友的求助';
-    ctx.font = '15px ' + Theme.font.family;
+    ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
+
+    // 行1：第X关（顶到可用区左上角）
+    var lvlName = (databus.currentLevel && databus.currentLevel.name) ? databus.currentLevel.name : '';
+    var lvlNum = parseInt(lvlName, 10);
+    if (isNaN(lvlNum)) lvlNum = 1;
+    var levelText = '第' + lvlNum + '关';
+    ctx.font = 'bold 15px ' + Theme.font.family;
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0,0,0,0.6)';
     ctx.fillStyle = '#FFFFFF';
+    var line1Y = safeT + 12;
+    ctx.strokeText(levelText, x, line1Y);
+    ctx.fillText(levelText, x, line1Y);
 
-    // 整体顶到非展示区（状态栏）上边缘：第一行 middle 基线贴 safeT+9，15px 字顶部仅留 ~1px 呼吸
-    var line1Y = safeT + 9;
-    ctx.strokeText(prefix, x, line1Y);
-    ctx.fillText(prefix, x, line1Y);
+    // 状态紧跟「第X关」之后（回放中 / 请求协助）
+    var status = (databus.playMode === 'replay') ? '回放中' : '请求协助';
+    var statusColor = (databus.playMode === 'replay') ? '#7ED0FF' : '#FFD166';
+    var statusX = x + ctx.measureText(levelText).width + 8;
+    ctx.strokeText(status, statusX, line1Y);
+    ctx.fillStyle = statusColor;
+    ctx.fillText(status, statusX, line1Y);
 
-    // 第二行：头像（圆形裁剪）+ 昵称
-    var req = databus._helpRequester;
+    // 行2：头像 + 昵称
     var avatarSize = 26;
-    var line2Y = line1Y + 22;       // 第一行下方换行
+    var rowY = line1Y + 24;            // 行1 下方换行
     var avatarX = x;
-    var avatarY = line2Y - avatarSize / 2;
-    var nickname = (req && req.nickName) ? req.nickName : '好友';
+    var avatarY = rowY - avatarSize / 2;
+    var req = databus._helpRequester;
+
+    // 头像（圆形裁剪；未加载完 / 无头像画占位灰圆）
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
     if (req && req.avatarUrl) {
       if (!this._helpRequesterImg) {
         var img = wx.createImage();
@@ -3181,20 +3272,26 @@ class PlayingEngine {
       }
       var imgObj = this._helpRequesterImg;
       if (imgObj && imgObj.width) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
         ctx.drawImage(imgObj, avatarX, avatarY, avatarSize, avatarSize);
-        ctx.restore();
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
       }
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
     }
-    // 昵称绘制在头像右侧
-    var nameX = avatarX + avatarSize + 6;
+    ctx.restore();
+
+    // 昵称（最多 4 字，超出补 ...），绘制在头像右侧
+    var nickname = (req && req.nickName) ? req.nickName : '好友';
+    if (nickname.length > 4) nickname = nickname.slice(0, 4) + '...';
     ctx.font = '14px ' + Theme.font.family;
-    ctx.strokeText(nickname, nameX, line2Y);
-    ctx.fillText(nickname, nameX, line2Y);
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillStyle = '#FFFFFF';
+    var nameX = avatarX + avatarSize + 6;
+    ctx.strokeText(nickname, nameX, rowY);
+    ctx.fillText(nickname, nameX, rowY);
 
     ctx.restore();
   }

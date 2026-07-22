@@ -178,6 +178,9 @@ var LINE_H = 26;
 var CONTENT_BOTTOM_GAP = 24;
 var BTN_H = 44;
 var BTN_BOTTOM = 28;
+var TITLE_CONTENT_GAP = 16;   // 标题与内容之间的间距
+var TOP_INSET = 96;           // 文本块距面板顶的最小内边距（三宫格木纹顶部装饰区较高，需留足呼吸）
+var MIN_PANEL_H = 299;   // 面板最小高度（= 旧下限 249 + 50）
 
 function _layout(ph) {
   var cx = databus.screenWidth / 2;
@@ -189,13 +192,21 @@ function _layout(ph) {
   };
 
   var btnW = 110;
-  var gap = 20;
-  var totalW = btnW * 2 + gap;
-  var startX = _panel.x + (_panel.w - totalW) / 2;
   var by = _panel.y + _panel.h - BTN_BOTTOM - BTN_H;
 
-  _btnCancel = { x: startX, y: by, w: btnW, h: BTN_H, _key: 'cancel' };
-  _btnConfirm = { x: startX + btnW + gap, y: by, w: btnW, h: BTN_H, _key: 'confirm' };
+  if (_opts && _opts.showCancel) {
+    // 双钮：取消(左) + 确认(右)，作为一个整体水平居中
+    var gap = 20;
+    var totalW = btnW * 2 + gap;
+    var startX = _panel.x + (_panel.w - totalW) / 2;
+    _btnCancel = { x: startX, y: by, w: btnW, h: BTN_H, _key: 'cancel' };
+    _btnConfirm = { x: startX + btnW + gap, y: by, w: btnW, h: BTN_H, _key: 'confirm' };
+  } else {
+    // 单钮：确认钮水平居中（避免落在右侧槽位导致视觉不平衡）
+    var bx = _panel.x + (_panel.w - btnW) / 2;
+    _btnCancel = null;
+    _btnConfirm = { x: bx, y: by, w: btnW, h: BTN_H, _key: 'confirm' };
+  }
 }
 
 function open(opts) {
@@ -214,10 +225,10 @@ function open(opts) {
   _fired = false;
   _pressBtn = null;
 
-  // 先按默认高度布局；render 中按实际折行行数重算高度
+  // 先按最小高度布局；render 中按实际折行行数重算高度（不低于 MIN_PANEL_H）
   _contentLines = null;
   _contentKey = null;
-  _layout(249);
+  _layout(MIN_PANEL_H);
 
   _animator.open();
 }
@@ -265,9 +276,9 @@ function render(ctx) {
     ctx.font = '18px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
     _contentLines = _wrapText(ctx, _opts.content, p.w - 56);
     _contentKey = contentKey;
-    // 按行数重算面板高度并重排
+    // 按行数重算面板高度并重排（不低于最小高度 MIN_PANEL_H）
     var nLines = Math.max(1, _contentLines.length);
-    var ph = CONTENT_TOP + nLines * LINE_H + CONTENT_BOTTOM_GAP + BTN_H + BTN_BOTTOM;
+    var ph = Math.max(MIN_PANEL_H, CONTENT_TOP + nLines * LINE_H + CONTENT_BOTTOM_GAP + BTN_H + BTN_BOTTOM);
     _layout(ph);
     p = _panel;
     cx = p.x + p.w / 2;
@@ -289,22 +300,30 @@ function render(ctx) {
     _drawThreeSlice(ctx, bgImg, p.x, p.y, p.w, p.h);
   }
 
-  // 3. 标题（白字）
-  if (_opts.title) {
+  // 3. 标题（白字）— 固定位置，不随内容高度移动（保持原有视觉位置）
+  var hasTitle = !!_opts.title;
+  var nLines = _contentLines ? Math.max(1, _contentLines.length) : 1;
+  var buttonTop = p.y + p.h - BTN_BOTTOM - BTN_H;
+  var titleY = p.y + TITLE_TOP;   // TITLE_TOP=65，标题始终固定在此，不参与居中
+  if (hasTitle) {
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '20px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(_opts.title, cx, p.y + TITLE_TOP);
+    ctx.fillText(_opts.title, cx, titleY);
   }
 
-  // 4. 内容文案（深色自动换行，居中）
+  // 4. 内容文案：在「标题底部(+间距) ↔ 按钮顶部」区间内垂直居中。
+  //    不同行数的内容都对齐到该区间的中心点，保证视觉平衡（标题固定不动）。
   if (_contentLines && _contentLines.length) {
     ctx.fillStyle = '#5A4A6A';
     ctx.font = '18px ' + (Theme.font && Theme.font.family ? Theme.font.family : 'sans-serif');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    var cy = p.y + CONTENT_TOP;
+    // 区间顶部：有标题则从「标题底部 + 标题-内容间距」起；无标题则从面板顶内边距起
+    var regionTop = hasTitle ? (titleY + TITLE_H + TITLE_CONTENT_GAP) : (p.y + TOP_INSET);
+    var contentH = nLines * LINE_H;
+    var cy = regionTop + (buttonTop - regionTop - contentH) / 2;   // 区间内垂直居中
     for (var i = 0; i < _contentLines.length; i++) {
       ctx.fillText(_contentLines[i], cx, cy);
       cy += LINE_H;

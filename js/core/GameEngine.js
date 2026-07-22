@@ -13,6 +13,8 @@ const SkinLoader = require('../entity/SkinLoader.js');
 const ShopPanel = require('../ui/ShopPanel.js');
 const HelpListPanel = require('../ui/HelpListPanel.js');
 const StaminaAdPanel = require('../ui/StaminaAdPanel.js');
+const ConfirmDialog = require('../ui/ConfirmDialog.js');   // 通用确认/提示窗（canvas 绘制，需全局渲染+触控拦截）
+const LoadingDialog = require('../ui/LoadingDialog.js');   // 通用加载中窗（canvas 绘制，需全局渲染+触控拦截）
 const AssetPreloader = require('../ui/AssetPreloader.js');
 const LevelMap = require('../ui/LevelMap.js');
 const Theme = require('../define/GameDefine.js').THEME;
@@ -300,7 +302,7 @@ class GameEngine {
     var _hk = (_lo.query && _lo.query.hk) || '';
     var _aid = (_lo.query && _lo.query.aid) || '';
     // [TEST] 临时硬编码 hk 跳过卡片分享冷启——测完删除此行（注意 hk 本身不含引号）
-    // if (!_hk) _hk = 'hk_6ad5736da07c68b23691a45f72794147';
+    // if (!_hk) _hk = 'hk_414dd45d61132c9f08ca1ff4fb685e7d';
     if (_hk) {
       databus._pendingHelpKey = _hk;
       databus._pendingHelpAid = _aid;
@@ -323,9 +325,26 @@ class GameEngine {
         this.playing._enterAssistFromHelpKey(hk);             // 普通求助卡片 → 进协助录制
       }
     } else {
-      // 非菜单态（如关卡进行中）：先回菜单（触发 deactivate + 菜单激活），菜单激活后再路由（见 checkStateTransition menu 分支）
-      databus._returningToMenu = true;
-      databus.gameState = 'menu';   // _pendingHelpKey / _pendingHelpAid 保留，待 menu 激活分支消费
+      // 非菜单态（如关卡进行中）：立即消费卡片（清空 pending，避免被后续 menu 激活分支自动路由），
+      // 改为弹确认窗让用户选择是否退出当前关卡前往协助/回放。无论点确定/取消，卡片都已消费。
+      var _hk2 = hk, _aid2 = aid;
+      databus._pendingHelpKey = '';
+      databus._pendingHelpAid = '';
+      var _self = this;
+      ConfirmDialog.open({
+        title: '提示',
+        content: aid ? '您是否要退出当前关卡，查看协助的回放？' : '您是否要退出当前关卡，前往协助好友？',
+        confirmText: '确定',
+        cancelText: '取消',
+        onConfirm: function () {
+          // 确定：重新写入 pending 并走既有"退出关卡 → 进协助/回放"过场（playing→menu 收缩 + menu 激活分支消费）
+          databus._pendingHelpKey = _hk2;
+          databus._pendingHelpAid = _aid2;
+          databus._returningToMenu = true;
+          databus.gameState = 'menu';
+        },
+        onCancel: function () { /* 取消：留在当前关卡继续游玩，卡片已消费 */ },
+      });
     }
   }
 
@@ -1920,14 +1939,9 @@ class GameEngine {
         // 关键：初始冷启 'undefined → menu' 不做复位（prev 为空）——否则会清掉 _pendingHelpKey
         // （=helpKey），导致协助关通关后 _submitAssist 取不到 helpKey 提交失败。
         // （playMode 不再参与加载控制流，故无需为其设守卫；此守卫仅为保住 _pendingHelpKey。）
-        if (prev && this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
-        // 从其他界面返回主菜单：入场动画已移除，控件直接显示。
-        // 引导手/侧影延迟基准重置为菜单显示时刻。
-        if (prev) {
-          this._menuEntranceDoneAt = Date.now();
-          databus._menuEntranceDoneAt = Date.now();   // 镜像给 LevelMap：引导手延迟基准
-        }
         // 场外求助：热启动带 hk 且当时正处于关卡中 → 先回菜单，菜单激活后再进入协助/回放场景
+        // ⚠️ 必须在 _resetHelpState 之前消费：_resetHelpState 会清空 _pendingHelpKey，
+        // 若在其之后判断则 key 已被清、协助/回放无法进入（关内卡片场景会因此失效）。
         if (databus._pendingHelpKey && databus.playMode === 'normal' && this.playing) {
           var _hk2 = databus._pendingHelpKey;
           var _aid2 = databus._pendingHelpAid || '';
@@ -1938,6 +1952,13 @@ class GameEngine {
           } else if (this.playing._enterAssistFromHelpKey) {
             this.playing._enterAssistFromHelpKey(_hk2);               // 普通求助卡片 → 进协助录制
           }
+        }
+        if (prev && this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
+        // 从其他界面返回主菜单：入场动画已移除，控件直接显示。
+        // 引导手/侧影延迟基准重置为菜单显示时刻。
+        if (prev) {
+          this._menuEntranceDoneAt = Date.now();
+          databus._menuEntranceDoneAt = Date.now();   // 镜像给 LevelMap：引导手延迟基准
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;
@@ -1967,6 +1988,8 @@ class GameEngine {
         try { this.playing.render(); } catch (e) { /* 返回前置窗口：关卡渲染异常则跳过，避免崩溃 */ }
       }
       if (this._toast) this._toast.render(ctx);
+      LoadingDialog.render(ctx);   // 通用加载中窗（先于确认窗绘制，确保确认窗始终在上层）
+      ConfirmDialog.render(ctx);   // 通用弹窗（如场外求助「已协助过」覆盖确认）叠在冻结帧之上
       DebugPanel.render(databus, this);
       present();
       return;
@@ -1986,6 +2009,11 @@ class GameEngine {
 
     // 全局 Toast 替代组件 — 叠在所有游戏场景之上
     if (this._toast) this._toast.render(ctx);
+
+    // 通用加载中窗 — 叠在所有游戏场景之上（先于确认窗绘制）
+    LoadingDialog.render(ctx);
+    // 通用确认窗 — 叠在所有游戏场景之上（含菜单态，覆盖场外求助进入时的「已协助过」确认）
+    ConfirmDialog.render(ctx);
 
     // 开发者调试面板 — 最顶层渲染
     DebugPanel.render(databus, this);

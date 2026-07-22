@@ -3,6 +3,8 @@
 const databus = require('../databus.js');
 const BugReporter = require('../debug/BugReporter.js');
 const DebugPanel = require('../debug/DebugPanel.js');
+const ConfirmDialog = require('../ui/ConfirmDialog.js');   // 通用确认/提示窗：打开时拦截全局触控
+const LoadingDialog = require('../ui/LoadingDialog.js');   // 通用加载中窗：打开时屏蔽所有触控
 
 class InputManager {
   constructor() {
@@ -51,6 +53,18 @@ class InputManager {
       // 调试面板可见时，优先消费所有事件
       if (DebugPanel.visible) {
         if (DebugPanel.handleEvent(e)) continue;
+      }
+
+      // 通用确认窗打开时，所有触摸交给它处理（覆盖菜单/游玩/编辑各状态）
+      if (ConfirmDialog.isOpen()) {
+        ConfirmDialog.handleEvent(e);
+        continue;
+      }
+
+      // 通用加载中窗打开时，屏蔽所有触摸（等待异步/服务器回包期间不可操作）
+      if (LoadingDialog.isOpen()) {
+        LoadingDialog.handleEvent(e);
+        continue;
       }
 
       // 排查系统：记录所有触摸事件

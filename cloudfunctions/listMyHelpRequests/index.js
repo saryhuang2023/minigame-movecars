@@ -56,7 +56,10 @@ exports.main = async (event, context) => {
         recordedAt: toMs(a.recordedAt),
         idx: i,
       }));
-      sent.push(Object.assign({}, base, { assists, assistCount: assists.length }));
+      // baseEscaped = 发起求助时的残局已逃出猪数（snapshotMeta.escapedPigs）；
+      // 协助者「跑出 X 头」应显示好友协助期间【额外】逃出的猪数 = result.escapedPigs − baseEscaped，而非整关总数。
+      const baseEscaped = (doc.snapshotMeta && typeof doc.snapshotMeta.escapedPigs === 'number') ? doc.snapshotMeta.escapedPigs : 0;
+      sent.push(Object.assign({}, base, { assists, assistCount: assists.length, baseEscaped }));
     }
 
     // === 我协助的：我是某条协助记录的 assistant，按我的协助时间倒序 ===
@@ -92,6 +95,8 @@ exports.main = async (event, context) => {
             nickName: doc.requester ? doc.requester.nickName : '',
             avatarUrl: doc.requester ? doc.requester.avatarUrl : '',
           },
+          // baseEscaped = 发起求助时的残局已逃出猪数（同 doc.snapshotMeta，与「我发出的」视图一致）
+          baseEscaped: (doc.snapshotMeta && typeof doc.snapshotMeta.escapedPigs === 'number') ? doc.snapshotMeta.escapedPigs : 0,
           assists: [all[myIdx]],            // 隐私：我协助的视图只回传本人协助明细，其余玩家属隐私不回传
         });
       }

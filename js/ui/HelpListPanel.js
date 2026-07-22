@@ -41,6 +41,13 @@ var _shiftFrom = 0;            // 起始位移 Δ
 var _shiftStart = 0;           // 起始时间戳
 var _shiftAnchor = -1;         // 被删项在列表中的下标（其及之后项参与位移）
 var SHIFT_DUR = 220;           // 补位动画时长 ms
+// 页签抽屉滑动动画（点击页签时旧内容划走、新内容滑入）
+var _tabFrom = 'sent';         // 切换前页签
+var _tabTo = 'sent';           // 切换后页签（= 当前 _tab）
+var _tabStart = 0;             // 起始时间戳（0 = 无过渡）
+var _tabDir = 1;               // +1 去「我协助的」(内容左滑出) / -1 去「我发出的」(右滑出)
+var _tabFromScroll = 0;        // 旧列表滚动快照，滑动期间旧列表保持该滚动位置
+var TAB_DUR = 260;             // 页签滑动时长 ms
 
 function _curList() { return _tab === 'sent' ? _sent : _assisted; }
 
@@ -54,6 +61,7 @@ function open(preserveTab) {
   _dragging = false;
   _moved = false;
   _shiftCur = 0; _shiftFrom = 0; _shiftStart = 0; _shiftAnchor = -1;
+  _tabStart = 0; _tabFrom = _tabTo = _tab; _tabFromScroll = 0;   // 取消任何残留页签滑动
   _sent = []; _assisted = []; _btns = []; _tabRects = [];
   // 预取本人 openid（删除协助记录时服务端按此判定权限）
   cloud.getOpenId().then(function (oid) { _myOpenId = oid || ''; }).catch(function () { _myOpenId = ''; });
@@ -218,64 +226,35 @@ function render(c) {
   }
 
   // 列表区
-  var listTop = tabTop + tabH + 14;
-  var listBottom = p.y + p.h - 16;
-
   if (_loading) {
     // 旧版「加载中…」文字已弃用：加载等待改由全局 LoadingDialog（旋转环 + 文案）提示，盖在最上层
     c.restore();
     return;
   }
 
-  var list = _curList();
-  if (list.length === 0) {
-    c.save();
-    c.fillStyle = '#9A90AE';
-    c.font = '16px ' + Theme.font.family;
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillText(_tab === 'sent' ? '还没有发出过求助' : '还没有协助过好友', p.x + p.w / 2, p.y + p.h / 2);
-    c.restore();
-    c.restore();
-    return;
+  if (_tabStart !== 0) {
+    // 抽屉式滑动过渡：旧内容划走 + 新内容滑入（两列表均在列表区 clip 窗口内绘制，溢出被裁切）
+    var tp = _tabProgress();
+    var e = Easing.easeOutCubic(tp);
+    var W = p.w;
+    var fromList = (_tabFrom === 'sent') ? _sent : _assisted;
+    var toList = (_tabTo === 'sent') ? _sent : _assisted;
+    var fromOff = -_tabDir * W * e;          // 旧列表从 0 滑到 -dir·W（划出）
+    var toOff = _tabDir * W * (1 - e);       // 新列表从 dir·W 滑到 0（滑入）
+    _renderList(c, fromList, _tabFrom, fromOff, _tabFromScroll, false);
+    _renderList(c, toList, _tabTo, toOff, _scrollY, false);
+  } else {
+    // 常态：单一列表（内容区水平偏移 0）
+    var activeList = _curList();
+    _scrollY = _renderList(c, activeList, _tab, 0, _scrollY, true);
   }
-
-  // 累计高度布局（卡片高度可变）
-  _vseq = 0;
-  var layouts = [];
-  var totalH = 0;
-  var CARD_GAP = 12;
-  for (var li = 0; li < list.length; li++) {
-    var ch = _cardH(list[li]);
-    layouts.push({ it: list[li], h: ch, y: totalH });
-    totalH += ch + CARD_GAP;
-  }
-  var contentH = totalH;
-  var viewH = listBottom - listTop;
-  if (contentH <= viewH) _scrollY = 0;
-  else if (_scrollY > contentH - viewH) _scrollY = contentH - viewH;
-  if (_scrollY < 0) _scrollY = 0;
-
-  c.save();
-  c.beginPath();
-  c.rect(p.x, listTop, p.w, viewH);
-  c.clip();
-
-  for (var i = 0; i < layouts.length; i++) {
-    var L = layouts[i];
-    // 补位动画：被删位置及之后项额外下移 Δ 起步，随后 Δ→0 平滑上移补位
-    var off = (_shiftAnchor >= 0 && i >= _shiftAnchor) ? _shiftCur : 0;
-    var ry = listTop + L.y - _scrollY + off;
-    if (ry + L.h < listTop || ry > listBottom) continue;
-    _drawCard(c, L.it, p.x + 16, ry, p.w - 32, i);
-  }
-  c.restore();
 
   c.restore();
 }
 
 // 聚合卡片：头行「日期 · 第x关（n/m）」+ 每位协助者一行（22×22头像 + 昵称 + 跑出e头 + 回放/删除）
-function _drawCard(g, it, x, y, w, idx) {
+// tab 显式传入（过渡帧旧/新列表分别用各自页签语义绘制）；interactive=false 时不注册可点击按钮（过渡期间交互已冻结）
+function _drawCard(g, it, x, y, w, idx, tab, interactive) {
   var h = _cardH(it);
   // 卡片底
   g.save();
@@ -301,22 +280,22 @@ function _drawCard(g, it, x, y, w, idx) {
   var rightX = x + w - 14;
 
   // 删除整条记录（仅发起人可见，删除整个求助；提示文案与单条删除一致）
-  var showDelRecord = (_tab === 'sent');
+  var showDelRecord = (tab === 'sent');
   if (showDelRecord) {
     var delW = _textW(g, '删除') + 10;
     var delBx = rightX - delW;
     _pillBtn(g, delBx, by, delW, bh, '删除', '#E2604E', _vseq++);
-    _btns.push({ x: delBx, y: by, w: delW, h: bh, action: 'deleteRecord', hk: it.helpKey, vidx: _vseq - 1 });
+    if (interactive) _btns.push({ x: delBx, y: by, w: delW, h: bh, action: 'deleteRecord', hk: it.helpKey, vidx: _vseq - 1 });
     rightX = delBx - gap;
   }
 
   // 重发（仅我发出的、且仍有空余协助位时显示，排在删除左边）
-  var showResend = (_tab === 'sent') && (n < MAX_ASSISTS);
+  var showResend = (tab === 'sent') && (n < MAX_ASSISTS);
   if (showResend) {
     var rW = _textW(g, '重发') + 10;
     var rBx = rightX - rW;
     _pillBtn(g, rBx, by, rW, bh, '重发', '#34AAD6', _vseq++);
-    _btns.push({ x: rBx, y: by, w: rW, h: bh, action: 'resend', hk: it.helpKey, idx: -1, vidx: _vseq - 1 });
+    if (interactive) _btns.push({ x: rBx, y: by, w: rW, h: bh, action: 'resend', hk: it.helpKey, idx: -1, vidx: _vseq - 1 });
   }
 
   var rows = it.assists || [];
@@ -354,7 +333,7 @@ function _drawCard(g, it, x, y, w, idx) {
 
     // 头像 + 昵称来源：我发出的 -> 该协助者本人；我协助的 -> 发起者（展示「谁发起的」）
     var avatarUrl, rowName, cacheKey;
-    if (_tab === 'assisted') {
+    if (tab === 'assisted') {
       avatarUrl = (it.requester && it.requester.avatarUrl) || '';
       rowName = (it.requester && it.requester.nickName) || '微信好友';
       cacheKey = (it.requester && it.requester.openId) || a.openId;
@@ -390,7 +369,7 @@ function _drawCard(g, it, x, y, w, idx) {
     var bh2 = bh;
     var by = cy - bh2 / 2;
     // 删除权限：我发出的可删任意协助者；我协助的仅能删自己那一行
-    var canDelete = (_tab === 'sent') ? true : (a.openId === _myOpenId);
+    var canDelete = (tab === 'sent') ? true : (a.openId === _myOpenId);
     var rightX = x + w - 14;
     var replayW = _textW(g, '回放') + 10;
 
@@ -400,15 +379,15 @@ function _drawCard(g, it, x, y, w, idx) {
       _pillBtn(g, dbx, by, delW, bh2, '删除', '#E2604E', _vseq++);
       // 删除目标：我发出的删「这位协助者」(a.openId)；我协助的删「我自己」(_myOpenId)
       // 注意：删除单条协助只移除该条（服务端 removeAssist 即便删空也只留空数组、绝不删整条文档）
-      var targetOpenId = (_tab === 'sent') ? a.openId : _myOpenId;
-      _btns.push({ x: dbx, y: by, w: delW, h: bh2, action: 'delete', hk: it.helpKey, idx: a.idx, vidx: _vseq - 1, targetOpenId: targetOpenId });
+      var targetOpenId = (tab === 'sent') ? a.openId : _myOpenId;
+      if (interactive) _btns.push({ x: dbx, y: by, w: delW, h: bh2, action: 'delete', hk: it.helpKey, idx: a.idx, vidx: _vseq - 1, targetOpenId: targetOpenId });
       rightX = dbx - gap;
     }
 
     // 回放（删除左边，顺序【回放、删除】）
     var rbx = rightX - replayW;
     _pillBtn(g, rbx, by, replayW, bh2, '回放', '#36B37E', _vseq++);
-    _btns.push({ x: rbx, y: by, w: replayW, h: bh2, action: 'replay', hk: it.helpKey, idx: a.idx, vidx: _vseq - 1 });
+    if (interactive) _btns.push({ x: rbx, y: by, w: replayW, h: bh2, action: 'replay', hk: it.helpKey, idx: a.idx, vidx: _vseq - 1 });
   }
 }
 
@@ -431,6 +410,92 @@ function _pillBtn(g, x, y, w, h, label, bgColor, vidx) {
   g.textBaseline = 'middle';
   g.fillText(label, x + w / 2, y + h / 2 + 1);
   g.restore();
+}
+
+// 列表渲染（含抽屉滑动）：在列表区 clip 窗口内绘制；xOffset 为内容区水平偏移（滑动用）
+// interactive=true 时构建可点击按钮(_btns)并重置 _vseq；过渡帧传 false（交互已冻结，仅绘制）
+// 返回钳制后的 scrollY；常态下由调用方存回全局 _scrollY，过渡帧忽略返回值
+function _renderList(c, list, tab, xOffset, scrollY, interactive) {
+  var p = _panelRect();
+  var tabTop = p.y + 60, tabH = 32;
+  var listTop = tabTop + tabH + 14;
+  var listBottom = p.y + p.h - 16;
+
+  // 空状态（随 xOffset 一起滑动，过渡更自然）
+  if (list.length === 0) {
+    c.save();
+    c.beginPath();
+    c.rect(p.x, listTop, p.w, listBottom - listTop);
+    c.clip();
+    c.translate(xOffset, 0);
+    c.save();
+    c.fillStyle = '#9A90AE';
+    c.font = '16px ' + Theme.font.family;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(tab === 'sent' ? '还没有发出过求助' : '还没有协助过好友', p.x + p.w / 2, p.y + p.h / 2);
+    c.restore();
+    c.restore();
+    return 0;
+  }
+
+  // 累计高度布局（卡片高度可变）
+  var layouts = [];
+  var totalH = 0;
+  var CARD_GAP = 12;
+  for (var li = 0; li < list.length; li++) {
+    var ch = _cardH(list[li]);
+    layouts.push({ it: list[li], h: ch, y: totalH });
+    totalH += ch + CARD_GAP;
+  }
+  var viewH = listBottom - listTop;
+  // 钳制该列表滚动（仅局部计算，不直接改全局 _scrollY）
+  var clamped = scrollY;
+  if (totalH <= viewH) clamped = 0;
+  else if (clamped > totalH - viewH) clamped = totalH - viewH;
+  if (clamped < 0) clamped = 0;
+
+  if (interactive) _vseq = 0;
+
+  c.save();
+  c.beginPath();
+  c.rect(p.x, listTop, p.w, viewH);
+  c.clip();
+  c.translate(xOffset, 0);   // 抽屉滑动：旧列表与 新列表各自水平偏移
+
+  for (var i = 0; i < layouts.length; i++) {
+    var L = layouts[i];
+    // 补位动画：被删位置及之后项额外下移 Δ 起步，随后 Δ→0 平滑上移补位
+    var off = (_shiftAnchor >= 0 && i >= _shiftAnchor) ? _shiftCur : 0;
+    var ry = listTop + L.y - clamped + off;
+    if (ry + L.h < listTop || ry > listBottom) continue;
+    _drawCard(c, L.it, p.x + 16, ry, p.w - 32, i, tab, interactive);
+  }
+  c.restore();
+  return clamped;
+}
+
+// 页签抽屉滑动进度：0→1，结束后归零；过渡期间由 render 同帧驱动
+function _tabProgress() {
+  if (_tabStart === 0) return 1;
+  var t = (Date.now() - _tabStart) / TAB_DUR;
+  if (t >= 1) { _tabStart = 0; return 1; }
+  return t;
+}
+
+// 启动页签切换（抽屉滑动）：立即切 _tab（高亮/数据即时反映），旧列表滚动快照保留
+function _startTabSwitch(toTab) {
+  if (_tabStart !== 0) return;          // 过渡中忽略再点击，防状态乱
+  _tabFrom = _tab;
+  _tabTo = toTab;
+  _tabDir = (toTab === 'assisted') ? 1 : -1;
+  _tabFromScroll = _scrollY;
+  _scrollY = 0;                          // 新列表滚动置 0（同原瞬时切换逻辑）
+  _tab = toTab;
+  _tabStart = Date.now();
+  _pressedVidx = -1;
+  _dragging = false;
+  _moved = false;
 }
 
 // 头像懒加载（小游戏无 DOM，wx.createImage 复用，圆形 clip），参考 PlayingEngine 范式
@@ -481,8 +546,8 @@ function handleEvent(e) {
   if (!isOpen()) return;
   // 确认窗打开时，全部触控事件交给确认窗处理，底层面板不响应
   if (ConfirmDialog.isOpen()) { ConfirmDialog.handleEvent(e); return; }
-  // 补位动画期间冻结列表交互：避免按钮视觉位置与命中区错位导致误触（动画仅 ~220ms）
-  if (_shiftCur > 0) return true;
+  // 补位动画 / 页签抽屉滑动期间冻结全部交互：避免按钮视觉位置与命中区错位导致误触
+  if (_shiftCur > 0 || _tabStart !== 0) return true;
   var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
   var x = t ? t.x : e.x;
   var y = t ? t.y : e.y;
@@ -505,7 +570,7 @@ function handleEvent(e) {
     for (var i = 0; i < _tabRects.length; i++) {
       var tr = _tabRects[i];
       if (x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
-        if (_tab !== tr.tab) { _tab = tr.tab; _scrollY = 0; }
+        if (_tab !== tr.tab) _startTabSwitch(tr.tab);   // 不同页签 -> 抽屉滑动切换
         return;
       }
     }
