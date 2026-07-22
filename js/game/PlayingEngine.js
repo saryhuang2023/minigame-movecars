@@ -1640,10 +1640,38 @@ class PlayingEngine {
       return;
     }
 
-    var self = this;
     const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
     if (!t) return;
 
+    // 路由：协助/回放与正常模式是完全不同的两套 UI 体系，各自独立函数
+    if (databus.playMode !== 'normal') {
+      this._handleEventAssist(e, t);
+    } else {
+      this._handleEventNormal(e, t);
+    }
+  }
+
+  /** 场外求助（协助 / 回放）：所有非正常模式的触控处理。
+   *  UI 体系（协助结算面板、就帮到这吧、回放按钮）与正常模式完全不同，
+   *  不存在 VictoryPopup / 失败面板 / 道具按钮 / 提示 / 求助 等概念。
+   *  简明触控流：面板 → 游戏世界（onTouchStart/Move/End 内部委托给 _helpOverlayBtns）。 */
+  _handleEventAssist(e, t) {
+    if (e.type === 'touchstart') {
+      if (StaminaAdPanel.isOpen()) { StaminaAdPanel.handleTouch(t.x, t.y, e.type); return; }
+      if (settingsPanel.isOpen()) { settingsPanel.handleTouch(t.x, t.y, e.type); return; }
+      this.onTouchStart(t.x, t.y);
+    } else if (e.type === 'touchmove') {
+      if (settingsPanel.isOpen()) return;
+      this.onTouchMove(t.x, t.y);
+    } else if (e.type === 'touchend') {
+      if (settingsPanel.isOpen()) return;
+      this.onTouchEnd(t.x, t.y);
+    }
+  }
+
+  /** 正常模式触控处理：VictoryPopup / 失败面板 / 道具按钮 / 提示 / 求助 / 棋盘拖拽。 */
+  _handleEventNormal(e, t) {
+    var self = this;
     if (e.type === 'touchstart') {
       // === UIManager 优先路由 ===
       // 体力广告弹窗
@@ -1733,7 +1761,7 @@ class PlayingEngine {
 
       // 关卡内底栏道具按钮（ItemButton）— 入场动画完成前 / 失败 / 通关后 不响应
       var entranceActive = this._entranceState && this._entranceState.phase !== 'done';
-      if (!entranceActive && !this._failed && !this._victory && databus.playMode === 'normal') {
+      if (!entranceActive && !this._failed && !this._victory) {
         // 左按钮：+3 步（新 ItemButton）— 协助/回放场景不渲染、不命中（见 onTouchStart / render 同步门控）
         var addRect = this._uiAddStepBtn ? this._uiAddStepBtn.getHitRect() : null;
         if (addRect && _hitRect(t.x, t.y, addRect)) {

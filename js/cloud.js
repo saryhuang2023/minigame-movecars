@@ -395,11 +395,25 @@ async function submitAssist(params) {
 /**
  * 场外求助：列出当前用户的协助记录（双视图，已剔除 snapshot/recording 大字段）
  * @returns {Promise<{code, sent:[...], assisted:[...]}>}
- *   sent     —— 我发出的，每条协助者一行（无协助者则一条 noAssist 占位）
- *   assisted —— 我协助的，每条我参与的请求一行（按我的协助时间倒序）
+ *   sent     —— 我发出的，每个求助一张聚合卡片（assists 为该求助全部协助者明细，空数组=暂无协助）
+ *   assisted —— 我协助的，每个我参与过的求助一张聚合卡片（assists 仅含本人那条，assistCount 为该求助总协助人数，myIdx 为我自己的下标）
  */
 async function listMyHelpRequests() {
   return callFunction('listMyHelpRequests', {}, 'Help');
+}
+
+/**
+ * 场外求助：删除某条协助记录里的一个协助者条目。
+ * 权限由服务端 removeAssist 云函数严格判定：
+ *   - 发起人(requesterOpenId===OPENID) 可删任意协助者、删空可移除整条文档；
+ *   - 协助者(assists[].assistantOpenId===OPENID 且非发起人) 只能删自己那条，
+ *     即使删空也绝不 remove 整条文档（那是别人发起的，无权删别人的东西）。
+ * @param {string} helpKey
+ * @param {string} targetOpenId 要删除的协助者 openId（协助者删自己时传自己的 openId）
+ * @returns {Promise<{code:number, removedDoc?:boolean, msg?:string}>}
+ */
+async function removeAssist(helpKey, targetOpenId) {
+  return callFunction('removeAssist', { helpKey, targetOpenId }, 'Help');
 }
 
 module.exports = {
@@ -422,5 +436,6 @@ module.exports = {
   createHelpRequest,
   getHelpRequest,
   submitAssist,
-  listMyHelpRequests
+  listMyHelpRequests,
+  removeAssist
 };
