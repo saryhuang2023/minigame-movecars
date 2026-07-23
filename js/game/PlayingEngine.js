@@ -132,6 +132,7 @@ class PlayingEngine {
     this._assistFadeStart = 0;        // 协助倒计时结束后的渐隐起点（0=未渐隐）；圈+数字+文案一起淡出 300ms
     this._assistLastNum = 0;          // 倒计时进行中每帧冻结的末位数字（避免结束瞬间 1→0 跳变）
     this._sceneFadeStart = 0;         // 场景首次出现整体渐显起点（0=未触发；每次进关由 _afterEnterLevel 复位）
+    this._pendingLevelExpand = null;  // 关卡→关卡圆形过场冻结的旧关帧，待 _loadAndStart 新关底图就位后启动
     this._sceneFadeDur = 450;         // 场景整体渐显时长(ms)
     this._playbackSynthetic = false;  // 回放合成触控标志（区别于玩家真实触控，放行棋盘操作）
     this._helpOverlayBtns = [];    // 场外求助覆盖层按钮命中区（每帧重建）
@@ -456,11 +457,12 @@ class PlayingEngine {
   startLevel(name, opts) {
     opts = opts || {};
 
-    // 关卡→关卡（重玩 / 下一关）：冻结当前关卡帧，交由主引擎播圆形展开过场
+    // 关卡→关卡（重玩 / 下一关）：冻结当前关卡帧，交由 _loadAndStart 在新关底图就位后播圆形展开过场
     var circleSnapshot = null;
     if (databus._gameEngine && databus.gameState === 'playing' && !opts.fromMenu) {
       try { circleSnapshot = databus._gameEngine._captureFrame(); } catch (e) { circleSnapshot = null; }
     }
+    this._pendingLevelExpand = circleSnapshot;   // 暂存冻结旧帧，待新关底图就位后启动过场（避免继续闯关异步加载时源=目标）
 
     // 0. 如果当前有关卡在运行，先反初始化
     if (this.levelName) {
@@ -528,10 +530,9 @@ class PlayingEngine {
     // 4. 音效、输入（不依赖关卡数据）
     this.input.on('playing', function(e) { self.handleEvent(e); });
 
-    // 关卡→关卡过场：旧帧已冻结，启动圆形展开（新关卡底图为目标层）
-    if (circleSnapshot && databus._gameEngine) {
-      databus._gameEngine._beginLevelExpand(circleSnapshot);
-    }
+    // 关卡→关卡圆形过场暂不在此同步启动：此刻新关底图(_sceneBgImg)尚未加载就位
+    // （继续闯关走云端异步拉取时尤其如此），若此刻启动则 target==source，过场不可见。
+    // 改由 _loadAndStart 在 loadLevel 之后启动（见下方），保证 target=新关底图。
   }
 
   /** 读取本地关卡文件，失败返回 null */
@@ -579,6 +580,13 @@ class PlayingEngine {
       phase: 'done',        // 直接终态：所有 UI / 猪 默认显示，无入场动画
     };
     this.loadLevel(data);
+    // 关卡→关卡圆形过场：新关底图已就位(loadLevel 已更新 _sceneBgImg)，此刻启动圆形展开，
+    // source=冻结旧关帧 / target=新关底图 → 圆形扩散露出新关，过场可见（修复继续闯关无过场）。
+    if (this._pendingLevelExpand) {
+      var _ge = databus._gameEngine;
+      if (_ge && _ge._beginLevelExpand) _ge._beginLevelExpand(this._pendingLevelExpand);
+      this._pendingLevelExpand = null;
+    }
     this._loading = false;
     // 断点续传 + 录制 + 预下载（与菜单 prepareLevel 路径共用，避免菜单进关漏掉续玩）
     this._afterEnterLevel();
@@ -1073,7 +1081,8 @@ class PlayingEngine {
     var self = this;
     if (this._externalHelpBusy) return;
     this._externalHelpBusy = true;
-    showToast('正在准备求助...', 1200);
+    // 立即反馈：点按钮瞬间弹出 loading（首次会叠加微信原生授权框，授权完成继续；已授权直接走云端建单）
+    LoadingDialog.open({ text: '正在发起求助...' });
 
     this._ensureUserInfo().then(function (user) {
       var snap = self._buildHelpSnapshot();
@@ -1113,6 +1122,8 @@ class PlayingEngine {
       console.warn('[Help] _startExternalHelp 失败:', e && e.message);
       showToast('发起求助失败', 2000);
     }).then(function () {
+      // 终态兜底：成功 / 建单失败 / 异常 任一路径结束都关闭 loading，避免遮罩卡死触摸
+      LoadingDialog.close();
       self._externalHelpBusy = false;
     });
   }

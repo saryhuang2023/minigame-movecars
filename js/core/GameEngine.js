@@ -307,7 +307,7 @@ class GameEngine {
     var _hk = (_lo.query && _lo.query.hk) || '';
     var _aid = (_lo.query && _lo.query.aid) || '';
     // [TEST] 临时硬编码 hk 跳过卡片分享冷启——测完删除此行（注意 hk 本身不含引号）
-    if (!_hk) _hk = 'hk_a26df1a0b776a66ebd804b58be4c35a5';
+    // if (!_hk) _hk = 'hk_a26df1a0b776a66ebd804b58be4c35a5';
     if (_hk) {
       databus._pendingHelpKey = _hk;
       databus._pendingHelpAid = _aid;
