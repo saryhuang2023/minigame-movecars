@@ -127,6 +127,12 @@ class PlayingEngine {
     this._replayEndTime = 0;      // 场外求助：回放结束时刻（驱动结束按钮「从底部滑到屏幕中央」动画）
     this._replayCounting = false;     // 场外求助：回放进入后 3 秒倒计时进行中
     this._replayCountdownEnd = 0;     // 倒计时结束时间戳（Date.now()+3000）
+    this._assistCounting = false;     // 场外求助：协助进入后 3 秒准备倒计时进行中（与回放一致的「准备」节拍）
+    this._assistCountdownEnd = 0;     // 协助准备倒计时结束时间戳（Date.now()+3000）
+    this._assistFadeStart = 0;        // 协助倒计时结束后的渐隐起点（0=未渐隐）；圈+数字+文案一起淡出 300ms
+    this._assistLastNum = 0;          // 倒计时进行中每帧冻结的末位数字（避免结束瞬间 1→0 跳变）
+    this._sceneFadeStart = 0;         // 场景首次出现整体渐显起点（0=未触发；每次进关由 _afterEnterLevel 复位）
+    this._sceneFadeDur = 450;         // 场景整体渐显时长(ms)
     this._playbackSynthetic = false;  // 回放合成触控标志（区别于玩家真实触控，放行棋盘操作）
     this._helpOverlayBtns = [];    // 场外求助覆盖层按钮命中区（每帧重建）
     this._helpPress = {};          // 覆盖层按钮按压态（id -> { startTime, phase }），单点触控复用
@@ -561,7 +567,7 @@ class PlayingEngine {
       this._loading = false;
       showToast('关卡数据加载失败', 2000);
       databus.gameState = 'menu';
-      databus._returningToMenu = true;   // 返回过场建立前屏蔽主菜单背景与引导手
+      databus._returningToMenu = true;   // 返回过场建立前屏蔽主菜单背景
       return;
     }
     // 入场动画已去除：仅保留 _entranceState 占位（phase 直接置 'done'）。
@@ -587,6 +593,10 @@ class PlayingEngine {
     if (databus.playMode !== 'normal') {
       this._hintMerged = true;
     }
+    this._assistCounting = false;   // 复位准备倒计时（下方 assist 分支按需重新置 true）
+    this._sceneFadeStart = 0;       // 进关重置：下一关首次出现重新整体渐显
+    this._assistFadeStart = 0;      // 复位渐隐窗口
+    this._assistLastNum = 0;
 
     // [D] 残局恢复：协助/回放从好友残局原地还原进度（与断点续玩语义一致）。
     // 猪物理残局已由 loadLevel 从 gp.pigs 重建；此处补齐「逃逸数/剩余步数/总猪数/小虫进度」。
@@ -628,6 +638,12 @@ class PlayingEngine {
       this._replayCounting = true;        // 进入 3 秒倒计时（_renderHelpOverlay 驱动圈 + 到点启动回放）
       this._replayCountdownEnd = Date.now() + 3000;
       return;
+    }
+
+    // 协助：进入后浮 5 秒准备倒计时（与回放一致的「准备」节拍；期间屏蔽玩家输入，到点释放接管）
+    if (databus.playMode === 'assist') {
+      this._assistCounting = true;
+      this._assistCountdownEnd = Date.now() + 5000;
     }
 
     // 断点续传（单函数收敛：恢复/清理）
@@ -800,7 +816,7 @@ class PlayingEngine {
   // 回放触摸指示：落点/抬手瞬间生成「扩散+淡出」涟漪环；拖动期间一个缓动跟随的柔光接触点。
   // 替代原先常驻闪烁的 hand_guide 小手——安静、精准、不抢戏，仍能清楚表达手指触摸的位置与时机。
   _renderTouchIndicator(ctx, now) {
-    var s = SCREEN_WIDTH / 393;   // 与 LevelMap 引导手同缩放基准
+    var s = SCREEN_WIDTH / 393;   // 与 LevelMap 同缩放基准（设计宽度 393）
 
     // 1) 缓动跟随接触点（仅回放进行中、且有最近拖动时显示）
     if (this._isPlayingBack && this._playbackDotPos) {
@@ -1395,7 +1411,7 @@ class PlayingEngine {
     }
   }
 
-  /** 场外求助退出：复位 playMode 并回主菜单（过场前屏蔽引导手） */
+  /** 场外求助退出：复位 playMode 并回主菜单（过场前屏蔽主菜单背景） */
   _exit() {
     databus.playMode = 'normal';
     databus._pendingHelpKey = '';
@@ -1407,6 +1423,10 @@ class PlayingEngine {
     this._replayDuration = 0;
     this._replayCounting = false;
     this._replayCountdownEnd = 0;
+    this._assistCounting = false;
+    this._assistCountdownEnd = 0;
+    this._assistFadeStart = 0;
+    this._assistLastNum = 0;
     this._helpSent = false;
     this._helpSending = false;
     this._helpEndPanelShowTime = 0;
@@ -1433,6 +1453,11 @@ class PlayingEngine {
     this._replayDuration = 0;
     this._replayCounting = false;
     this._replayCountdownEnd = 0;
+    this._assistCounting = false;
+    this._assistCountdownEnd = 0;
+    this._assistFadeStart = 0;
+    this._sceneFadeStart = 0;       // 复位场景渐显，保证下次进关重新淡入
+    this._assistLastNum = 0;
     this._helpEnded = false;
     this._helpSettlePending = false;
     this._endBtnHideTime = 0;
@@ -1444,6 +1469,44 @@ class PlayingEngine {
     this._helpEndPanelShowTime = 0;
     this._helpOverlayBtns = [];
     this._helpPress = {};
+  }
+
+  /** 协助准备倒计时绘制：屏幕正中白圈 + 大号数字 + 圈上方两行引导文案。
+   *  alpha 控制整体透明度，供倒计时结束时与文案一起渐隐。
+   *  @param {number} alpha 0..1 */
+  _drawAssistCountdown(ctx, alpha) {
+    var _acx = SCREEN_WIDTH / 2, _acy = SCREEN_HEIGHT / 2;
+    var _num = (this._assistLastNum != null) ? this._assistLastNum : 0;
+    var _lines = ['走到这不会了', '你来试试'];   // 两行：逗号断行
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // 引导文案（圈上方两行）：白字 + 深色描边，保证在任意背景上可读
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '19px ' + Theme.font.family;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    var _gap = 26;                                       // 两行行距
+    var _blockCenter = _acy - 46 - 30;                   // 两行整体中心：圈半径 46 + 间距 30
+    for (var _li = 0; _li < _lines.length; _li++) {
+      var _ty = _blockCenter + (_li - (_lines.length - 1) / 2) * _gap;
+      ctx.strokeText(_lines[_li], _acx, _ty);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(_lines[_li], _acx, _ty);
+    }
+
+    // 倒计时圈
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(_acx, _acy, 46, 0, Math.PI * 2); ctx.stroke();
+
+    // 数字
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 40px ' + Theme.font.family;
+    ctx.fillText(String(_num), _acx, _acy);
+    ctx.restore();
   }
 
   /** 场外求助覆盖层：
@@ -1490,21 +1553,25 @@ class PlayingEngine {
           ctx.drawImage(_bg, 0, _sh - 108, _sw, 108, _px, _py + _ph - 36, _pw, 36);
         }
 
+        // x = 你帮忙额外逃出的猪数 = 当前已逃出 − 残局初始已逃出（x=0 走专属文案「一只都没逃脱」；x>0 走欢喜文案）
+        var _extraEsc = (this._escapedCount || 0) - (this._assistBaseEscaped || 0);
+        if (_extraEsc < 0) _extraEsc = 0;
+
         // 3) 顶部标题（白字，与设置面板标题位置一致 p.y+65）
         ctx.save();
         ctx.fillStyle = '#FFFFFF';
         ctx.font = '20px ' + Theme.font.family;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText(this._helpEndReason === 'noescape' ? '协助失败' : '协助完成', _pcx, _py + 65);
+        // 通关 或 帮忙逃出>0 → 「协助完成」；一只都没逃出(x=0) → 「协助失败」
+        ctx.fillText((this._helpEndReason === 'cleared' || _extraEsc > 0) ? '协助完成' : '协助失败', _pcx, _py + 65);
         ctx.restore();
 
-        // 4) 中部三态文案（深色，居中，过长自动换行）
+        // 4) 中部文案（深色，居中，过长自动换行）
         var _endTxt;
-        if (this._helpEndReason === 'noescape') _endTxt = '您需要协助至少逃脱一只小猪';
-        else if (this._helpEndReason === 'cleared') _endTxt = '恭喜你通关了，快发给好友吧';
-        else if (this._helpEndReason === 'failed') _endTxt = '哎呀，步数不够了，就只能帮到这了';
-        else _endTxt = '您的操作已记录，是否发送给好友？';   // 'early' 提前结束
+        if (this._helpEndReason === 'cleared') _endTxt = '恭喜你通关了，快发给好友吧';
+        else if (_extraEsc === 0) _endTxt = '哎呀，一只小猪都没有逃脱，再试试看？';
+        else _endTxt = '你成功帮忙逃脱了' + _extraEsc + '只小猪，快告诉你的好朋友吧。';
         ctx.save();
         ctx.fillStyle = '#5A4A6A';
         ctx.font = '18px ' + Theme.font.family;
@@ -1522,59 +1589,68 @@ class PlayingEngine {
         for (var _li = 0; _li < _lines.length; _li++) ctx.fillText(_lines[_li], _pcx, _baseY + _li * 28);
         ctx.restore();
 
-        // 5) 底部按钮
-        if (this._helpEndReason === 'noescape') {
-          // 失败态（一头猪都没额外跑出）：仅 2 个绿钮（左 退出协助 / 右 再来一次），无「发给好友」
-          var _bw = 125, _bh = 44, _bgap = 14;
-          var _bTotal = _bw * 2 + _bgap;
-          var _bX = _pcx - _bTotal / 2;
-          var _bY = _py + _ph - 36 - _bh;
-          this._drawHelpBtn(ctx, _bX, _bY, _bw, _bh, '退出协助', 'later');   // 'later' → _exit 回主菜单
-          this._helpOverlayBtns.push({ id: 'later', x: _bX, y: _bY, w: _bw, h: _bh });
-          this._drawHelpBtn(ctx, _bX + _bw + _bgap, _bY, _bw, _bh, '再来一次', 'again');  // 'again' → 重拉好友关
-          this._helpOverlayBtns.push({ id: 'again', x: _bX + _bw + _bgap, y: _bY, w: _bw, h: _bh });
-        } else {
-          // 正常态：底部三钮（与设置面板 BOTTOM_ICON_CONFIG 同布局：左 home / 中 blue标签钮 / 右 again）
-          var _fromBottomSide = Math.max(26, Math.floor(_ph * 0.112));
-          var _sideSz = 36;
-          var _sideCY = _py + _ph - _fromBottomSide - _sideSz / 2;   // 侧钮垂直中心
-          var _cw = 127, _ch = 48;
-          var _centerTop = _py + _ph - 36 - _ch;                     // 中钮垂直顶（与 btn_continue fromBottom:36 一致）
-          var _centerX = _pcx - _cw / 2;
+        // 5) 底部按钮（统一三钮：左 下次再说 / 中 标签钮 / 右 再来一次）
+        // 通关(cleared) 或 帮忙逃出>0 → 中钮「发给好友」(submit)；一只都没逃出(x=0) → 中钮「再来一次」(again)，左右不变
+        var _isSendCenter = (this._helpEndReason === 'cleared') || (_extraEsc > 0);
+        var _fromBottomSide = Math.max(26, Math.floor(_ph * 0.112));
+        var _sideSz = 36;
+        var _sideCY = _py + _ph - _fromBottomSide - _sideSz / 2;   // 侧钮垂直中心
+        var _cw = 127, _ch = 48;
+        var _centerTop = _py + _ph - 36 - _ch;                     // 中钮垂直顶（与 btn_continue fromBottom:36 一致）
+        var _centerX = _pcx - _cw / 2;
 
-          if (!this._helpSending) {
-            // 左：下次再说（btn_home 图标 → 返回主菜单）
-            var _homeX = _px + 26, _homeY = _sideCY - _sideSz / 2;
-            this._drawHelpIcon(ctx, 'btn_home', 'later', _homeX, _homeY, _sideSz);
-            this._helpOverlayBtns.push({ id: 'later', x: _homeX, y: _homeY, w: _sideSz, h: _sideSz });
-            // 右：再来一次（btn_again 图标 → 重拉好友关）
-            var _againX = _px + _pw - 26 - _sideSz, _againY = _sideCY - _sideSz / 2;
-            this._drawHelpIcon(ctx, 'btn_again', 'again', _againX, _againY, _sideSz);
-            this._helpOverlayBtns.push({ id: 'again', x: _againX, y: _againY, w: _sideSz, h: _sideSz });
-          }
-
-          // 中：发给好友 / 发送中（蓝色标签钮；点击后进入发送流程，期间屏蔽所有操作直接回主菜单）
-          if (!this._helpSendBtn) this._helpSendBtn = new CommonButton({ x: _centerX, y: _centerTop, w: _cw, h: _ch, color: 'blue' });
-          this._helpSendBtn.x = _centerX; this._helpSendBtn.y = _centerTop;
-          this._helpSendBtn.w = _cw; this._helpSendBtn.h = _ch;
-          this._helpSendBtn.label = this._helpSending ? '发送中…' : '发给好友';
-          this._helpSendBtn.render(ctx);
-          this._helpOverlayBtns.push({ id: 'submit', x: _centerX, y: _centerTop, w: _cw, h: _ch });
+        if (!this._helpSending) {
+          // 左：下次再说（btn_home 图标 → 返回主菜单）
+          var _homeX = _px + 26, _homeY = _sideCY - _sideSz / 2;
+          this._drawHelpIcon(ctx, 'btn_home', 'later', _homeX, _homeY, _sideSz);
+          this._helpOverlayBtns.push({ id: 'later', x: _homeX, y: _homeY, w: _sideSz, h: _sideSz });
+          // 右：再来一次（btn_again 图标 → 重拉好友关）
+          var _againX = _px + _pw - 26 - _sideSz, _againY = _sideCY - _sideSz / 2;
+          this._drawHelpIcon(ctx, 'btn_again', 'again', _againX, _againY, _sideSz);
+          this._helpOverlayBtns.push({ id: 'again', x: _againX, y: _againY, w: _sideSz, h: _sideSz });
         }
+
+        // 中：发给好友(submit) / 再来一次(again，x=0 时)；点击发送流程期间屏蔽所有操作直接回主菜单
+        if (!this._helpSendBtn) this._helpSendBtn = new CommonButton({ x: _centerX, y: _centerTop, w: _cw, h: _ch, color: 'blue' });
+        this._helpSendBtn.x = _centerX; this._helpSendBtn.y = _centerTop;
+        this._helpSendBtn.w = _cw; this._helpSendBtn.h = _ch;
+        this._helpSendBtn.label = _isSendCenter ? (this._helpSending ? '发送中…' : '发给好友') : '再来一次';
+        this._helpSendBtn.render(ctx);
+        this._helpOverlayBtns.push({ id: _isSendCenter ? 'submit' : 'again', x: _centerX, y: _centerTop, w: _cw, h: _ch });
 
         ctx.restore();   // 结束面板缩放变换
       } else {
-        // 进行中：居中「协助完成」单钮（屏幕底部 bottom 30，水平居中；点之进入统一结束面板）
-        // 最后一只猪开始跑(canEscapeRemaining===0)时渐隐消失且不再可点
-        var ew = 180, eh = 56, ex = cx - ew / 2, ey = SCREEN_HEIGHT - 30 - eh;
-        var _endAlpha = this._endBtnHideTime
-          ? Math.max(0, 1 - (Date.now() - this._endBtnHideTime) / 220)   // 220ms 渐隐
-          : 1;
-        if (_endAlpha > 0.01) {
-          this._drawHelpBtn(ctx, ex, ey, ew, eh, '协助完成', 'end', _endAlpha);
-          // 仅未触发渐隐时可点；一旦开始渐隐即从命中区移除，杜绝误触
-          if (!this._endBtnHideTime) {
-            this._helpOverlayBtns.push({ id: 'end', x: ex, y: ey, w: ew, h: eh });
+        // 协助准备倒计时（进入后 3 秒，与回放一致的「准备」节拍；期间屏蔽输入）
+        // 倒计时结束 → 进入渐隐窗口（圈 + 数字 +文案一起淡出 300ms），淡出期间玩家即可接管
+        var _ASSIST_FADE = 300;
+        if (this._assistCounting && Date.now() >= this._assistCountdownEnd) {
+          this._assistCounting = false;
+          this._assistFadeStart = Date.now();
+        }
+        if (this._assistCounting) {
+          // 倒计时进行中：满 alpha（冻结末值，避免结束瞬间 1→0 的跳变）
+          this._assistLastNum = Math.max(0, Math.ceil((this._assistCountdownEnd - Date.now()) / 1000));
+          this._drawAssistCountdown(ctx, 1);
+        } else if (this._assistFadeStart) {
+          // 渐隐窗口：圈 + 数字 + 文案一起淡出
+          var _fp = (Date.now() - this._assistFadeStart) / _ASSIST_FADE;
+          if (_fp >= 1) this._assistFadeStart = 0;     // 渐隐完成，停止绘制
+          else this._drawAssistCountdown(ctx, 1 - _fp);
+        }
+        // 协助进行中：「协助完成」单钮（倒计时进行中 / 渐隐中均不显示，淡出完成后出现）
+        if (!this._assistCounting && !this._assistFadeStart) {
+          // 居中「协助完成」单钮（屏幕底部 bottom 30，水平居中；点之进入统一结束面板）
+          // 最后一只猪开始跑(canEscapeRemaining===0)时渐隐消失且不再可点
+          var ew = 180, eh = 56, ex = cx - ew / 2, ey = SCREEN_HEIGHT - 30 - eh;
+          var _endAlpha = this._endBtnHideTime
+            ? Math.max(0, 1 - (Date.now() - this._endBtnHideTime) / 220)   // 220ms 渐隐
+            : 1;
+          if (_endAlpha > 0.01) {
+            this._drawHelpBtn(ctx, ex, ey, ew, eh, '协助完成', 'end', _endAlpha);
+            // 仅未触发渐隐时可点；一旦开始渐隐即从命中区移除，杜绝误触
+            if (!this._endBtnHideTime) {
+              this._helpOverlayBtns.push({ id: 'end', x: ex, y: ey, w: ew, h: eh });
+            }
           }
         }
         // 「协助好友通关中」白字带描边 + rec 图标 改由 _renderStatusIndicators(assist) 画在左上角
@@ -1713,7 +1789,7 @@ class PlayingEngine {
       // 防御：最后一只猪已开始在跑（按钮渐隐中/已隐藏）时不接受点击
       if (this._endBtnHideTime) return;
       // 协助关「协助完成」：停录并保留录制，进入统一结束面板
-      // 若一头猪都没额外跑出 → 失败态（标题「协助失败」+ 2 钮：再来一次/退出协助）
+      // 一头猪都没额外逃出(noescape) 与 提前结束(early) 现统一为「你帮忙逃脱了x只」面板（x=0/extra）；按钮区按 x 决定中钮是「发给好友」还是「再来一次」
       this._helpEndReason = this._helpNoExtraEscaped() ? 'noescape' : 'early';
       // 不直接 _helpEnded：等最后一只逃逸猪动画播完再落定（对齐正式关结算手感）
       this._helpSettlePending = true;
@@ -1956,6 +2032,7 @@ class PlayingEngine {
    *  不存在 VictoryPopup / 失败面板 / 道具按钮 / 提示 / 求助 等概念。
    *  简明触控流：面板 → 游戏世界（onTouchStart/Move/End 内部委托给 _helpOverlayBtns）。 */
   _handleEventAssist(e, t) {
+    if (this._assistCounting) return;   // 准备倒计时期间屏蔽玩家一切触控（与回放一致：先看清楚再接管）
     if (e.type === 'touchstart') {
       if (StaminaAdPanel.isOpen()) { StaminaAdPanel.handleTouch(t.x, t.y, e.type); return; }
       if (settingsPanel.isOpen()) { settingsPanel.handleTouch(t.x, t.y, e.type); return; }
@@ -2801,7 +2878,7 @@ class PlayingEngine {
       }
     }
     // 「恭喜通关」/「返回」/ 试玩 → 主菜单（试玩回编辑器）
-    // 返回菜单须置 _returningToMenu，屏蔽过场空窗的引导手（对称设置面板主页钮/关卡内返回）
+    // 返回菜单须置 _returningToMenu，屏蔽过场空窗（对称设置面板主页钮/关卡内返回）
     if (action === 'editor') {
       databus.gameState = 'editor';
     } else {
@@ -3115,10 +3192,23 @@ class PlayingEngine {
       return;
     }
 
+    // 场外求助（协助/回放）准备倒计时期间：棋盘/猪/装饰/HUD/角落头像全部不出现，
+    // 仅由 _renderHelpOverlay 绘制倒计时圈 + 文案（loading 结束前棋盘不可见）。倒计时结束（标志翻转）后下一帧正常渲染。
+    if ((databus.playMode === 'assist' && this._assistCounting) ||
+        (databus.playMode === 'replay' && this._replayCounting)) {
+      this._renderHelpOverlay(ctx);
+      return;
+    }
+
+    // 场景首次出现整体渐显（0→1）：每次进关 _sceneFadeStart 复位为 0，故仅在该关棋盘首次渲染的第一帧触发一次。
+    // 置于倒计时闸门之后，确保协助/回放关在 5 秒倒计时结束、棋盘真正出现时才开始淡入。
+    if (this._sceneFadeStart === 0) this._sceneFadeStart = now;
+    var _sceneFadeAlpha = Math.min(1, (now - this._sceneFadeStart) / this._sceneFadeDur);
+
     // 进入关卡过场：目标 UI（棋盘/猪/顶栏等）统一 150ms 微淡入；非过场时 alpha=1 无影响
     var _revealAlpha = this._getRevealAlpha();
     ctx.save();
-    ctx.globalAlpha = _revealAlpha;
+    ctx.globalAlpha = _revealAlpha * _sceneFadeAlpha;
 
     // 需求⑤：协助关进入结算态（提前结束 _helpEnded / 通关 _showHelpEndPanel）时，清干净棋盘与猪
     var assistSettled = databus.playMode === 'assist' && (this._helpEnded || this._showHelpEndPanel);

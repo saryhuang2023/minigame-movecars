@@ -38,8 +38,6 @@ class LevelMap {
     this._bgImages = {};       // { 'main_bg_0': Image, ... }
     this._bgReady = false;
 
-    this._handImg = null;
-
     // 关卡点击 + 按压反馈
     this._btnPress = new ButtonPress();
     this._pressingLevel = false;
@@ -324,7 +322,6 @@ class LevelMap {
       this._bgReady = true;
     }
   }
-  setHand(img) { this._handImg = img || null; }
 
   _computeFrontierScroll() {
     if (!this._levels || this._levels.length === 0) return 0;
@@ -481,16 +478,6 @@ class LevelMap {
     this._renderButtons(c);
     c.restore();
     c.restore();
-  }
-
-  renderHand() {
-    if (databus._returningToMenu) return;   // 返回过场窗口（胜利/失败/关卡内返回）：屏蔽引导手，避免闪一下
-    if (databus.gameState !== 'menu') return;
-    if (databus._menuExiting) return;
-    var doneAt = databus._menuEntranceDoneAt || 0;
-    if (!doneAt) return;
-    if (Date.now() - doneAt < LevelMap.HAND_DELAY_MS) return;
-    this._renderHand();
   }
 
   // ===== 背景（按段分配不同 bg 图）=====
@@ -748,31 +735,6 @@ class LevelMap {
     c.restore();
   }
 
-  // ===== 引导手（不变）=====
-  _renderHand() {
-    if (!this._handImg || !this._handImg.width) return;
-
-    var s = SCREEN_WIDTH / cfg.designWidth;
-    var startScale = SCREEN_WIDTH / 393;
-    var startW = 180 * startScale;
-    var startH = 86 * startScale;
-    var startCX = SCREEN_WIDTH / 2 - 0.5 * startScale;
-    var startCY = SCREEN_HEIGHT - 34 * startScale - startH / 2;
-
-    var period = 1100;
-    var phase = (Date.now() % period) / period;
-    var tap = Math.sin(phase * Math.PI);
-    var ax = startCX + cfg.hand.offsetX * s + 30;
-    var ay = startCY + cfg.hand.offsetY * s + tap * 9 * s - 20;
-
-    ctx.save();
-    ctx.globalAlpha = this._alpha;
-    ctx.translate(ax, ay);
-    ctx.drawImage(this._handImg, 0, 0, cfg.hand.w * s, cfg.hand.h * s);
-    ctx.restore();
-  }
 }
-
-LevelMap.HAND_DELAY_MS = 3000;
 
 module.exports = LevelMap;

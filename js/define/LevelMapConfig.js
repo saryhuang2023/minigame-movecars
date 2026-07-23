@@ -91,14 +91,6 @@ module.exports = {
   //   想更密改小第二个数，想更长线段改大第一个数。
   roadDash: [6, 16],
 
-  // ===== 引导手 =====
-  hand: {
-    w: 63.86,
-    h: 64.14,
-    offsetX: 0,
-    offsetY: 0,
-  },
-
   // ===== 滚动 =====
   scroll: {
     friction: 0.92,

@@ -5,7 +5,7 @@
 
 const UIComponent = require('../base/UIComponent.js');
 const Theme = require('../../define/GameDefine.js').THEME;
-const { SCREEN_WIDTH } = require('../../render.js');
+const { SCREEN_WIDTH, SCREEN_HEIGHT } = require('../../render.js');
 
 // 阶段时长（毫秒）
 const FADE_IN = 180;
@@ -15,7 +15,7 @@ const DEFAULT_DURATION = 1500; // 与微信原生 toast 默认时长接近
 // 布局常量（直接来自用户提供的 CSS）
 const W = 186;
 const H = 38;
-const TOP = 150;
+const TOP = Math.round(SCREEN_HEIGHT * 0.382); // 距顶 = 屏幕总高度 × 38.2%
 const BG_ALPHA = 0.45; // background #000000; opacity 0.45
 const RADIUS = 34;     // border-radius 34px（胶囊）
 const RISE = 22;       // 退出时向上位移像素

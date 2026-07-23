@@ -74,6 +74,7 @@ class GameEngine {
     this.menuButtons = [];
     this._pressedBtnIdx = -1;   // 当前被按下的按钮索引（用于按压动画）
     this._pressedBtnTime = 0;   // 按钮按下时间
+    this._menuPulseStart = 0;   // 开始按钮「果冻呼吸」空闲动画起点时间戳
 
     // 菜单可见性 + 出场动画状态
     this._menuVisible = false;  // 当前是否处于「可见的主菜单」（决定离场时是否播放反向出场动画）
@@ -172,7 +173,7 @@ class GameEngine {
     var self = this;
     this._loadingMgr = new LoadingManager();
     this._loadingRdr = new LoadingRenderer(this._loadingMgr);
-    this.playing._loadingMgr = this._loadingMgr;   // 让 PlayingEngine 能取预加载图（如 hand_guide 供 LevelMap 引导手等）
+    this.playing._loadingMgr = this._loadingMgr;   // 让 PlayingEngine 能取预加载图（如 hand_guide 等）
 
     // 皮肤配置必须在 loading 启动前同步加载（frameCount 依赖 skin.json）
     SkinLoader.loadSkinConfig(0);
@@ -222,7 +223,6 @@ class GameEngine {
           if (img) roadImgs[k] = img;
         }.bind(this));
         this._levelMap.setRoad(roadImgs);
-        this._levelMap.setHand(this._loadingMgr.getImage('assets/images/hand_guide.png'));
       }
 
       // 存储预加载的云端数据
@@ -233,9 +233,9 @@ class GameEngine {
       this._prefetchUserInfo();
 
       // 主菜单入场动画已移除：控件直接显示、立即可点击。
-      // 引导手/侧影仍以 _menuEntranceDoneAt 为延迟基准（=菜单显示时刻）。
+      // 侧影以 _menuEntranceDoneAt 为延迟基准（=菜单显示时刻）。
       this._menuEntranceDoneAt = now;
-      databus._menuEntranceDoneAt = now;   // 镜像给 LevelMap：引导手延迟基准（菜单显示时刻）
+      databus._menuEntranceDoneAt = now;   // 镜像给 LevelMap：侧影延迟基准（菜单显示时刻）
 
       console.log('[GameEngine] 加载完成，启动游戏');
       this.start();
@@ -307,7 +307,7 @@ class GameEngine {
     var _hk = (_lo.query && _lo.query.hk) || '';
     var _aid = (_lo.query && _lo.query.aid) || '';
     // [TEST] 临时硬编码 hk 跳过卡片分享冷启——测完删除此行（注意 hk 本身不含引号）
-    // if (!_hk) _hk = 'hk_414dd45d61132c9f08ca1ff4fb685e7d';
+    if (!_hk) _hk = 'hk_a26df1a0b776a66ebd804b58be4c35a5';
     if (_hk) {
       databus._pendingHelpKey = _hk;
       databus._pendingHelpAid = _aid;
@@ -321,7 +321,6 @@ class GameEngine {
   _routePendingHelp() {
     var hk = databus._pendingHelpKey;
     if (!hk) return;
-    if (databus.playMode && databus.playMode !== 'normal') return;  // 已在协助/回放中，不重复进入
     var aid = databus._pendingHelpAid || '';
     if (databus.gameState === 'menu') {
       databus._pendingHelpKey = '';
@@ -340,8 +339,8 @@ class GameEngine {
       var _self = this;
       ConfirmDialog.open({
         title: '提示',
-        content: aid ? '您是否要退出当前关卡，查看协助的回放？' : '您是否要退出当前关卡，前往协助好友？',
-        confirmText: '确定',
+        content: '是否放弃当前关卡，立刻跳转到新场景？',
+        confirmText: '跳转',
         cancelText: '取消',
         onConfirm: function () {
           // 确定：重新写入 pending 并走既有"退出关卡 → 进协助/回放"过场（playing→menu 收缩 + menu 激活分支消费）
@@ -1100,6 +1099,30 @@ class GameEngine {
     return { dx: 0, dy: 0, scale: 1, alpha: 1 };
   }
 
+  /**
+   * 开始按钮「果冻呼吸」空闲动画：平滑贝尔包络(缓入缓出) + squash & stretch，用于吸引点击。
+   * 纯视觉形变（绕按钮中心非均匀 scale），不影响 _playBtnRect 命中区。
+   * @returns {Object} { sx, sy } 横坐标/纵坐标缩放（仅在菜单静止态生效）
+   */
+  _getPlayIdleTransform() {
+    // 菜单不可见 / 出场过场中：不播放
+    if (!this._menuVisible || databus._menuExiting) return { sx: 1, sy: 1 };
+    // 按钮正被按下：冻结空闲形变，避免与按压动画（mainScale）叠加打架
+    if (this._pressedBtnIdx === 0) return { sx: 1, sy: 1 };
+
+    var PERIOD = 2200;                                  // 一个完整呼吸周期（从容不急促）
+    var start = this._menuPulseStart || (this._menuPulseStart = Date.now());
+    var cycle = ((Date.now() - start) % PERIOD) / PERIOD;  // 0..1
+    // 平滑贝尔包络 sin²(π·cycle)：两端值=0 且导数=0 → 进出皆缓入缓出，无硬切、无突兀起步（顺滑）
+    var s = Math.sin(cycle * Math.PI);
+    var env = s * s;
+    // squash & stretch：鼓起时纵向拉伸、横向微压（保留「拉伸」质感，但不再弹跳生硬）
+    var AMP = 0.12;
+    var sy = 1 + env * AMP;
+    var sx = 1 - env * AMP * 0.5;
+    return { sx: sx, sy: sy };
+  }
+
   // 控件出场变换已移除（见 _startMenuExit / render 出场分支）：点开始按钮即消失，无下滑/渐隐动画。
 
   /**
@@ -1108,7 +1131,7 @@ class GameEngine {
    */
   _startMenuExit(target) {
     this._pressedBtnIdx = -1;   // 清按压态，出场过渡干净
-    databus._menuExiting = true;   // 镜像给 LevelMap：引导手开始淡出
+    databus._menuExiting = true;   // 镜像给 LevelMap：菜单开始出场
     this._menuExit = {
       phase: 'wait',                  // wait → crossfade → commit（控件已无出场动画，点开始即消失）
       startTime: Date.now(),
@@ -1127,7 +1150,7 @@ class GameEngine {
     this._menuExit = null;
     this._menuVisible = false;
     this._hasLeftMenu = true;
-    databus._menuExiting = false;   // 结束出场：引导手状态复位（gameState 已非 menu，renderHand 不再绘制）
+    databus._menuExiting = false;   // 结束出场：菜单状态复位（gameState 已非 menu）
     databus.gameState = targetState;
     if (targetState === 'playing') {
       this.playing.beginEntrance();   // 关卡背景已在交叉淡变中显示，现在启动棋盘/猪/UI 入场
@@ -1340,11 +1363,12 @@ class GameEngine {
     var startCY = startY + startH / 2;
 
     var playT = this._getMenuTransform('play');
+    var idle = this._getPlayIdleTransform();   // 果冻呼吸空闲动画（非均匀 scaleX/scaleY）
     ctx.save();
     ctx.globalAlpha = playT.alpha;
-    // 围绕按钮中心：按压缩放 × 入场缩放（easeOutBack 回弹）
+    // 围绕按钮中心：按压缩放 × 入场缩放 × 空闲果冻呼吸
     ctx.translate(startCX, startCY);
-    ctx.scale(mainScale * playT.scale, mainScale * playT.scale);
+    ctx.scale(mainScale * playT.scale * idle.sx, mainScale * playT.scale * idle.sy);
     ctx.translate(-startCX, -startCY);
     if (playT.dy !== 0) {
       ctx.translate(0, playT.dy);
@@ -1799,7 +1823,7 @@ class GameEngine {
     // 飞行动画 / 嵌入特效进行中 → 忽略
     if (this._stamina.isFlying() || this._staminaEmbed) return;
     var self = this;
-    // 引导手即时隐藏：不等体力动画/出场动画播完（满足「点按钮就消失」）
+    // 点击开始按钮：立即触发菜单出场（不等体力动画/出场动画播完）
     databus._menuExiting = true;
     // 先同步体力
     this._stamina.load();
@@ -1822,7 +1846,7 @@ class GameEngine {
     }
 
     // 体力不足 → 弹广告窗补救（不再抖动按钮）
-    databus._menuExiting = false;   // 未实际离开菜单，允许引导手重新出现
+    databus._menuExiting = false;   // 未实际离开菜单，允许菜单重新激活
     var hasAds = this._stamina.getAdRemainingToday() > 0;
     setTimeout(function () {
       if (hasAds) {
@@ -1947,8 +1971,8 @@ class GameEngine {
         case 'menu':
           audio.playMusic('menu');
           this._menuVisible = true;   // 回到主菜单：可见，未来离场播出场动画
-          databus._menuExiting = false;   // 清除出场标志：引导手允许重新出现
-          databus._returningToMenu = false;   // 返回过场结束、菜单正式激活：屏蔽旗复位，引导手按 3s 延迟重新出现
+          databus._menuExiting = false;   // 清除出场标志：菜单允许重新激活
+          databus._returningToMenu = false;   // 返回过场结束、菜单正式激活：屏蔽旗复位
         // 场外求助：任意路径回到菜单（含设置面板"返回主页"）都复位求助态，
         // 避免 playMode 残留 'assist'/'replay' 污染下一局正常关卡（跳过提示上传/通关结算），
         // 并清掉 _pendingHelpKey。
@@ -1971,10 +1995,10 @@ class GameEngine {
         }
         if (prev && this.playing && this.playing._resetHelpState) this.playing._resetHelpState();
         // 从其他界面返回主菜单：入场动画已移除，控件直接显示。
-        // 引导手/侧影延迟基准重置为菜单显示时刻。
+        // 侧影延迟基准重置为菜单显示时刻。
         if (prev) {
           this._menuEntranceDoneAt = Date.now();
-          databus._menuEntranceDoneAt = Date.now();   // 镜像给 LevelMap：引导手延迟基准
+          databus._menuEntranceDoneAt = Date.now();   // 镜像给 LevelMap：侧影延迟基准
         }
         break;
       case 'editor':      this.editor.activate();  audio.playMusic('editor');   break;
@@ -1997,7 +2021,7 @@ class GameEngine {
     }
 
     // 返回主菜单过场建立前的空窗（gameState 已切 menu、_circle 尚未接管）：
-    // 继续渲染关卡冻结帧，屏蔽主菜单背景与引导手，避免「引导小手闪一下」。
+    // 继续渲染关卡冻结帧，屏蔽主菜单背景，避免返回过场空窗闪现。
     // 过场结束、菜单正式激活时（checkStateTransition 的 menu 分支）会清掉 _returningToMenu。
     if (databus._returningToMenu) {
       if (this.playing && this.playing.render) {
@@ -2020,8 +2044,6 @@ class GameEngine {
       this.drawBackground();
     }
     this._renderCurrentScene();
-    // 引导手独立层：在开始按钮(屏幕固定HUD)之后绘制，保证手在按钮之上不被遮挡。
-    if (this._useLevelMap && this._levelMap) this._levelMap.renderHand();
 
     // 全局 Toast 替代组件 — 叠在所有游戏场景之上
     if (this._toast) this._toast.render(ctx);
