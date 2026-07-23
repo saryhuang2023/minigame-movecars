@@ -172,6 +172,7 @@ class GameEngine {
     var self = this;
     this._loadingMgr = new LoadingManager();
     this._loadingRdr = new LoadingRenderer(this._loadingMgr);
+    this.playing._loadingMgr = this._loadingMgr;   // 让 PlayingEngine 能取预加载图（如 hand_guide 供 LevelMap 引导手等）
 
     // 皮肤配置必须在 loading 启动前同步加载（frameCount 依赖 skin.json）
     SkinLoader.loadSkinConfig(0);
@@ -306,7 +307,7 @@ class GameEngine {
     var _hk = (_lo.query && _lo.query.hk) || '';
     var _aid = (_lo.query && _lo.query.aid) || '';
     // [TEST] 临时硬编码 hk 跳过卡片分享冷启——测完删除此行（注意 hk 本身不含引号）
-    if (!_hk) _hk = 'hk_414dd45d61132c9f08ca1ff4fb685e7d';
+    // if (!_hk) _hk = 'hk_414dd45d61132c9f08ca1ff4fb685e7d';
     if (_hk) {
       databus._pendingHelpKey = _hk;
       databus._pendingHelpAid = _aid;
