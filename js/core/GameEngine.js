@@ -37,7 +37,7 @@ const { getSafeLayout } = require('../utils/safeLayout.js');
 // 圆形过场（CircleTransition）统一三路：菜单→关卡 / 关卡→菜单 / 关卡→关卡，
 // 替代原交叉淡变。控件本身不再有出场动画（点开始即消失，不做下滑/渐隐）。
 var MENU_CROSSFADE_DURATION = 450;
-var CIRCLE_DURATION = 840;   // 圆形过场时长（ms）：慢→快张开 / 快→慢收缩（用户要求慢一倍）
+var CIRCLE_DURATION = 1200;  // 圆形过场时长（ms）：菜单→关卡 / 关卡→菜单 / 关卡→关卡 三路统一（用户要求 1500→1200）
 
 
 class GameEngine {
@@ -1206,6 +1206,7 @@ class GameEngine {
       target: targetLayer,
       duration: CIRCLE_DURATION,
       r0: 8,
+      easeExpand: Easing.easeInOutCubic,   // 菜单→关卡：与「重玩」同款均匀节奏，消除 easeInCubic 前半隐形导致的「慢半拍」观感
       onComplete: function () {
         self._circle = null;
         self._menuExit = null;
@@ -1240,6 +1241,8 @@ class GameEngine {
       target: targetLayer,   // 主菜单背景（满屏）
       duration: CIRCLE_DURATION,
       r0: 8,
+      // 收缩路径刻意用默认 easeOutCubic（快起步）：圆从满屏 Rmax 立即开始缩小，第一帧即见虹膜收起。
+      // 若误用 easeInOutCubic（先慢后快），前 ~40% 时长 r 仍≈Rmax、圆仍铺满屏 → 视觉上「卡住 400ms」无表现。
       onComplete: function () {
         self._circle = null;
         self._menuRevealStart = Date.now();   // 先置起点，避免首帧全亮闪一下
@@ -1264,8 +1267,9 @@ class GameEngine {
       direction: 'expand',
       source: sourceLayer,
       target: targetLayer,
-      duration: CIRCLE_DURATION,
+      duration: CIRCLE_DURATION,       // 关卡→关卡：与全局统一 1500ms
       r0: 8,
+      easeExpand: Easing.easeInOutCubic,   // 关卡→关卡：均匀节奏，修正 easeInCubic 前半隐形+末段猛冲导致的「瞬间消失」观感
       onComplete: function () {
         self._circle = null;
         // gameState 仍为 'playing'，无需切状态；仅触发新关卡目标 UI 微淡入

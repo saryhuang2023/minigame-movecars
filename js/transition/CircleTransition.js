@@ -37,6 +37,11 @@ function CircleTransition(opts) {
   this.target = opts.target;       // 过场终点满屏内容（expand=圆内显现方；contract=满屏底图方）
   this.duration = opts.duration || 420;
   this.r0 = (opts.r0 != null) ? opts.r0 : 8; // 起手小圆点半径（逻辑 px）
+  // 可配置缓动（默认保持原节奏：expand 慢→快 / contract 快→慢）。
+  // 关卡→关卡单独用 easeInOutCubic，让半径全程均匀可见、末段柔和收尾，
+  // 避免 easeInCubic「前半隐形 + 末段猛冲」被误感为「瞬间消失」。
+  this.easeExpand = opts.easeExpand || Easing.easeInCubic;
+  this.easeContract = opts.easeContract || Easing.easeOutCubic;
   this.onComplete = opts.onComplete || null;
   this.active = false;
   this._startTime = 0;
@@ -75,10 +80,10 @@ CircleTransition.prototype.render = function (ctx, now) {
   var Rmax = Math.sqrt(SCREEN_WIDTH * SCREEN_WIDTH + SCREEN_HEIGHT * SCREEN_HEIGHT) + 10;
   var r;
   if (this.direction === 'expand') {
-    var e = Easing.easeInCubic(t);          // 慢 → 快
+    var e = this.easeExpand(t);
     r = this.r0 + (Rmax - this.r0) * e;
   } else {
-    var e2 = Easing.easeOutCubic(t);        // 快 → 慢（扩张镜像）
+    var e2 = this.easeContract(t);
     r = Rmax - (Rmax - this.r0) * e2;
   }
 
@@ -94,6 +99,24 @@ CircleTransition.prototype.render = function (ctx, now) {
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
   _drawLayer(ctx, layerB);
+  ctx.restore();
+
+  // 虹膜边缘描边：暖色柔光环——暖象牙白细环 + 暖棕柔光，任意底色清晰且不刺眼、不生硬
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  // 1) 暖棕柔影宽环（底层；亮底显暗轮廓，模糊消硬边，替代纯黑）
+  ctx.shadowColor = 'rgba(58, 38, 20, 0.55)';
+  ctx.shadowBlur = 9;
+  ctx.lineWidth = 4.5;
+  ctx.strokeStyle = 'rgba(58, 38, 20, 0.38)';
+  ctx.stroke();
+  // 2) 暖象牙白细环（上层；暗底显亮边，自带柔光，呼应 goldLight #FFF8E1）
+  ctx.shadowColor = 'rgba(255, 246, 224, 0.85)';
+  ctx.shadowBlur = 6;
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = 'rgba(255, 248, 232, 0.96)';
+  ctx.stroke();
   ctx.restore();
 };
 

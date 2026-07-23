@@ -269,9 +269,9 @@ class PlayingEngine {
             settingsPanel.open({
               title: '设置',
               buttons: [
-                { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); if (databus.returnState === 'editor') { databus.gameState = 'editor'; } else { databus.gameState = 'menu'; databus._returningToMenu = true; } } },
+                { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(function() { if (databus.returnState === 'editor') { databus.gameState = 'editor'; } else { databus.gameState = 'menu'; databus._returningToMenu = true; } }); } },
                 { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
-                { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+                { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(function() { self.restartLevel(); }); } },
               ]
             });
           }
@@ -457,12 +457,21 @@ class PlayingEngine {
   startLevel(name, opts) {
     opts = opts || {};
 
-    // 关卡→关卡（重玩 / 下一关）：冻结当前关卡帧，交由 _loadAndStart 在新关底图就位后播圆形展开过场
-    var circleSnapshot = null;
-    if (databus._gameEngine && databus.gameState === 'playing' && !opts.fromMenu) {
-      try { circleSnapshot = databus._gameEngine._captureFrame(); } catch (e) { circleSnapshot = null; }
+    // 关卡→关卡圆形过场：在「任何 UI 重建 / 异步加载」之前，同步冻结当前(旧关)帧。
+    // 必须在 startLevel 入口同步完成——此时 render 循环尚未重画新界面，离屏画布仍是旧关画面；
+    // 若挪到 _loadAndStart（云端异步返回后才执行），渲染循环早已画出新关空界面，
+    // 会 source==target → 圆形过场不可见（这正是「继续闯关无圆形虹膜」的根因）。
+    // 仅当当前确实处于游玩态(gameState==='playing')才视为关卡→关卡，排除菜单→关卡
+    // （菜单→关卡由 _beginMenuExitCircle 处理；此处若误触发会与菜单出场过场叠加）。
+    this._pendingLevelExpand = null;
+    if (databus.gameState === 'playing' && databus._gameEngine) {
+      try {
+        this._pendingLevelExpand = databus._gameEngine._captureFrame();
+      } catch (e) {
+        console.warn('[Playing] 冻结旧关帧失败，跳过关卡过场', e);
+        this._pendingLevelExpand = null;
+      }
     }
-    this._pendingLevelExpand = circleSnapshot;   // 暂存冻结旧帧，待新关底图就位后启动过场（避免继续闯关异步加载时源=目标）
 
     // 0. 如果当前有关卡在运行，先反初始化
     if (this.levelName) {
@@ -580,11 +589,12 @@ class PlayingEngine {
       phase: 'done',        // 直接终态：所有 UI / 猪 默认显示，无入场动画
     };
     this.loadLevel(data);
-    // 关卡→关卡圆形过场：新关底图已就位(loadLevel 已更新 _sceneBgImg)，此刻启动圆形展开，
-    // source=冻结旧关帧 / target=新关底图 → 圆形扩散露出新关，过场可见（修复继续闯关无过场）。
-    if (this._pendingLevelExpand) {
-      var _ge = databus._gameEngine;
-      if (_ge && _ge._beginLevelExpand) _ge._beginLevelExpand(this._pendingLevelExpand);
+    // 关卡→关卡圆形过场：消费 startLevel 入口「同步」冻结的旧关帧（见 startLevel 开头）。
+    // 此刻新关底图(_sceneBgImg)已就位，圆形扩散露出新关，过场可见。
+    // 注意：冻结动作必须在 startLevel 入口同步完成，不能挪到此处——
+    // 继续闯关走云端异步拉取时，render 循环早已画出新关空界面，那时再冻结会 source==target 导致虹膜不可见。
+    if (this._pendingLevelExpand && databus._gameEngine && databus._gameEngine._beginLevelExpand) {
+      databus._gameEngine._beginLevelExpand(this._pendingLevelExpand);
       this._pendingLevelExpand = null;
     }
     this._loading = false;
@@ -2138,9 +2148,9 @@ class PlayingEngine {
           settingsPanel.open({
             title: '设置',
             buttons: [
-              { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; } },
+              { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(function() { databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; }); } },
               { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
-              { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+              { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(function() { self.restartLevel(); }); } },
             ]
           });
         }
@@ -2245,7 +2255,6 @@ class PlayingEngine {
     }
 
     this._guide.onPlayerAction();  // 棋盘操作 → 重置空闲计时
-    this._recordTouch('touchstart', x, y);
 
     // === 按钮检测（回放中跳过） ===
     if (!this._isPlayingBack) {
@@ -2276,9 +2285,9 @@ class PlayingEngine {
           settingsPanel.open({
             title: '设置',
             buttons: [
-              { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(); databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; } },
+              { iconKey: 'btn_home', action: function() { audio.play('button_click'); settingsPanel.close(function() { databus.gameState = databus.returnState === 'editor' ? 'editor' : 'menu'; }); } },
               { iconKey: 'btn_continue', action: function() { audio.play('button_click'); settingsPanel.close(); } },
-              { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(); self.restartLevel(); } },
+              { iconKey: 'btn_again', action: function() { audio.play('button_click'); settingsPanel.close(function() { self.restartLevel(); }); } },
             ]
           });
         }

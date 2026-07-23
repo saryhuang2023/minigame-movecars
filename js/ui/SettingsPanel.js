@@ -176,11 +176,13 @@ function open(opts) {
 
 /**
  * 关闭面板（带弹出动画）。close 按钮/遮罩点击/底部按钮关闭都用这个。
+ * @param {Function} [onClosed] 关闭动画（约 130ms spring-out）结束后回调——用于把后续动作（如跳转菜单）推迟到面板真正关掉之后，
+ *   避免出现「一点就冻屏+转场」的生硬观感。
  */
-function close() {
-  if (_animator.isClosed()) return;
-  _btnPress = {};
-  _btnBreathe = {};
+function close(onClosed) {
+  if (_animator.isClosed()) { if (onClosed) onClosed(); return; }
+  // 保留按钮压感：不再清空 _btnPress/_btnBreathe，让「触控反馈」（按下回弹）在关闭动画期间仍可见（open() 重开时会复位）。
+  // 否则底部按钮点下去的瞬间反馈会被抹掉，配合下方延迟跳转会显得毫无响应。
 
   _animator.close(function() {
     // 动画结束后清理布局数据
@@ -191,6 +193,7 @@ function close() {
     _sfxRect = null;
     _closeRect = null;
     _btnRects = null;
+    if (onClosed) onClosed();
   });
 }
 
