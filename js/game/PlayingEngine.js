@@ -122,14 +122,20 @@ class PlayingEngine {
     this._helpReplayRecording = null; // 场外求助：回放待播放的录制
     this._helpReplaySrc = null;    // 场外求助：回放原始录制（再看一次复用，不被 activate 清空）
     this._replayDone = false;      // 场外求助：回放是否已播放完毕（决定「再看一次」显隐）
-    this._replayCounting = false;     // 场外求助：回放进入后 5 秒倒计时进行中
-    this._replayCountdownEnd = 0;     // 倒计时结束时间戳（Date.now()+5000）
+    this._replayStartTime = 0;    // 场外求助：回放正式开始播放的时间戳（进度条倒计时起点；0=预热满格态）
+    this._replayDuration = 0;     // 场外求助：回放总时长(ms)=累积夹紧间隔+1000（进度条满格初值/倒计时初值）
+    this._replayEndTime = 0;      // 场外求助：回放结束时刻（驱动结束按钮「从底部滑到屏幕中央」动画）
+    this._replayCounting = false;     // 场外求助：回放进入后 3 秒倒计时进行中
+    this._replayCountdownEnd = 0;     // 倒计时结束时间戳（Date.now()+3000）
     this._playbackSynthetic = false;  // 回放合成触控标志（区别于玩家真实触控，放行棋盘操作）
     this._helpOverlayBtns = [];    // 场外求助覆盖层按钮命中区（每帧重建）
     this._helpPress = {};          // 覆盖层按钮按压态（id -> { startTime, phase }），单点触控复用
     this._recordEntries = [];      // [{ type, x, y, dt }]
     this._isPlayingBack = false;
-    this._playbackDotPos = null;  // { x, y } 回放触控位置指示
+    this._playbackDotPos = null;  // { x, y } 回放当前合成触控落点（缓动跟随点锚定处）
+    this._touchRipples = [];      // 回放触摸涟漪 [{ x, y, t0 }]：落点/抬手瞬间生成，扩散淡出
+    this._touchFollow = null;     // { x, y } 缓动跟随的柔光接触点（拖动期间，避免瞬移刺眼）
+    this._touchFollowLast = 0;    // 最近一次 touchmove 时间戳（用于接触点淡出）
     this._playbackTimer = null;
 
     // 场景背景图
@@ -214,12 +220,17 @@ class PlayingEngine {
     this._recordingStart = 0;
     this._recordEntries = [];
     this._isPlayingBack = false;
+    this._playbackDotPos = null;
+    this._touchRipples = [];
+    this._touchFollow = null;
+    this._touchFollowLast = 0;
     if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
     // 正式玩：通关后保存 hint 数据缓存
     this._gameplayHintCache = [];
     this._hintMerged = false;
     this._helpEnded = false;   // 场外求助：协助关「提前结束 / 通关」统一结束态标志
     this._helpSettlePending = false;  // 协助关结算兜底：等待最后一只逃逸猪动画播完才落定（对齐正式关）
+    this._endBtnHideTime = 0;       // 协助关「协助完成」按钮渐隐时间戳（最后一只猪开始跑时置位）
     this._showHelpEndPanel = false;
     this._helpEndReason = null;      // 协助关结束原因：'cleared' | 'early' | 'failed'（驱动结算文案）
     this._helpSent = false;
@@ -595,6 +606,7 @@ class PlayingEngine {
       }
       this._helpEnded = false;   // 重新进入（再来一次）时复位结束态
       this._helpSettlePending = false;
+      this._endBtnHideTime = 0;
       this._showHelpEndPanel = false;
       this._helpEndReason = null;
       this._helpSent = false;
@@ -608,10 +620,13 @@ class PlayingEngine {
       this._helpReplayRecording = null;
       this._helpReplaySrc = rec;          // 留存原始录制，供「再看一次」复用
       this._isRecording = false;
-      this._recordEntries = rec;
+      this._recordEntries = rec.entries;   // rec 为 {entries, version} 包裹，取内层数组（回放模式不录制，仅避免误用包裹对象）
       this._replayDone = false;
-      this._replayCounting = true;        // 进入 5 秒倒计时（_renderHelpOverlay 驱动圈 + 到点启动回放）
-      this._replayCountdownEnd = Date.now() + 5000;
+      this._replayEndTime = 0;            // 复位滑动动画时间戳
+      this._replayStartTime = 0;         // 回放尚未开始（进度条处于满格预热态）
+      this._replayDuration = this._computeReplayDuration(rec); // 预热阶段即算好总时长，进度条提前满格显示
+      this._replayCounting = true;        // 进入 3 秒倒计时（_renderHelpOverlay 驱动圈 + 到点启动回放）
+      this._replayCountdownEnd = Date.now() + 3000;
       return;
     }
 
@@ -680,7 +695,7 @@ class PlayingEngine {
       return;
     }
     var key = 'trial_record_' + this.levelName;
-    wx.setStorageSync(key, JSON.stringify(this._recordEntries));
+    wx.setStorageSync(key, JSON.stringify({ v: 2, rec: this._recordEntries }));
     console.log('[TrialRec] 录制结束，保存 ' + this._recordEntries.length + ' 条操作 → ' + key);
   }
 
@@ -689,6 +704,155 @@ class PlayingEngine {
    * @param {Array|string} [events] 外部注入的录制（场外求助回放）；缺省则读本地试玩录制（trial_record_<levelName>）。
    * @param {Function} [onComplete] 回放结束回调（无参则弹「回放完成」Toast）。
    */
+  _computeReplayDuration(input) {
+    var parsed = this._normalizeReplayInput(input);
+    var rec = parsed ? parsed.entries : null;   // 统一经 _normalizeReplayInput 解包（兼容 {v,rec} / {entries,version} / 扁平数组）
+    if (!rec || !rec.length) return 0;
+    var MAX_GAP = PlayDefine.PLAY.REPLAY.MAX_GAP;
+    var delayed = 0, lastDt = 0;
+    for (var i = 0; i < rec.length; i++) {
+      var gap = rec[i].dt - lastDt;
+      if (gap > MAX_GAP) gap = MAX_GAP;
+      lastDt = rec[i].dt;
+      delayed += gap;
+    }
+    return delayed + 1000;
+  }
+
+  // 解析回放录制：兼容旧扁平数组(v1, 棋盘像素坐标) 与 新 {v:2, rec:[...]}(直径单位, 设备无关)。
+  _normalizeReplayInput(raw) {
+    if (!raw) return null;
+    var obj = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+    if (!obj) return null;
+    // 新本地/提交格式：{v:2, rec:[...]}（_submitAssist / 本地试玩存档）
+    if (!Array.isArray(obj) && obj.rec && Array.isArray(obj.rec)) {
+      return { entries: obj.rec, version: obj.v || 2 };
+    }
+    // 内存传递格式（_helpReplayRecording / _helpReplaySrc）：{entries, version}
+    if (!Array.isArray(obj) && obj.entries && Array.isArray(obj.entries)) {
+      return { entries: obj.entries, version: obj.version || 1 };
+    }
+    // 旧格式：扁平数组（棋盘像素坐标 v1）
+    if (Array.isArray(obj)) {
+      return { entries: obj, version: 1 };
+    }
+    return null;
+  }
+
+  _renderReplayProgress(ctx) {
+    if (this._replayDuration <= 0) return;
+    var barW = SCREEN_WIDTH * 3 / 4;            // 宽度 = 屏幕 3/4
+    var barH = 18;                             // 厚度 18px（纯矩形）
+    var barX = (SCREEN_WIDTH - barW) / 2;       // 水平居中
+    // 垂直：底部贴在播放中「返回」按钮顶边上方 5px
+    //   （返回按钮 bh2=52、底边距屏底 20 → 顶边 y = SCREEN_HEIGHT-20-52，与 _renderHelpOverlay 播放中分支一致）
+    var backTop = SCREEN_HEIGHT - 20 - 52;
+    var barBottom = backTop - 5;
+    var barTop = barBottom - barH;
+    // 渐隐：回放结束后 300ms 淡出（与结束按钮滑入同步，条在棋盘上沿/钮在中央不遮挡）
+    var alpha = 1;
+    if (this._replayEndTime) {
+      alpha = Math.max(0, 1 - (Date.now() - this._replayEndTime) / 300);
+    }
+    if (alpha <= 0.01) return;
+    // 剩余时间：预热阶段(_replayStartTime===0)显示满格总时长
+    var remaining = this._replayDuration;
+    if (this._replayStartTime) {
+      remaining = this._replayDuration - (Date.now() - this._replayStartTime);
+      if (remaining < 0) remaining = 0;
+    }
+    var ratio = remaining / this._replayDuration;   // 1→0
+    // mm:ss 倒计时文字（盖在进度条中心）
+    var totalSec = Math.ceil(remaining / 1000);
+    var mm = String(Math.floor(totalSec / 60));
+    var ss = String(totalSec % 60);
+    if (mm.length < 2) mm = '0' + mm;
+    if (ss.length < 2) ss = '0' + ss;
+    var mmss = mm + ':' + ss;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // 底槽（纯矩形，20% 不透明度 = 较高通透感，能看到后面棋盘）
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(barX, barTop, barW, barH);
+    // 进度（方向：右端固定贴右边界，左端随剩余减少向右移 —— 从左侧被消耗）
+    var filledW = barW * ratio;
+    if (filledW > 1) {
+      ctx.fillStyle = '#FFD24A';        // 暖金黄：活泼农场调性，黑底上清晰
+      ctx.fillRect(barX + (barW - filledW), barTop, filledW, barH);
+    }
+    // 不透明边框（白色实线，盖在最外圈，始终完整显示，不受进度覆盖影响）
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,255,255,1)';
+    ctx.strokeRect(barX, barTop, barW, barH);
+    // 倒计时文字：居条中心，盖在盖条上（白字 + 黑描边，暖黄条/黑底槽上都清晰）
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 15px ' + Theme.font.family;
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeText(mmss, SCREEN_WIDTH / 2, barTop + barH / 2);
+    ctx.fillText(mmss, SCREEN_WIDTH / 2, barTop + barH / 2);
+    ctx.restore();
+  }
+
+  // 回放触摸指示：落点/抬手瞬间生成「扩散+淡出」涟漪环；拖动期间一个缓动跟随的柔光接触点。
+  // 替代原先常驻闪烁的 hand_guide 小手——安静、精准、不抢戏，仍能清楚表达手指触摸的位置与时机。
+  _renderTouchIndicator(ctx, now) {
+    var s = SCREEN_WIDTH / 393;   // 与 LevelMap 引导手同缩放基准
+
+    // 1) 缓动跟随接触点（仅回放进行中、且有最近拖动时显示）
+    if (this._isPlayingBack && this._playbackDotPos) {
+      var tgt = this._playbackDotPos;
+      if (!this._touchFollow) this._touchFollow = { x: tgt.x, y: tgt.y };
+      else {
+        this._touchFollow.x += (tgt.x - this._touchFollow.x) * 0.25;
+        this._touchFollow.y += (tgt.y - this._touchFollow.y) * 0.25;
+      }
+      var sinceMove = now - this._touchFollowLast;
+      var followAlpha = sinceMove < 400 ? 0.5 * (1 - sinceMove / 400) : 0;
+      if (followAlpha > 0.01 && this._touchFollow) {
+        ctx.save();
+        ctx.globalAlpha = followAlpha;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(this._touchFollow.x, this._touchFollow.y, 9 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#FFD24A';   // 暖金黄描边，呼应进度条
+        ctx.lineWidth = 2 * s;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // 2) 涟漪：落点/抬手瞬间扩散淡出（回放结束后仍让其播完，不硬切）
+    var RIPPLE_DUR = 380;
+    for (var i = this._touchRipples.length - 1; i >= 0; i--) {
+      var r = this._touchRipples[i];
+      var age = now - r.t0;
+      if (age >= RIPPLE_DUR) { this._touchRipples.splice(i, 1); continue; }
+      var p = age / RIPPLE_DUR;            // 0→1
+      var ease = 1 - Math.pow(1 - p, 2);   // easeOutQuad
+      var radius = (8 + ease * 22) * s;    // 8→30px（上限收窄，更收敛不刺眼）
+      var alpha = (1 - p) * 0.85;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#FFD24A';
+      ctx.lineWidth = 3 * s;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      // 中心小实心点，强化「此处被点」的瞬间感
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 4 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   _trialStartPlayback(events, onComplete) {
     if (this._isPlayingBack) return;
     // 回放模式（playMode==='replay'）的录制来自残局快照，escapedCount>0 是正常的，
@@ -706,10 +870,18 @@ class PlayingEngine {
     }
     if (!raw) return;
 
-    var evts = (typeof raw === 'string') ? JSON.parse(raw) : raw;
-    if (!evts || evts.length === 0) return;
+    // 兼容旧扁平数组(v1, 棋盘像素) / 新 {v:2, rec}(直径单位)；统一取出 entries + version
+    var parsed = this._normalizeReplayInput(raw);
+    if (!parsed || !parsed.entries || parsed.entries.length === 0) return;
+    var evts = parsed.entries;
+    var replayVersion = parsed.version;
 
     this._isPlayingBack = true;
+    // 重置触摸指示状态（落点/抬手生成涟漪、拖动柔光跟随点），避免「再看一次」残留上次
+    this._playbackDotPos = null;
+    this._touchRipples = [];
+    this._touchFollow = null;
+    this._touchFollowLast = 0;
     console.log('[TrialRec] 开始回放 ' + evts.length + ' 条触控');
 
     // 计算回放延迟：事件间隔超过 500ms 则压缩
@@ -725,24 +897,50 @@ class PlayingEngine {
       (function (evt, playDt) {
         setTimeout(function () {
           if (!self._isPlayingBack) return;
-          // evt.bx/by 为「设备无关」棋盘数据坐标 (h.x, h.y)；按当前设备完整变换（与 renderBoard 一致）
-          // 还原为渲染屏幕坐标，再驱动棋盘——这样不同屏宽/刘海高度的手机回放都不会错位（见 #824 修复）。
           var gp = self.gp;
           var _as = gp._getAutoScale();
           var _sx, _sy;
-          if (_as < 1) {
-            var _vw = gp.boardWidth;
-            var _vh = (gp.rows - 1) * gp.vSpacing + gp.scaledDiameter;
-            var _availH = SCREEN_HEIGHT - gp.topBarH - gp.bottomStripH;
-            var _scx = SCREEN_WIDTH / 2;
-            var _scy = gp.topBarH + _availH / 2;
-            _sx = _scx + _as * (evt.bx - _vw / 2);
-            _sy = _scy + _as * (evt.by - _vh / 2);
+          if (replayVersion >= 2) {
+            // 新格式(v2)：bx/by 为「直径单位」(设备无关 = 棋盘数据坐标÷scaledDiameter)，
+            // 先乘回当前设备的 scaledDiameter 还原成棋盘数据坐标 (h.x, h.y)，再走与 renderBoard 一致的变换。
+            var hX = evt.bx * gp.scaledDiameter;
+            var hY = evt.by * gp.scaledDiameter;
+            if (_as < 1) {
+              var _vw = gp.boardWidth;
+              var _vh = (gp.rows - 1) * gp.vSpacing + gp.scaledDiameter;
+              var _availH = SCREEN_HEIGHT - gp.topBarH - gp.bottomStripH;
+              var _scx = SCREEN_WIDTH / 2;
+              var _scy = gp.topBarH + _availH / 2;
+              var _bcx = gp.boardOffsetX + _vw / 2;
+              var _bcy = (gp.topBarH + gp.boardOffsetY) + _vh / 2;
+              _sx = _scx + _as * (hX - _bcx);
+              _sy = _scy + _as * (hY - _bcy);
+            } else {
+              _sx = gp.boardOffsetX + hX;
+              _sy = (gp.topBarH + gp.boardOffsetY) + hY;
+            }
           } else {
-            _sx = gp.boardOffsetX + evt.bx;
-            _sy = (gp.topBarH + gp.boardOffsetY) + evt.by;
+            // 旧格式(v1)：bx/by 为棋盘像素坐标，沿用原两段式还原（同设备仍准，跨设备沿用旧行为不回归）
+            if (_as < 1) {
+              var _vw2 = gp.boardWidth;
+              var _vh2 = (gp.rows - 1) * gp.vSpacing + gp.scaledDiameter;
+              var _availH2 = SCREEN_HEIGHT - gp.topBarH - gp.bottomStripH;
+              var _scx2 = SCREEN_WIDTH / 2;
+              var _scy2 = gp.topBarH + _availH2 / 2;
+              _sx = _scx2 + _as * (evt.bx - _vw2 / 2);
+              _sy = _scy2 + _as * (evt.by - _vh2 / 2);
+            } else {
+              _sx = gp.boardOffsetX + evt.bx;
+              _sy = (gp.topBarH + gp.boardOffsetY) + evt.by;
+            }
           }
           self._playbackDotPos = { x: _sx, y: _sy };
+          // 触摸指示：落点(touchstart)/抬手(touchend) 生成扩散淡出涟漪；拖动(touchmove) 记录时间戳供柔光跟随点淡出
+          if (evt.type === 'touchstart' || evt.type === 'touchend') {
+            self._touchRipples.push({ x: _sx, y: _sy, t0: Date.now() });
+          } else if (evt.type === 'touchmove') {
+            self._touchFollowLast = Date.now();
+          }
           self._playbackSynthetic = true;
           if (evt.type === 'touchstart') self.onTouchStart(_sx, _sy);
           else if (evt.type === 'touchmove') self.onTouchMove(_sx, _sy);
@@ -751,6 +949,10 @@ class PlayingEngine {
         }, playDt);
       })(evts[i], delayed);
     }
+
+    // 进度条：记录正式播放起点 + 总时长（与下方 doneTimer 的 delayed+1000 一致）
+    this._replayStartTime = Date.now();
+    this._replayDuration = delayed + 1000;
 
     // 回放结束清理 + 回调
     var doneTimer = setTimeout(function () {
@@ -1048,16 +1250,25 @@ class PlayingEngine {
     try { snap = compress.inflateJson(data.snapshot); }
     catch (inflateErr) { console.warn('[Help] 快照解压异常', inflateErr); }
     if (!snap) { showToast('关卡还原失败', 2000); return self._exit(); }
-    var rec = null;
-    try { rec = compress.inflateJson(data.assists[idx].recording); }
+    var rawRec = null;
+    try { rawRec = compress.inflateJson(data.assists[idx].recording); }
     catch (inflateErr) { console.warn('[Help] 回放解压异常', inflateErr); }
-    if (!rec) { showToast('回放数据缺失', 2000); return self._exit(); }
+    if (!rawRec) { showToast('回放数据缺失', 2000); return self._exit(); }
+    // 归一成 {entries, version}（新 v2 直径单位 / 旧 v1 扁平数组），供 _afterEnterLevel 与 _trialStartPlayback 复用
+    var parsed = self._normalizeReplayInput(rawRec);
+    if (!parsed || !parsed.entries || parsed.entries.length === 0) { showToast('回放数据异常', 2000); return self._exit(); }
     var levelData = self._buildHelpLevelData(snap);
     if (!levelData) { showToast('关卡数据缺失', 2000); return self._exit(); }
-    self._helpReplayRecording = rec;                  // 留存录制，供 _afterEnterLevel 载入后自动播放
+    self._helpReplayRecording = parsed;               // 留存 {entries, version}，供 _afterEnterLevel 载入后自动播放
     self._installHelpLevel(levelData, 'replay');      // 装进 currentLevel.data，走与试玩一致的加载通道
-    databus._helpRequester = data.requester || null;  // 回放关左上角「来自好友的帮助」展示（与协助关一致）
-    self._helpRequesterImg = null;   // 复位头像缓存，下一帧重新加载
+    // 回放关左上角展示「协助者」头像/昵称：本回放播放的是 assists[idx] 这位协助者的录制，
+    // 故取该条协助者的 assistant 信息；旧数据缺字段时回退发布者，保证不空白。
+    // （协助关 assist 仍显示发布者，由 _installHelpLevelForAssist 设置，此处逻辑与之分离）
+    var _assistEntry = (data.assists && data.assists[idx]) ? data.assists[idx] : null;
+    databus._helpRequester = (_assistEntry && _assistEntry.assistant)
+      ? _assistEntry.assistant
+      : (data.requester || null);
+    self._helpRequesterImg = null;   // 复位头像缓存，下一帧重新加载（按新 avatarUrl 重新拉取）
     databus.gameState = 'playing';   // → activate() → startLevel 消费 currentLevel.data，_afterEnterLevel 启动回放
   }
 
@@ -1146,7 +1357,7 @@ class PlayingEngine {
       escapedPigs: this._escapedCount || 0,
       totalPigs: this._totalPigsInLevel || 0
     };
-    var recording = JSON.stringify(this._recordEntries || []);
+    var recording = JSON.stringify({ v: 2, rec: this._recordEntries || [] });
 
     this._ensureUserInfo().then(function (user) {
       return cloud.submitAssist({
@@ -1191,6 +1402,9 @@ class PlayingEngine {
     this._helpReplayRecording = null;
     this._helpReplaySrc = null;
     this._replayDone = false;
+    this._replayEndTime = 0;            // 复位滑动动画时间戳
+    this._replayStartTime = 0;
+    this._replayDuration = 0;
     this._replayCounting = false;
     this._replayCountdownEnd = 0;
     this._helpSent = false;
@@ -1214,10 +1428,14 @@ class PlayingEngine {
     this._helpReplayRecording = null;
     this._helpReplaySrc = null;
     this._replayDone = false;
+    this._replayEndTime = 0;            // 复位滑动动画时间戳
+    this._replayStartTime = 0;
+    this._replayDuration = 0;
     this._replayCounting = false;
     this._replayCountdownEnd = 0;
     this._helpEnded = false;
     this._helpSettlePending = false;
+    this._endBtnHideTime = 0;
     this._showHelpEndPanel = false;
     this._helpSendBtn = null;        // 清空「发给好友」按钮缓存，下一局重新 new
     this._helpEndReason = null;
@@ -1347,18 +1565,31 @@ class PlayingEngine {
         ctx.restore();   // 结束面板缩放变换
       } else {
         // 进行中：居中「协助完成」单钮（屏幕底部 bottom 30，水平居中；点之进入统一结束面板）
+        // 最后一只猪开始跑(canEscapeRemaining===0)时渐隐消失且不再可点
         var ew = 180, eh = 56, ex = cx - ew / 2, ey = SCREEN_HEIGHT - 30 - eh;
-        this._drawHelpBtn(ctx, ex, ey, ew, eh, '协助完成', 'end');
-        this._helpOverlayBtns.push({ id: 'end', x: ex, y: ey, w: ew, h: eh });
+        var _endAlpha = this._endBtnHideTime
+          ? Math.max(0, 1 - (Date.now() - this._endBtnHideTime) / 220)   // 220ms 渐隐
+          : 1;
+        if (_endAlpha > 0.01) {
+          this._drawHelpBtn(ctx, ex, ey, ew, eh, '协助完成', 'end', _endAlpha);
+          // 仅未触发渐隐时可点；一旦开始渐隐即从命中区移除，杜绝误触
+          if (!this._endBtnHideTime) {
+            this._helpOverlayBtns.push({ id: 'end', x: ex, y: ey, w: ew, h: eh });
+          }
+        }
         // 「协助好友通关中」白字带描边 + rec 图标 改由 _renderStatusIndicators(assist) 画在左上角
       }
     } else if (databus.playMode === 'replay') {
+      this._renderReplayProgress(ctx);    // 进度条（贴在播放中「返回」按钮上方 10px）+ mm:ss 倒计时（预热满格→耗尽式收缩→结束渐隐）
+      // 回放触摸指示：落点/抬手涟漪 + 拖动柔光跟随点（替代闪现小手，安静不刺眼）
+      this._renderTouchIndicator(ctx, Date.now());
       // 倒计时驱动：到点启动回放（仅一次）
       if (this._replayCounting && Date.now() >= this._replayCountdownEnd) {
         this._replayCounting = false;
         var _rpbSelf = this;
         this._trialStartPlayback(this._helpReplaySrc, function () {
           _rpbSelf._replayDone = true;   // 回放结束：覆盖层据其绘制「再看一次」+「返回」
+          _rpbSelf._replayEndTime = Date.now();   // 触发结束按钮「从底部滑到屏幕中央」动画
           console.log('[Help] 回放播放完成 playMode=replay');
         });
       }
@@ -1379,23 +1610,37 @@ class PlayingEngine {
       }
       // 返回按钮（底部水平居中，回放全程可点）
       var bw2 = 150, bh2 = 52;
-      var by2 = SCREEN_HEIGHT - 30 - bh2;
+      var by2 = SCREEN_HEIGHT - 20 - bh2;
       if (this._replayDone) {
-        // 回放完成：「返回」+「再看一次」水平并列居中
+        // 回放完成：先让「返回」以「汽车刹车」曲线滑到屏幕中央并停稳；停稳后「再看一次」再渐显出现
+        if (!this._replayEndTime) this._replayEndTime = Date.now();
         var _gap = 16;
-        var _totalW = bw2 * 2 + _gap;
-        var _leftX = cx - _totalW / 2;
-        this._drawHelpBtn(ctx, _leftX, by2, bw2, bh2, '返回', 'back');
-        this._helpOverlayBtns.push({ id: 'back', x: _leftX, y: by2, w: bw2, h: bh2 });
-        this._drawHelpBtn(ctx, _leftX + bw2 + _gap, by2, bw2, bh2, '再看一次', 'again');
-        this._helpOverlayBtns.push({ id: 'again', x: _leftX + bw2 + _gap, y: by2, w: bw2, h: bh2 });
-        // 回放已结束（按钮下方，不消失）
-        ctx.save();
-        ctx.fillStyle = 'rgba(90,74,106,0.85)';
-        ctx.font = '16px ' + Theme.font.family;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillText('回放已结束', cx, by2 + bh2 + 12);
-        ctx.restore();
+        var _stackH = bh2 * 2 + _gap;
+        var _startTop = by2;                              // 起始：贴底部（与播放中「返回」同高）
+        var _endTop = SCREEN_HEIGHT / 2 - _stackH / 2;    // 目标：整组垂直居中
+        // 刹车曲线：前 55% 时间匀速巡航，之后恒定减速（easeOutQuad）咬死停住，无回弹、无过冲
+        var _SLIDE = 560, _FADE = 300;                    // 滑行时长 / 再看一次渐显时长(ms)
+        var _elapsed = Date.now() - this._replayEndTime;
+        var _p = Math.min(1, _elapsed / _SLIDE);
+        var _lead = 0.55, _A = 2;                         // 巡航时间占比 / 刹车段初始斜率(=恒定减速度)
+        var _leadDist = _A * _lead / (1 - _lead + _A * _lead); // ≈0.71，使巡航→刹车速度连续
+        if (_p < _lead) {
+          var _ease = (_p / _lead) * _leadDist;           // 匀速巡航
+        } else {
+          var _q = (_p - _lead) / (1 - _lead);
+          var _ease = _leadDist + (1 - _leadDist) * (1 - (1 - _q) * (1 - _q)); // 恒定减速刹车到 0
+        }
+        var _stackTop = _startTop + (_endTop - _startTop) * _ease;
+        var _bx = cx - bw2 / 2;                           // 两钮等宽水平居中
+        // 返回（上）：先滑到中央停稳，全程不透明、可点
+        this._drawHelpBtn(ctx, _bx, _stackTop, bw2, bh2, '返回', 'back');
+        this._helpOverlayBtns.push({ id: 'back', x: _bx, y: _stackTop, w: bw2, h: bh2 });
+        // 再看一次（下）：返回停稳后才渐显；渐显期间才进入命中区（避免点到隐形钮）
+        var _againAlpha = Math.max(0, Math.min(1, (_elapsed - _SLIDE) / _FADE));
+        if (_againAlpha > 0.01) {
+          this._drawHelpBtn(ctx, _bx, _stackTop + bh2 + _gap, bw2, bh2, '再看一次', 'again', _againAlpha);
+          this._helpOverlayBtns.push({ id: 'again', x: _bx, y: _stackTop + bh2 + _gap, w: bw2, h: bh2 });
+        }
       } else {
         var startX2 = cx - bw2 / 2;
         this._drawHelpBtn(ctx, startX2, by2, bw2, bh2, '返回', 'back');
@@ -1419,19 +1664,19 @@ class PlayingEngine {
   }
 
   /** 覆盖层按钮：统一使用标准绿钮 button_green.png（drawGreenButton），按 id 应用按压缩放 */
-  _drawHelpBtn(ctx, x, y, w, h, label, id) {
+  _drawHelpBtn(ctx, x, y, w, h, label, id, alpha) {
+    if (alpha === undefined) alpha = 1;
     var scale = this._helpBtnScale(id);
+    ctx.save();
+    if (alpha !== 1) ctx.globalAlpha = alpha;
     if (scale !== 1) {
       var cx = x + w / 2, cy = y + h / 2;
-      ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(scale, scale);
       ctx.translate(-cx, -cy);
-      drawGreenButton(ctx, { x: x, y: y, w: w, h: h, label: label });
-      ctx.restore();
-    } else {
-      drawGreenButton(ctx, { x: x, y: y, w: w, h: h, label: label });
     }
+    drawGreenButton(ctx, { x: x, y: y, w: w, h: h, label: label });
+    ctx.restore();
   }
 
   /** 覆盖层图标钮（btn_home / btn_again 等），按 id 应用按压缩放 */
@@ -1465,6 +1710,8 @@ class PlayingEngine {
       // 协助关「下次再说」：直接返回主菜单
       this._exit();
     } else if (id === 'end') {
+      // 防御：最后一只猪已开始在跑（按钮渐隐中/已隐藏）时不接受点击
+      if (this._endBtnHideTime) return;
       // 协助关「协助完成」：停录并保留录制，进入统一结束面板
       // 若一头猪都没额外跑出 → 失败态（标题「协助失败」+ 2 钮：再来一次/退出协助）
       this._helpEndReason = this._helpNoExtraEscaped() ? 'noescape' : 'early';
@@ -1477,6 +1724,7 @@ class PlayingEngine {
         // 复位结算态，避免旧 attempt 的 _helpEnded/_showHelpEndPanel/_victory 干扰新一局渲染
         this._helpEnded = false;
         this._helpSettlePending = false;
+        this._endBtnHideTime = 0;
         this._showHelpEndPanel = false;
         this._helpEndReason = null;
         this._helpSent = false;            // 重玩：清除「已发送」morph，恢复三钮
@@ -1489,6 +1737,9 @@ class PlayingEngine {
       } else if (this._helpReplaySrc) {
         // 回放：再看一次 —— 完整过场 + 销毁当前关卡 + 重新进入回放（含 5 秒倒计时），与「重来一次」一致
         this._replayDone = false;
+        this._replayEndTime = 0;            // 复位滑动动画时间戳
+        this._replayStartTime = 0;
+        this._replayDuration = 0;
         this._replayCounting = false;
         this._isRecording = false;
         this._recordEntries = this._helpReplaySrc;
@@ -1591,6 +1842,10 @@ class PlayingEngine {
     // 清理录制/回放状态
     if (this._isRecording) this._trialStopRecord(false);  // 退出关卡不保存录制
     this._isPlayingBack = false;
+    this._playbackDotPos = null;
+    this._touchRipples = [];
+    this._touchFollow = null;
+    this._touchFollowLast = 0;
     if (this._playbackTimer) { clearTimeout(this._playbackTimer); this._playbackTimer = null; }
   }
 
@@ -2001,12 +2256,17 @@ class PlayingEngine {
 
   _recordTouch(type, x, y) {
     if (!this._isRecording || this._isPlayingBack) return;
-    var bp = this.gp.screenToBoard(x, y);   // 渲染屏幕坐标（已含 boardOffsetX / topBarH+boardOffsetY 偏移）
-    // 归一化为「设备无关」棋盘数据坐标 (h.x, h.y)：不同手机屏宽/刘海高度 → boardOffsetX / topBarH 不同，
-    // 必须剥离偏移再存，否则跨设备回放（好友求助）坐标错位（见 #824 修复）。
-    var nx = bp.x - this.gp.boardOffsetX;
-    var ny = bp.y - (this.gp.topBarH + this.gp.boardOffsetY);
-    this._recordEntries.push({ type: type, bx: nx, by: ny, dt: Date.now() - this._recordingStart });
+    var bp = this.gp.screenToBoard(x, y);   // autoScale<1 → 棋盘数据坐标(h.x,h.y)；否则 → 原始屏幕坐标
+    // 统一取到「棋盘数据坐标」(h.x, h.y)：autoScale<1 时 screenToBoard 直接返回 h.x/h.y；
+    // 否则需剥离 boardOffsetX / (topBarH+boardOffsetY) 才得到 h.x/h.y。
+    var _asRec = this.gp._getAutoScale();
+    var hx = (_asRec < 1) ? bp.x : (bp.x - this.gp.boardOffsetX);
+    var hy = (_asRec < 1) ? bp.y : (bp.y - (this.gp.topBarH + this.gp.boardOffsetY));
+    // 归一到「直径单位」(÷scaledDiameter)：棋盘布局是 scaledDiameter 的均匀缩放，
+    // boardWidth=min(levelBoardWidth, SCREEN_WIDTH*percent) 随屏宽缩放 → 该单位在任意设备等价，
+    // 跨设备回放（好友求助）不再错位（#824 修复后续）。解码时 × 当前设备 scaledDiameter 还原。
+    var _sd = this.gp.scaledDiameter;
+    this._recordEntries.push({ type: type, bx: hx / _sd, by: hy / _sd, dt: Date.now() - this._recordingStart });
   }
 
   onTouchMove(x, y) {
@@ -2214,6 +2474,7 @@ class PlayingEngine {
           // （对齐正式关手感：最后一头猪跑出屏幕才弹，而非刚点下去就弹）。
           this._helpEndReason = 'cleared';
           this._helpSettlePending = true;
+          this._endBtnHideTime = Date.now();   // 最后一只猪开始跑 → 「协助完成」按钮开始渐隐且不再可点
         } else {
           console.log('[Help] 回放通关：跳过结算与提示上传（playMode=' + databus.playMode + '）');
         }
@@ -3222,7 +3483,9 @@ class PlayingEngine {
 
   /** 协助/回放关左上角状态：行1「第X关」+ 状态(回放中/请求协助)；行2 = 头像 + 昵称(≤4字) */
   _renderAssistStatusIndicators() {
-    var safeT = databus.safeTop || 0;
+    // 左侧内容：用 safeArea.top（与正常模式 TopBar 左侧设置钮基线一致），
+    // 不要 databus.safeTop（其值 = 胶囊底+8，仅供全宽游戏区顶部避让右上胶囊，会让左侧 UI 下塌 ~40px）。
+    var safeT = (this._safeL ? this._safeL.safeTop : (databus.safeTop || 0)) || 0;
     var x = 14;                  // 紧贴左上角（常规机型左侧无刘海，14px 安全避让）
     ctx.save();
     ctx.textAlign = 'left';
